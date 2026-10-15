@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Loads build scenes on request. Call LoadConfiguredScene from a Timeline
@@ -41,3 +41,4 @@ public sealed class SceneTransitionManager : MonoBehaviour
             fadeOutSeconds, holdBlackSeconds, fadeInSeconds);
     }
 }
+
