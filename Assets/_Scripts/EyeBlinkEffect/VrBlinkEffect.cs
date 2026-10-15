@@ -1,0 +1,280 @@
+﻿using UnityEngine;
+using UnityEngine.UI;
+
+/// <summary>XR-safe curved eyelid blink effect ported from the legacy shader implementation.</summary>
+[ExecuteAlways]
+public sealed class VrBlinkEffect : MonoBehaviour
+{
+    [Header("Appearance")]
+    [SerializeField] private Color eyelidColor = Color.black;
+    [Range(0f, 1f)] [SerializeField] private float halfBlinkAmount = 0.5f;
+    [Range(0f, 1f)] [SerializeField] private float curvature = 1f;
+    [Range(0.001f, 0.25f)] [SerializeField] private float edgeSoftness = 0.04f;
+
+    [Header("Timing")]
+    [Min(0f)] [SerializeField] private float closeDuration = 0.12f;
+    [Min(0f)] [SerializeField] private float openDuration = 0.18f;
+    [Min(0f)] [SerializeField] private float fullBlinkHold = 0.04f;
+
+    [Header("Camera")]
+    [SerializeField] private Camera targetCamera;
+    [Min(0.01f)] [SerializeField] private float canvasDistance = 0.05f;
+    [SerializeField] private int sortingOrder = 32760;
+
+    private Canvas overlayCanvas;
+    private Image overlayImage;
+    private Material overlayMaterial;
+    private bool animating;
+    private bool blinkCycle;
+    private bool pendingStart;
+    private double animationStart;
+    private float animationFrom;
+    private float animationTarget;
+    private float animationCloseDuration;
+    private float animationOpenDuration;
+    private float animationHold;
+    public float Amount => amount;
+    public bool IsAnimating => animating;
+    private float amount;
+    private const float OpenThreshold = 0.0001f;
+    private static readonly int ColorId = Shader.PropertyToID("_Color");
+    private static readonly int ProgressId = Shader.PropertyToID("_Progress");
+    private static readonly int CurvatureId = Shader.PropertyToID("_Curvature");
+    private static readonly int SmoothnessId = Shader.PropertyToID("_Smoothness");
+
+    private void OnEnable()
+    {
+        ResetBlink();
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.update -= EditorTick;
+        UnityEditor.EditorApplication.update += EditorTick;
+#endif
+    }
+
+    private void Update()
+    {
+        if (Application.isPlaying) TickAnimation(CurrentTime);
+    }
+
+    private static double CurrentTime
+    {
+        get
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying) return UnityEditor.EditorApplication.timeSinceStartup;
+#endif
+            return Time.realtimeSinceStartupAsDouble;
+        }
+    }
+
+#if UNITY_EDITOR
+    private void EditorTick()
+    {
+        if (Application.isPlaying || !animating) return;
+        TickAnimation(CurrentTime);
+        UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
+        UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
+    }
+#endif
+
+    private void LateUpdate()
+    {
+        if (overlayCanvas == null) return;
+        if (targetCamera == null) targetCamera = FindSceneCamera();
+        if (targetCamera == null) return;
+        overlayCanvas.worldCamera = targetCamera;
+        overlayCanvas.planeDistance = Mathf.Max(targetCamera.nearClipPlane + 0.01f, canvasDistance);
+    }
+
+    [ContextMenu("Half Blink")]
+    public void HalfBlink() => StartBlink(Mathf.Clamp01(halfBlinkAmount));
+
+    [ContextMenu("Full Blink")]
+    public void FullBlink() => StartBlink(1f);
+
+    public void FadeIn() => StartTo(1f, closeDuration);
+    public void FadeOut() => StartTo(0f, openDuration);
+
+    [ContextMenu("Open")]
+    public void Open() => StartTo(0f, openDuration);
+
+    /// <summary>Sets the eyelid amount immediately for editor previewing.</summary>
+    public void PreviewAmount(float value)
+    {
+        EnsureOverlay();
+        StopAnimation();
+        SetAmount(value);
+    }
+
+    [ContextMenu("Stop & Reset (Fully Open)")]
+    public void ResetBlink()
+    {
+        StopAnimation();
+        SetAmount(0f);
+    }
+
+    private void StartBlink(float targetAmount)
+    {
+        if (!isActiveAndEnabled) return;
+        ResetBlink();
+        EnsureOverlay();
+        blinkCycle = true;
+        animationFrom = 0f;
+        animationTarget = Mathf.Clamp01(targetAmount);
+        animationCloseDuration = Mathf.Max(0f, closeDuration);
+        animationOpenDuration = Mathf.Max(0f, openDuration);
+        animationHold = Mathf.Max(0f, fullBlinkHold);
+        pendingStart = true;
+        animating = true;
+    }
+
+    private void StartTo(float targetAmount, float duration)
+    {
+        if (!isActiveAndEnabled) return;
+        EnsureOverlay();
+        StopAnimation();
+        blinkCycle = false;
+        animationFrom = amount;
+        animationTarget = Mathf.Clamp01(targetAmount);
+        animationCloseDuration = Mathf.Max(0f, duration);
+        animationStart = CurrentTime;
+        animating = true;
+    }
+
+    private void TickAnimation(double now)
+    {
+        if (!animating) return;
+        if (pendingStart)
+        {
+            // Render a zero update before starting the clock, even on retrigger.
+            pendingStart = false;
+            animationStart = now;
+            SetAmount(0f);
+            return;
+        }
+
+        double elapsed = System.Math.Max(0d, now - animationStart);
+        if (elapsed < animationCloseDuration)
+        {
+            SetAmount(Mathf.Lerp(animationFrom, animationTarget,
+                Mathf.SmoothStep(0f, 1f, (float)(elapsed / animationCloseDuration))));
+            return;
+        }
+        if (!blinkCycle)
+        {
+            SetAmount(animationTarget);
+            StopAnimation();
+            return;
+        }
+        elapsed -= animationCloseDuration;
+        if (elapsed < animationHold)
+        {
+            SetAmount(animationTarget);
+            return;
+        }
+        elapsed -= animationHold;
+        if (elapsed < animationOpenDuration)
+        {
+            SetAmount(Mathf.Lerp(animationTarget, 0f,
+                Mathf.SmoothStep(0f, 1f, (float)(elapsed / animationOpenDuration))));
+            return;
+        }
+        ResetBlink();
+    }
+
+    private void EnsureOverlay()
+    {
+        if (overlayCanvas != null) return;
+        if (targetCamera == null) targetCamera = FindSceneCamera();
+        if (targetCamera == null) return;
+
+        GameObject canvasObject = new GameObject("VR Blink Overlay", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
+        canvasObject.hideFlags = HideFlags.HideAndDontSave;
+        canvasObject.transform.SetParent(targetCamera.transform, false);
+        overlayCanvas = canvasObject.GetComponent<Canvas>();
+        overlayCanvas.renderMode = RenderMode.ScreenSpaceCamera;
+        overlayCanvas.worldCamera = targetCamera;
+        overlayCanvas.planeDistance = Mathf.Max(targetCamera.nearClipPlane + 0.01f, canvasDistance);
+        overlayCanvas.overrideSorting = true;
+        overlayCanvas.sortingOrder = sortingOrder;
+
+        CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+
+        GameObject imageObject = new GameObject("Curved Eyelids", typeof(RectTransform), typeof(Image));
+        imageObject.hideFlags = HideFlags.HideAndDontSave;
+        imageObject.transform.SetParent(canvasObject.transform, false);
+        overlayImage = imageObject.GetComponent<Image>();
+        overlayImage.enabled = false;
+        RectTransform rect = overlayImage.rectTransform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        overlayImage.raycastTarget = false;
+
+        Shader shader = Shader.Find("UI/XR Blink Eyelids");
+        if (shader == null)
+        {
+            Debug.LogError("VrBlinkEffect could not find UI/XR Blink Eyelids shader.", this);
+            return;
+        }
+        overlayMaterial = new Material(shader) { name = "VR Blink Material (Runtime)", hideFlags = HideFlags.HideAndDontSave };
+        overlayImage.material = overlayMaterial;
+        SetAmount(amount);
+    }
+
+    private void SetAmount(float value)
+    {
+        amount = Mathf.Clamp01(value);
+        if (overlayMaterial != null)
+        {
+            overlayMaterial.SetColor(ColorId, eyelidColor);
+            overlayMaterial.SetFloat(ProgressId, amount);
+            overlayMaterial.SetFloat(CurvatureId, curvature);
+            overlayMaterial.SetFloat(SmoothnessId, edgeSoftness);
+        }
+
+        // Fully open means no overlay is drawn.
+        if (overlayImage != null)
+            overlayImage.enabled = overlayMaterial != null && amount > OpenThreshold;
+    }
+
+    private Camera FindSceneCamera() => Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
+
+    private void StopAnimation()
+    {
+        animating = false;
+        pendingStart = false;
+    }
+
+    private void OnDisable()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.update -= EditorTick;
+#endif
+        ResetBlink();
+        ReleaseOverlay();
+    }
+
+    private void OnDestroy() => ReleaseOverlay();
+
+    private void ReleaseOverlay()
+    {
+        if (overlayCanvas != null)
+        {
+            if (Application.isPlaying) Destroy(overlayCanvas.gameObject);
+            else DestroyImmediate(overlayCanvas.gameObject);
+        }
+        if (overlayMaterial != null)
+        {
+            if (Application.isPlaying) Destroy(overlayMaterial);
+            else DestroyImmediate(overlayMaterial);
+        }
+        overlayCanvas = null;
+        overlayImage = null;
+        overlayMaterial = null;
+    }
+}
