@@ -1,0 +1,23 @@
+{
+    "name": "RTLTMPro",
+    "rootNamespace": "RTLTMPro",
+    "references": [
+        "GUID:6055be8ebefd69e48b49212b09b47b2f",
+        "GUID:af4f45793aa948742af9b011b9a298e5"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.textmeshpro",
+            "expression": "2.1.0",
+            "define": "TMP_VERSION_2_1_0_OR_NEWER"
+        }
+    ],
+    "noEngineReferences": false
+}

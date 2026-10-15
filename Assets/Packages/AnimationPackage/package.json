@@ -1,0 +1,12 @@
+{
+  "name": "com.bogen.animation",
+  "version": "2.1.2",
+  "displayName": "Bogen.Animation",
+  "description": "Bogen Animation Base",
+  "unity": "2021.1",
+  "unityRelease": "0b5",
+  "author": {
+    "name": "Bogen Games"
+  },
+  "type": "library"
+}

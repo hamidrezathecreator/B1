@@ -1,0 +1,17 @@
+{
+  "name": "com.rsh.localization",
+  "version": "1.0.1",
+  "displayName": "Localization",
+  "description": "Localization for Unity UI",
+  "unity": "2021.3",
+  "dependencies": {
+ },
+ "keywords": [
+    "Localization",
+    "UI Localization"
+  ],
+  "author": {
+    "name": "Rasoul Shahhoseini",
+    "email": "rasoul.shahhoseini@gmail.com"
+  }
+}

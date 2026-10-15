@@ -1,0 +1,16 @@
+{
+    "name": "Bogen.Animation.Tests",
+    "rootNamespace": "",
+    "references": [
+        "GUID:a3faf99303806434ca387ef9591cd10d"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

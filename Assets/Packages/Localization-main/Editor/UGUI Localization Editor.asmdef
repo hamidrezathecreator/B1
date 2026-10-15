@@ -1,0 +1,18 @@
+{
+    "name": "UGUI Localization Editor",
+    "rootNamespace": "Localization.Tests",
+    "references": [
+        "Unity.TextMeshPro",
+        "RTLTMPro",
+        "UGUI Localization"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

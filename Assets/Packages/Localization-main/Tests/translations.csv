@@ -1,0 +1,75 @@
+Key,English,Turkish
+General Texts,,
+user_profile,User Profile,Kullanıcı Profili
+continue,Continue,Devam
+completed,Completed,Tamamlandı
+remaining,Remaining,Geriye kalan
+finalize,Final,Nihai
+something_completed,{0} Completed,{0} Tamamlandı
+setting,Setting,Ayar
+language,Language,Dil
+sound,Sound,Ses
+music,Music,Müzik
+notifications,Notifications,Bildirimler
+requirements,Requirements,Gereksinimler
+features,Features,Özellikler
+terminate,Terminate,Sonlandır
+terminate_account,Terminate Acoount,Hesabı Sonlandır
+now,Now,Şimdi
+today,Today,Bugün
+register,Register,Kayıt Ol
+logout,Logout,Çıkış Yap
+tour_guide,Tour Guide,Tur Rehberi
+train,Train,Eğitim
+treatment,Treatment,Tedavi
+upgrade,Upgrade,Yükselt
+upgrade_to_level,Upgrade to level  {0},
+capacity,Capacity,Kapasite
+league,League,Ligi
+team,Team,Takım
+staff,Staff,Personel
+market,Market,Pazar
+stadium,Stadium,stadyum
+training_center,Training Center,Eğitim Merkezi
+medical_center,Medical Center,Tıp Merkezi
+1v1_match,1 v 1 Match,1 v 1 Maç
+go_to_match,Go to Match,Maça Git
+go_to_lineup,Go to lineup,Sıralamaya git
+some_hour,{0}HOUR,{0}SAAT
+medicine_card,Medicine Card,İlaç Kartı
+recovery,Recovery,İyileşmek
+slots,Slots,yuvalar
+Input Texts,,
+team_name_input_placeholder,Team Name,Takım Adı
+team_name_input_caption,Enter your team name,Takım adınızı girin
+manager_name_input_placeholder,Manager Name,Yönetici Adı
+manager_name_input_caption,Enter your manager name,Yönetici adınızı girin
+manager_team_logo,Choose your team logo,Takım logosunu seçin
+Rule Texts,,
+unique_rule,Should be Unique,Benzersiz olmalı
+no_special_character_rule,Can not include special characters,Özel karakterler içeremez
+min_character_rule,Can not be less than {0} characters,{0} karakterden az olamaz
+max_character_rule,Can not be at max {0} characters,{0} karakterden fazla olamaz
+Auth Screen Texts,,
+welcome_to_game,Welcome to galactico!,Galactico'ya hoş geldiniz!
+google_play_signin_caption,Continue with Google Play,Google Play ile Devam Et
+facebook_signin_caption,Continue with Facebook,Facebook ile Devam Et
+lets_start,Let's Start,Başlayalım
+Main Screen Texts,,
+main_screen_register_caption,Register For Next League,Bir Sonraki Lig için Kayıt Ol
+income_per_day,Income per day,Günlük Gelir
+num_of_fans,Num. of Fans,Hayran Sayısı
+user_daily_xp,Used/Daily XP,Kullanılan/Günlük XP
+rarity_limit,Rarity limit,Nadirlik Sınırı
+level_up,Level up,Seviye Atla
+used_available_slots,Used/ Available Slots,Kullanılan/Uygun Yuvalar
+medicine_card_cap,Medicine card/Cap,İlaç Kartı/Kapasite
+recovery_amount,Recovery amount,Kurtarma Miktarı
+ready_to_upgrade,Ready To Upgrade!,Yükseltmeye Hazır!
+building_level_abbreviate,Building LV,Bina Seviyesi
+upgrading_time,Upgrading Time,Yükseltme Zamanı
+upgrading_stadium,Upgrading Stadium,
+upgrading_training_center,Upgrading Training Center,
+upgrading_medical_center,Upgrading Medical Center,
+boost_some_minute,Boost {0} Min,{0} Dak Hızlandırma
+boost_30_minute,Boost 30 Min,30 Dak Hızlandırma
