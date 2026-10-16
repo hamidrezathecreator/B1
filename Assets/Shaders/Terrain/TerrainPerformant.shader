@@ -84,15 +84,6 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
         [Toggle(USE_GLOBAL_TINT)] _UseGlobalTint ("Enable Global Tint", Float) = 0.0
         _Color ("Global Tint", Color) = (1,1,1,1)
 
-        // ── Thermal Vision ────────────────────────────────────────────────────
-        [Header(Thermal Vision)]
-        [Space]
-        [Tooltip(Base heat emitted by this surface in thermal view.)]
-        _ThermalBaseHeat     ("Thermal Base Heat",      Range(0, 1))    = 0.3
-        [Tooltip(Perlayer heat deltas. Each channel maps to Detail Layer)]
-        _ThermalLayerHeats   ("Thermal Layer Heats (RGBA -> Layer 1-4)", Vector) = (0.6, 0.4, 0.5, 0.35)
-        [Tooltip(How strongly the mask drives the thermal layer heat contribution.)]
-        _ThermalMaskInfluence("Thermal Mask Influence", Range(0, 1))    = 1.0
     }
 
     SubShader
@@ -101,7 +92,7 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
         { 
             "RenderPipeline" = "UniversalPipeline"
             "RenderType" = "Opaque"
-            "UniversalMaterialType" = "Unlit"
+            "UniversalMaterialType" = "SimpleLit"
             "Queue" = "Geometry"
             "IgnoreProjector" = "True"
         }
@@ -163,10 +154,6 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             float  _Detail4Strength;
             float  _Detail4BlendMode;
 
-            // Thermal
-            float  _ThermalBaseHeat;
-            float4 _ThermalLayerHeats;
-            float  _ThermalMaskInfluence;
         CBUFFER_END
         ENDHLSL
 
@@ -185,16 +172,19 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_instancing
 
             // NOTE: HLSLINCLUDE above already included Core.hlsl and the CBuffer.
             // We re-declare the minimal structs needed for this pass only.
 
-            struct Attributes { float4 positionOS : POSITION; };
-            struct Varyings   { float4 positionCS : SV_POSITION; };
+            struct Attributes { float4 positionOS : POSITION; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct Varyings { float4 positionCS : SV_POSITION; UNITY_VERTEX_OUTPUT_STEREO };
 
             Varyings vert(Attributes input)
             {
-                Varyings o;
+                Varyings o = (Varyings)0;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 VertexPositionInputs pos = GetVertexPositionInputs(input.positionOS.xyz);
                 o.positionCS = pos.positionCS;
                 return o;
@@ -204,12 +194,12 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // Main Unlit Pass
+        // Main Lit Pass
         // ─────────────────────────────────────────────────────────────────────
         Pass
         {
-            Name "Unlit"
-            Tags { "LightMode" = "SRPDefaultUnlit" }
+            Name "ForwardLit"
+            Tags { "LightMode" = "UniversalForwardOnly" }
 
             Cull Back
             ZWrite On
@@ -219,9 +209,21 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma target 2.0
+            #pragma target 3.0
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
+            #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
+            #pragma multi_compile_fragment _ _ADDITIONAL_LIGHT_SHADOWS
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+            #pragma multi_compile _ LIGHTMAP_ON
+            #pragma multi_compile _ DIRLIGHTMAP_COMBINED
+            #pragma multi_compile _ LIGHTMAP_SHADOW_MIXING
+            #pragma multi_compile _ SHADOWS_SHADOWMASK
+            #pragma multi_compile _ USE_LEGACY_LIGHTMAPS
             
             #pragma shader_feature_local BASE_LAYER_ON
             #pragma shader_feature_local DETAIL_LAYER_1_ON
@@ -297,7 +299,9 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             struct Attributes
             {
                 float4 positionOS : POSITION;
+                float3 normalOS   : NORMAL;
                 float2 uv         : TEXCOORD0;
+                float2 lightmapUV : TEXCOORD1;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -323,7 +327,11 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 float2 uvDetail4  : TEXCOORD4;
                 #endif
 
-                float fogFactor   : TEXCOORD5;
+                half4 fogAndVertexLight : TEXCOORD5;
+                float3 positionWS : TEXCOORD7;
+                half3 normalWS    : TEXCOORD8;
+                DECLARE_LIGHTMAP_OR_SH(lightmapUV, vertexSH, 9);
+                UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -332,10 +340,15 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             {
                 Varyings output = (Varyings)0;
                 UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_TRANSFER_INSTANCE_ID(input, output);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
                 VertexPositionInputs vertexPos = GetVertexPositionInputs(input.positionOS.xyz);
                 output.positionCS = vertexPos.positionCS;
+                output.positionWS = vertexPos.positionWS;
+                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                OUTPUT_LIGHTMAP_UV(input.lightmapUV, unity_LightmapST, output.lightmapUV);
+                OUTPUT_SH(output.normalWS, output.vertexSH);
                 output.uvMain     = input.uv;
 
                 #if defined(BASE_LAYER_ON)
@@ -355,13 +368,19 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 output.uvDetail4 = TRANSFORM_TEX(input.uv, _DetailTex4);
                 #endif
                 
-                output.fogFactor = ComputeFogFactor(vertexPos.positionCS.z);
+                output.fogAndVertexLight.x = ComputeFogFactor(vertexPos.positionCS.z);
+                #if defined(_ADDITIONAL_LIGHTS_VERTEX)
+                output.fogAndVertexLight.yzw = VertexLighting(output.positionWS, output.normalWS);
+                #endif
                 return output;
             }
 
             // ── Fragment ──────────────────────────────────────────────────────
             half4 frag(Varyings input) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
                 // Sample + process masks
                 half mask1 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask1Tiling).r;
                 half mask2 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask2Tiling).g;
@@ -420,108 +439,74 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 result *= _Color.rgb;
                 #endif
                 
-                result = MixFog(result, input.fogFactor);
-                return half4(result, 1.0);
+                InputData inputData = (InputData)0;
+                inputData.positionWS = input.positionWS;
+                inputData.normalWS = NormalizeNormalPerPixel(input.normalWS);
+                inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
+                #if defined(_MAIN_LIGHT_SHADOWS_SCREEN)
+                inputData.shadowCoord = ComputeScreenPos(TransformWorldToHClip(input.positionWS));
+                #elif defined(MAIN_LIGHT_CALCULATE_SHADOWS)
+                inputData.shadowCoord = TransformWorldToShadowCoord(input.positionWS);
+                #endif
+                inputData.fogCoord = input.fogAndVertexLight.x;
+                inputData.vertexLighting = input.fogAndVertexLight.yzw;
+                inputData.bakedGI = SAMPLE_GI(input.lightmapUV, input.vertexSH, inputData.normalWS);
+                inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
+                inputData.shadowMask = SAMPLE_SHADOWMASK(input.lightmapUV);
+
+                SurfaceData surfaceData = (SurfaceData)0;
+                surfaceData.albedo = result;
+                surfaceData.alpha = 1.0h;
+                surfaceData.normalTS = half3(0, 0, 1);
+                surfaceData.occlusion = 1.0h;
+
+                half4 color = UniversalFragmentBlinnPhong(inputData, surfaceData);
+                color.rgb = MixFog(color.rgb, inputData.fogCoord);
+                return color;
             }
             ENDHLSL
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // Thermal Vision Pass
-        // ─────────────────────────────────────────────────────────────────────
         Pass
         {
-            Name "ThermalVision"
-            Tags { "LightMode" = "ThermalVision" }
+            Name "ShadowCaster"
+            Tags { "LightMode" = "ShadowCaster" }
 
             ZWrite On
-            ZTest  LEqual
-            Cull   Back
-            ColorMask R
+            ZTest LEqual
+            ColorMask 0
+            Cull Back
 
             HLSLPROGRAM
-            #pragma vertex   vert_thermal
-            #pragma fragment frag_thermal
-            #pragma target   2.0
+            #pragma target 2.0
+            #pragma vertex ShadowPassVertex
+            #pragma fragment ShadowPassFragment
             #pragma multi_compile_instancing
+            #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
 
-            #pragma shader_feature_local DETAIL_LAYER_1_ON
-            #pragma shader_feature_local DETAIL_LAYER_2_ON
-            #pragma shader_feature_local DETAIL_LAYER_3_ON
-            #pragma shader_feature_local DETAIL_LAYER_4_ON
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/ShadowCasterPass.hlsl"
+            ENDHLSL
+        }
 
-            // Core.hlsl and the CBuffer are already included via HLSLINCLUDE above.
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode" = "DepthNormalsOnly" }
 
-            TEXTURE2D(_MasksTexture); SAMPLER(sampler_MasksTexture);
+            ZWrite On
+            Cull Back
 
-            // ── Structs ───────────────────────────────────────────────────────
-            struct Attributes
-            {
-                float4 positionOS : POSITION;
-                float2 uv         : TEXCOORD0;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
-            };
+            HLSLPROGRAM
+            #pragma target 2.0
+            #pragma vertex DepthNormalsVertex
+            #pragma fragment DepthNormalsFragment
+            #pragma multi_compile_instancing
+            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
 
-            struct Varyings
-            {
-                float4 positionCS : SV_POSITION;
-                float2 uvMain     : TEXCOORD0;
-                UNITY_VERTEX_OUTPUT_STEREO
-            };
-
-            // ── Vertex ────────────────────────────────────────────────────────
-            Varyings vert_thermal(Attributes input)
-            {
-                Varyings output = (Varyings)0;
-                UNITY_SETUP_INSTANCE_ID(input);
-                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
-                output.positionCS = GetVertexPositionInputs(input.positionOS.xyz).positionCS;
-                output.uvMain     = input.uv;
-                return output;
-            }
-
-            // ── Fragment ──────────────────────────────────────────────────────
-            half4 frag_thermal(Varyings input) : SV_Target
-            {
-                // ── 1. Sample & process masks (same pipeline as main pass) ────
-                half mask1 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask1Tiling).r;
-                half mask2 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask2Tiling).g;
-                half mask3 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask3Tiling).b;
-                half mask4 = SAMPLE_TEXTURE2D(_MasksTexture, sampler_MasksTexture, input.uvMain * _Mask4Tiling).a;
-
-                mask1 = saturate(((mask1 - 0.5h) * _MaskContrast) + 0.5h);
-                mask2 = saturate(((mask2 - 0.5h) * _MaskContrast) + 0.5h);
-                mask3 = saturate(((mask3 - 0.5h) * _MaskContrast) + 0.5h);
-                mask4 = saturate(((mask4 - 0.5h) * _MaskContrast) + 0.5h);
-
-                half range = max(0.001h, (half)_MaskClampMax - (half)_MaskClampMin);
-                mask1 = saturate((mask1 - (half)_MaskClampMin) / range);
-                mask2 = saturate((mask2 - (half)_MaskClampMin) / range);
-                mask3 = saturate((mask3 - (half)_MaskClampMin) / range);
-                mask4 = saturate((mask4 - (half)_MaskClampMin) / range);
-
-                // ── 2. Accumulate heat ────────────────────────────────────────
-                half heat      = (half)_ThermalBaseHeat;
-                half influence = (half)_ThermalMaskInfluence;
-
-                #if defined(DETAIL_LAYER_1_ON)
-                    heat = lerp(heat, (half)_ThermalLayerHeats.x, mask1 * influence);
-                #endif
-                #if defined(DETAIL_LAYER_2_ON)
-                    heat = lerp(heat, (half)_ThermalLayerHeats.y, mask2 * influence);
-                #endif
-                #if defined(DETAIL_LAYER_3_ON)
-                    heat = lerp(heat, (half)_ThermalLayerHeats.z, mask3 * influence);
-                #endif
-                #if defined(DETAIL_LAYER_4_ON)
-                    heat = lerp(heat, (half)_ThermalLayerHeats.w, mask4 * influence);
-                #endif
-
-                return half4(saturate(heat), 0, 0, 1);
-            }
+            #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthNormalsPass.hlsl"
             ENDHLSL
         }
     }
 
-    FallBack "Universal Render Pipeline/Unlit"
+    FallBack "Hidden/Universal Render Pipeline/FallbackError"
 }

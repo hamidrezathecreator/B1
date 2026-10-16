@@ -37,6 +37,30 @@ public sealed class TutorialGuideSystem : MonoBehaviour
     string dismissedByEventId;
     readonly HashSet<string> startIds = new HashSet<string>();
     readonly Dictionary<string, System.Action> startHandlers = new Dictionary<string, System.Action>();
+    public bool CanShowCards => guideImage != null && isActiveAndEnabled;
+
+    /// <summary>Displays one card under an external orchestrator's control; callback runs after fade-in.</summary>
+    public void ShowCard(Sprite sprite, System.Action onShown)
+    {
+        if (!CanShowCards) return;
+        StopCompletionListener();
+        if (fadeRoutine != null) StopCoroutine(fadeRoutine);
+        currentIndex = -1;
+        busy = true;
+        guideImage.sprite = sprite;
+        guideImage.gameObject.SetActive(true);
+        fadeRoutine = StartCoroutine(Fade(0f, 1f, fadeInDuration, onShown));
+    }
+
+    /// <summary>Dismisses an externally controlled card without advancing configured tutorial steps.</summary>
+    public void HideCard()
+    {
+        StopCompletionListener();
+        if (fadeRoutine != null) StopCoroutine(fadeRoutine);
+        currentIndex = -1;
+        busy = false;
+        HideImmediate();
+    }
 
     void Awake()
     {
@@ -66,6 +90,8 @@ public sealed class TutorialGuideSystem : MonoBehaviour
         startHandlers.Clear();
         StopCompletionListener();
         if (fadeRoutine != null) StopCoroutine(fadeRoutine);
+        busy = false;
+        HideImmediate();
     }
 
     void OnStartEvent(string eventId)

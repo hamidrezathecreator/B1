@@ -25,3 +25,12 @@ IDs are ordinal strings, so `button.one` and `Button.One` are different events. 
 ## Timeline by ID
 
 Add TutorialEventEmitter to a scene object, set its exactEventId, and bind Raise() to a Timeline Signal Receiver. The signal publishes that ID and starts the matching tutorial step. You can also call TutorialGuideSystem.BeginById(string) from code or a string UnityEvent.
+
+## Missile launcher tutorial orchestration
+
+Use `MissileLauncherTutorialOrchestrator` for rotation/fire tutorials involving one or many launchers. It fades CanvasGroups on your existing rotation/fire cards, uses `MissileLauncherButtons` for gated press events, and `MissileLauncherActions` for group commands and completion barriers. The next card waits for every launcher to finish rotation; it does not advance on the initial button press.
+
+A launcher Inspector's **Create VR Tutorial Setup** command creates the physical buttons, actions, and orchestrator references. Assign CanvasGroups from the two cards in your existing world-space canvas and populate the actions' launcher array. Keep the card objects active: only their alpha is changed, with configurable fade-in/out durations. See `../MissileLauncher/README.md` for setup and event semantics.
+
+The missile orchestrator owns card fades and enables the relevant physical button only after the card is fully visible. It does not require a TutorialGuideSystem. Do not let another guide, animation, or Timeline track control these same card alphas during this sequence. Timeline signals can still call the orchestrator's Begin() to start the first card (turn off beginOnStart).
+
