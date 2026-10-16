@@ -1,5 +1,15 @@
 using UnityEngine;
 
+public enum QuadFacingAxis
+{
+    PositiveZ,
+    NegativeZ,
+    PositiveX,
+    NegativeX,
+    PositiveY,
+    NegativeY
+}
+
 /// <summary>
 /// Drives a flipbook-style sprite-sheet material (see SequenceShader) as a single one-shot
 /// playback and reports when it has finished. Owns its own Material instance so multiple
@@ -13,6 +23,17 @@ using UnityEngine;
 /// </summary>
 public class QuadSequncerController : MonoBehaviour
 {
+    [Header("Facing")]
+    [Tooltip("Local mesh axis that should point toward the camera when billboarding. Used by the quad emitter and missile impact system.")]
+    [SerializeField] private QuadFacingAxis facingAxis = QuadFacingAxis.PositiveZ;
+
+    [Header("Position")]
+    [Tooltip("World-space vertical offset added when this quad is spawned. Positive raises it; negative lowers it.")]
+    [SerializeField] private float worldYOffset;
+
+    public QuadFacingAxis FacingAxis => facingAxis;
+    public float WorldYOffset => worldYOffset;
+
     // Cached property IDs — resolved once instead of re-hashing the string on every access.
     private static readonly int TilesXId         = Shader.PropertyToID("_TilesX");
     private static readonly int TilesYId         = Shader.PropertyToID("_TilesY");

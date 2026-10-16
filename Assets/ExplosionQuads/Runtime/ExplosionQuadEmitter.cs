@@ -177,13 +177,15 @@ namespace ExplosionQuads
             Material material = PickVariant(renderer);
             QuadSequncerController sequence = instance.GetComponent<QuadSequncerController>();
             if (sequence == null) sequence = instance.GetComponentInChildren<QuadSequncerController>();
+            if (sequence != null) instance.transform.position += Vector3.up * sequence.WorldYOffset;
             if (sequence != null && renderer != null) sequence.Initialize(material != null ? material : renderer.sharedMaterial);
             sequence?.Play();
 
             ExplosionQuadBillboard billboard = instance.GetComponent<ExplosionQuadBillboard>();
             if (billboard == null && facing != ExplosionFacing.PrefabRotation)
                 billboard = instance.AddComponent<ExplosionQuadBillboard>();
-            if (billboard != null) billboard.Configure(GetCamera(), facing, flipFacing, faceCameraContinuously);
+            if (billboard != null) billboard.Configure(GetCamera(), facing, flipFacing, faceCameraContinuously,
+                sequence != null ? sequence.FacingAxis : QuadFacingAxis.PositiveZ);
             onShotSpawned.Invoke(++shotCount);
         }
 
@@ -204,8 +206,27 @@ namespace ExplosionQuads
         private ExplosionFacing mode;
         private bool flip;
         private bool continuous;
-        public void Configure(Camera camera, ExplosionFacing facing, bool flipFacing, bool updateContinuously)
-        { target = camera; mode = facing; flip = flipFacing; continuous = updateContinuously; Apply(); }
+        private Quaternion axisCorrection = Quaternion.identity;
+        public void Configure(Camera camera, ExplosionFacing facing, bool flipFacing, bool updateContinuously,
+            QuadFacingAxis facingAxis = QuadFacingAxis.PositiveZ)
+        {
+            target = camera;
+            mode = facing;
+            flip = flipFacing;
+            continuous = updateContinuously;
+            Vector3 localAxis;
+            switch (facingAxis)
+            {
+                case QuadFacingAxis.NegativeZ: localAxis = Vector3.back; break;
+                case QuadFacingAxis.PositiveX: localAxis = Vector3.right; break;
+                case QuadFacingAxis.NegativeX: localAxis = Vector3.left; break;
+                case QuadFacingAxis.PositiveY: localAxis = Vector3.up; break;
+                case QuadFacingAxis.NegativeY: localAxis = Vector3.down; break;
+                default: localAxis = Vector3.forward; break;
+            }
+            axisCorrection = Quaternion.FromToRotation(localAxis, Vector3.forward);
+            Apply();
+        }
         private void LateUpdate() { if (continuous) Apply(); }
         private void Apply()
         {
@@ -214,9 +235,11 @@ namespace ExplosionQuads
             if (mode == ExplosionFacing.FaceCameraYawOnly) toCamera.y = 0f;
             if (mode == ExplosionFacing.FaceCameraPitchOnly) toCamera = new Vector3(0f, toCamera.y, toCamera.z);
             if (toCamera.sqrMagnitude < .0001f) return;
-            Quaternion rotation = Quaternion.LookRotation(toCamera.normalized, Vector3.up);
+            Vector3 direction = toCamera.normalized;
+            Vector3 up = Mathf.Abs(Vector3.Dot(direction, Vector3.up)) > 0.999f ? Vector3.forward : Vector3.up;
+            Quaternion rotation = Quaternion.LookRotation(direction, up);
             if (flip) rotation *= Quaternion.Euler(0f, 180f, 0f);
-            transform.rotation = rotation;
+            transform.rotation = rotation * axisCorrection;
         }
     }
 }

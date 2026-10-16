@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Explosion_Small
-  m_Shader: {fileID: 4800000, guid: 6d4e0e7f5e481854b9f0e3a8c063579b, type: 3}
+  m_Shader: {fileID: 4800000, guid: 0b120cdb10b1a2f4badee8be039a2c93, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
