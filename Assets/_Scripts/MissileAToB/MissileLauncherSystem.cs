@@ -32,7 +32,14 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [Header("Impact sequence")]
     [Tooltip("A quad prefab with a QuadSequncerController and a Renderer on the same object.")]
     [SerializeField] private GameObject quadSequencerPrefab;
-    [Tooltip("Optional. Otherwise the quad's existing material is used.")]
+    [Tooltip("Each impact independently chooses a random non-empty material. If empty, the existing material is used.")]
+    [SerializeField] private Material[] explosionMaterials = new Material[0];
+    [Tooltip("Minimum uniform size multiplier for each impact quad, relative to its prefab scale. 1 keeps the original size.")]
+    [SerializeField, Min(0.01f)] private float minQuadSize = 1f;
+    [Tooltip("Maximum uniform size multiplier. Each impact samples independently; proportions are preserved.")]
+    [SerializeField, Min(0.01f)] private float maxQuadSize = 1f;
+    // Preserve material assignments serialized before the variants array was introduced.
+    [HideInInspector]
     [SerializeField] private Material explosionMaterial;
 
     [Header("Presentation")]
@@ -43,13 +50,13 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [Header("Events")]
     public UnityEvent onStarted = new UnityEvent();
     public UnityEvent<Vector3> onImpact = new UnityEvent<Vector3>();
+    [Tooltip("Invoked once per salvo when all missiles from that Fire call have arrived.")]
     public UnityEvent onCompleted = new UnityEvent();
     public UnityEvent onReset = new UnityEvent();
 
     private readonly List<Tween> flights = new List<Tween>();
     private readonly Dictionary<GameObject, Vector3> spawnedMissiles = new Dictionary<GameObject, Vector3>();
     private int runId;
-    private int remaining;
     private readonly List<GameObject> effects = new List<GameObject>();
 
     private void OnDisable()
@@ -79,7 +86,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         return Quaternion.LookRotation(forward, up) * Quaternion.FromToRotation(modelForward, Vector3.forward);
     }
 
-    /// <summary>Event entry point. Spawns prefabs at randomized numeric offsets above Point B.</summary>
+    /// <summary>Starts an additional salvo without cancelling earlier launches or flights.</summary>
     [ContextMenu("Fire Missiles")]
     public void Fire()
     {
@@ -97,10 +104,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             Debug.LogWarning("MissileLauncherSystem needs at least one assigned missile prefab.", this);
             return;
         }
-        StopFlights();
+        flights.RemoveAll(flight => !flight.isAlive);
         Vector3 endCenter = pointB.position;
         int count = Mathf.Max(1, missileCount);
-        remaining = count;
         int currentRun = runId;
         onStarted.Invoke();
         if (currentRun != runId) return;
@@ -109,6 +115,8 @@ public sealed class MissileLauncherSystem : MonoBehaviour
 
     private IEnumerator LaunchRoutine(List<GameObject> availablePrefabs, Vector3 endCenter, int count, int currentRun)
     {
+        // Each invocation owns its completion count; overlapping salvos cannot overwrite it.
+        int remaining = count;
         Vector3 launchCenter = endCenter + launchOffset;
         float minimumDelay = Mathf.Max(0f, Mathf.Min(minLaunchDelay, maxLaunchDelay));
         float maximumDelay = Mathf.Max(0f, Mathf.Max(minLaunchDelay, maxLaunchDelay));
@@ -168,7 +176,6 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     {
         runId++;
         StopAllCoroutines();
-        remaining = 0;
         foreach (var flight in flights)
             if (flight.isAlive) flight.Stop();
         flights.Clear();
@@ -183,7 +190,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             ? quadSequencerPrefab.GetComponentInChildren<QuadSequncerController>(true)
             : null;
         var renderer = sequence != null ? sequence.GetComponent<Renderer>() : null;
-        if (renderer != null && (explosionMaterial != null || renderer.sharedMaterial != null)) return true;
+        if (renderer != null && (HasExplosionMaterial() || renderer.sharedMaterial != null)) return true;
         Debug.LogWarning("MissileLauncherSystem needs a quad prefab with a QuadSequncerController, a Renderer on that same object, and a sequence material.", this);
         return false;
     }
@@ -194,6 +201,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
 
         // Anchor to the captured endpoint, then apply the quad's world-space height adjustment.
         var instance = Instantiate(quadSequencerPrefab, impactPosition, quadSequencerPrefab.transform.rotation);
+        float minimumSize = Mathf.Max(0.01f, Mathf.Min(minQuadSize, maxQuadSize));
+        float maximumSize = Mathf.Max(0.01f, Mathf.Max(minQuadSize, maxQuadSize));
+        instance.transform.localScale *= Random.Range(minimumSize, maximumSize);
         effects.RemoveAll(effect => effect == null);
         effects.Add(instance);
         var sequence = instance.GetComponentInChildren<QuadSequncerController>(true);
@@ -202,7 +212,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         instance.transform.position += Vector3.up * sequence.WorldYOffset;
         sequence.gameObject.SetActive(true);
         instance.SetActive(true);
-        sequence.Initialize(explosionMaterial != null ? explosionMaterial : renderer.sharedMaterial);
+        sequence.Initialize(PickExplosionMaterial(renderer.sharedMaterial));
         sequence.Play();
 
         var billboard = instance.GetComponent<ExplosionQuadBillboard>();
@@ -213,6 +223,32 @@ public sealed class MissileLauncherSystem : MonoBehaviour
 
         Destroy(instance, sequence.GetLifetime());
         onImpact.Invoke(impactPosition);
+    }
+
+    private bool HasExplosionMaterial()
+    {
+        if (explosionMaterial != null) return true;
+        if (explosionMaterials != null)
+            foreach (var material in explosionMaterials)
+                if (material != null) return true;
+        return false;
+    }
+
+    private Material PickExplosionMaterial(Material fallback)
+    {
+        int count = 0;
+        if (explosionMaterials != null)
+            foreach (var material in explosionMaterials)
+                if (material != null) count++;
+
+        if (count > 0)
+        {
+            int index = Random.Range(0, count);
+            foreach (var material in explosionMaterials)
+                if (material != null && index-- == 0) return material;
+        }
+
+        return explosionMaterial != null ? explosionMaterial : fallback;
     }
 
     private void ClearEffects()

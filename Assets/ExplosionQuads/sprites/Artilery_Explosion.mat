@@ -100,6 +100,7 @@ Material:
     - _EnvironmentReflections: 1
     - _FadeEnd: 0.05
     - _FadeStart: 0
+    - _FrameCount: 0
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
@@ -131,6 +132,7 @@ Material:
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _TintColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
 --- !u!114 &7769192172049735868
 MonoBehaviour:
   m_ObjectHideFlags: 11

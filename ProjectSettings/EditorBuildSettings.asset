@@ -6,14 +6,14 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/B1.unity
+    guid: e856ab703ecac954689629910a5cfb74
+  - enabled: 1
     path: Assets/Temp/Menu.unity
     guid: 62af6d4dc1cbb8b4bb9ff64667f89ec0
   - enabled: 1
     path: Assets/Temp/Main Scene.unity
     guid: af87ea2778d59974dad5c8d57fd192f0
-  - enabled: 0
-    path: Assets/ExportedProject/Assets/Scenes/House_2.unity
-    guid: 7a97f0302ae2bab42b80b2d3d90ee4c1
   - enabled: 1
     path: Assets/Temp/ketabKhaneScene.unity
     guid: 4524b66e44fd25440aa217438583962b

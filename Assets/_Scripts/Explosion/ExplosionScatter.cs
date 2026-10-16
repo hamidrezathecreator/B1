@@ -1,8 +1,8 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using PrimeTween;
 using UnityEngine;
 
-/// <summary>Scatters scene pieces via PrimeTween. Call Explode from Timeline or a UnityEvent.</summary>
+/// <summary>Scatters scene pieces via PrimeTween. Call Explode or ExplodePartly from Timeline or a UnityEvent.</summary>
 public sealed class ExplosionScatter : MonoBehaviour
 {
     [Header("Pieces")]
@@ -31,6 +31,8 @@ public sealed class ExplosionScatter : MonoBehaviour
     private readonly List<Sequence> activeTweens = new List<Sequence>();
     private readonly List<Vector3> startPositions = new List<Vector3>();
     private readonly List<Quaternion> startRotations = new List<Quaternion>();
+    private int partialExplosionStep;
+    private int nextPieceIndex;
 
     private void Awake() => CacheStartState();
 
@@ -45,37 +47,60 @@ public sealed class ExplosionScatter : MonoBehaviour
             return;
         }
 
+        partialExplosionStep = 4;
+        nextPieceIndex = pieces.Length;
         for (int i = 0; i < pieces.Length; i++)
+            ExplodePiece(pieces[i]);
+    }
+
+    [ContextMenu("Test Partial Explosion")]
+    public void ExplodePartly()
+    {
+        if (launchPoint == null || groundPoint == null || pieces == null || pieces.Length == 0)
         {
-            Transform piece = pieces[i];
-            if (piece == null) continue;
-            Vector2 launchOffset = Random.insideUnitCircle * launchRadius;
-            Vector3 apex = launchPoint.position + new Vector3(launchOffset.x,
-                launchHeight + Random.Range(-launchHeightVariation, launchHeightVariation), launchOffset.y);
-            Vector2 landingOffset = Random.insideUnitCircle * landingRadius;
-            Vector3 landing = groundPoint.position + new Vector3(landingOffset.x, 0f, landingOffset.y);
-            landing.y = FindGroundHeight(landing) + groundClearance;
-            Vector3 start = piece.position;
-            Quaternion startRotation = piece.rotation;
-            Quaternion endRotation = Random.rotation;
-            float rise = RandomizedDuration(riseDuration);
-            float fall = RandomizedDuration(fallDuration);
-            Quaternion apexRotation = Quaternion.Slerp(startRotation, endRotation, 0.45f);
-            Sequence sequence = Sequence.Create()
-                .Chain(Tween.Custom(piece, 0f, 1f, rise, (target, t) =>
-                {
-                    if (target == null) return;
-                    target.SetPositionAndRotation(Vector3.LerpUnclamped(start, apex, t),
-                        Quaternion.SlerpUnclamped(startRotation, apexRotation, t));
-                }, ease: riseEase))
-                .Chain(Tween.Custom(piece, 0f, 1f, fall, (target, t) =>
-                {
-                    if (target == null) return;
-                    target.SetPositionAndRotation(Vector3.LerpUnclamped(apex, landing, t),
-                        Quaternion.SlerpUnclamped(apexRotation, endRotation, t));
-                }, ease: fallEase));
-            activeTweens.Add(sequence);
+            Debug.LogWarning("ExplosionScatter needs pieces, a Launch Point and a Ground Point.", this);
+            return;
         }
+
+        if (partialExplosionStep >= 4) return;
+
+        // Use cumulative quarters so rounding still releases every piece in four calls.
+        partialExplosionStep++;
+        int endIndex = Mathf.CeilToInt(pieces.Length * (partialExplosionStep / 4f));
+        while (nextPieceIndex < endIndex)
+            ExplodePiece(pieces[nextPieceIndex++]);
+    }
+
+    private void ExplodePiece(Transform piece)
+    {
+        if (piece == null) return;
+        Vector3 start = piece.position;
+        Vector2 launchOffset = Random.insideUnitCircle * launchRadius;
+        // Rise from each piece's own position instead of converging on the launch point.
+        Vector3 apex = start + new Vector3(launchOffset.x,
+            launchHeight + Random.Range(-launchHeightVariation, launchHeightVariation), launchOffset.y);
+        Vector2 landingOffset = Random.insideUnitCircle * landingRadius;
+        Vector3 landing = groundPoint.position + new Vector3(landingOffset.x, 0f, landingOffset.y);
+        landing.y = FindGroundHeight(landing) + groundClearance;
+        Quaternion startRotation = piece.rotation;
+        Quaternion endRotation = Random.rotation;
+        float rise = RandomizedDuration(riseDuration);
+        float fall = RandomizedDuration(fallDuration);
+        Quaternion apexRotation = Quaternion.Slerp(startRotation, endRotation, 0.45f);
+        Sequence sequence = Sequence.Create()
+            .Chain(Tween.Custom(piece, 0f, 1f, rise, (target, t) =>
+            {
+                if (target == null) return;
+                target.SetPositionAndRotation(Vector3.LerpUnclamped(start, apex, t),
+                    Quaternion.SlerpUnclamped(startRotation, apexRotation, t));
+            }, ease: riseEase))
+            .Chain(Tween.Custom(piece, 0f, 1f, fall, (target, t) =>
+            {
+                if (target == null) return;
+                target.SetPositionAndRotation(Vector3.LerpUnclamped(apex, landing, t),
+                    Quaternion.SlerpUnclamped(apexRotation, endRotation, t));
+            }, ease: fallEase));
+        activeTweens.Add(sequence);
     }
 
     [ContextMenu("Reset Explosion")]
@@ -83,6 +108,8 @@ public sealed class ExplosionScatter : MonoBehaviour
     {
         StopActiveTweens();
         RestoreStartState();
+        partialExplosionStep = 0;
+        nextPieceIndex = 0;
     }
 
     private float FindGroundHeight(Vector3 landing)
