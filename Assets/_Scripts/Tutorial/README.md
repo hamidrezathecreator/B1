@@ -32,5 +32,8 @@ Use `MissileLauncherTutorialOrchestrator` for rotation/fire tutorials involving 
 
 A launcher Inspector's **Create VR Tutorial Setup** command creates the physical buttons, actions, and orchestrator references. Assign CanvasGroups from the two cards in your existing world-space canvas and populate the actions' launcher array. Keep the card objects active: only their alpha is changed, with configurable fade-in/out durations. See `../MissileLauncher/README.md` for setup and event semantics.
 
-The missile orchestrator owns card fades and enables the relevant physical button only after the card is fully visible. It does not require a TutorialGuideSystem. Do not let another guide, animation, or Timeline track control these same card alphas during this sequence. Timeline signals can still call the orchestrator's Begin() to start the first card (turn off beginOnStart).
+The missile orchestrator owns card fades and enables the relevant physical button only after the card is fully visible. It does not require a TutorialGuideSystem. Do not let another guide, animation, or Timeline track control these same card alphas during this sequence. Timeline signals can call the orchestrator's Begin() to start the delayed sequence (turn off Begin After Delay for Timeline-only initiation). Begin Delay defaults to 3 seconds, runs on unscaled time, and applies before the first sound/card.
+
+Assign **Rotate Intro Sound** and **Fire Intro Sound** on the orchestrator to play audio before the corresponding card. The first sound starts after Begin Delay elapses; the second starts only after every assigned launcher finishes rotation. Each sound must finish before its card fades in, and only after the fade does its physical button become interactable. Use a dedicated **Tutorial Audio Source** (defaults to the source on the orchestrator). Empty clips skip playback. Restarting or disabling cancels pending playback and progression.
+
 

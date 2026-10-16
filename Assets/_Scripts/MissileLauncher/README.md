@@ -30,21 +30,31 @@ Click **Create VR Tutorial Setup** on a launcher Inspector/context menu in Edit 
 - `MissileLauncherTutorialOrchestrator`: tutorial state, button gating, and group event subscriptions.
 - References to CanvasGroups on your existing rotation/fire cards. The setup does not create a canvas or change card contents.
 
-Add a CanvasGroup to each existing card root in your world-space canvas, then assign those groups to **Rotate Card** and **Fire Card** on the orchestrator. Keep both card objects active; the orchestrator hides them by alpha and fades them in/out using unscaled time. Existing sprites, text, layout, and UI remain authored in the canvas. Set fade durations, add other launchers to the actions array, and position the physical button panel within reach. `beginOnStart` starts the tutorial, or call `Begin()` from Timeline/a UnityEvent. Begin also resets all assigned launchers for a fresh attempt.
+Add a CanvasGroup to each existing card root in your world-space canvas, then assign those groups to **Rotate Card** and **Fire Card** on the orchestrator. Keep both card objects active; the orchestrator hides them by alpha and fades them in/out using unscaled time. Existing sprites, text, layout, and UI remain authored in the canvas. Set fade durations, add other launchers to the actions array, and position the physical button panel within reach. **Begin After Delay** schedules the tutorial automatically; set **Begin Delay** in seconds (default 3). For Timeline-only initiation, turn off Begin After Delay and call `Begin()` from a signal/UnityEvent. Every Begin call waits the configured delay before the first sound/card, keeping both cards hidden and buttons disabled. Begin also resets all assigned launchers for a fresh attempt.
 
 The sequence is:
 
-1. Show/fade in the rotation card, then enable only Rotate.
+1. Play **Rotate Intro Sound** and wait for playback to finish. Fade in the rotation card, then enable only Rotate.
 2. Rotate press hides the card, disables both buttons, and rotates every assigned launcher.
-3. Wait for `rotationCompleted` from every launcher. Show/fade in the fire card, then enable only Fire.
+3. Wait for `rotationCompleted` from every launcher. Play **Fire Intro Sound** and wait for playback to finish. Fade in the fire card, then enable only Fire.
 4. Fire press hides the card, disables both buttons, and fires every assigned launcher.
 5. Wait for all `missileSequenceCompleted` events, then emit `tutorialCompleted`. This means all sequences dispatched their missiles, not that missile flights have ended.
+
+Assign both intro clips in the orchestrator's **Audio Before Each Card** section. **Tutorial Audio Source** should be a dedicated, active source; it defaults to the AudioSource on the orchestrator object. Both physical buttons stay disabled during playback and card fades. An unassigned clip skips that audio step. Restart, failure, or disabling the orchestrator cancels its pending sound/card progression. Playback completion is checked on the source, including AudioListener pauses, so it is not tied to the game's time scale or a hardcoded clip-length timer.
 
 `actionFailed`/`tutorialFailed` report invalid or interrupted groups. Missing/destroyed/disabled launchers are not treated as successful completion. `Begin()` restarts after a failure. Disabling the orchestrator gates both buttons and removes its listeners; call Begin after re-enabling.
 
 The orchestrator subscribes automatically; do not also wire button presses directly to launchers or actions when using this tutorial. Existing panels created by the earlier **Create Wired VR Push Buttons** command should be replaced by the new setup, since they call individual launchers directly. Input action references have been removed from launcher behavior; physical presses use events.
 
 For non-tutorial use, the button adapter's `rotatePressed`/`firePressed` UnityEvents can instead call group actions. Call `EnableRotate()`/`EnableFire()` to choose the available button. Do not attach the tutorial orchestrator in that mode.
+
+## Music after pressing Fire
+
+The music manager has **Fade In On Start** enabled by default: it starts at volume 0 and fades to **Fade In Volume** (default 0.2) at **Fade In Speed** (default 0.1 volume units per second). Turn off the toggle for manual control and call `FadeIn()` from a Timeline/UnityEvent. A Fire request during the startup fade smoothly retargets the volume from its current level. An event received before Start takes priority over the automatic startup fade.
+
+Add `SingleMusicManager` to the object with your music AudioSource and assign its **Music Source** (defaults to the local source). Set that source's music clip, starting volume, and Loop as desired. Use a separate source from tutorial narration. The manager controls the source's volume directly.
+
+On the tutorial orchestrator, assign **Music Manager**, **Fire Music Volume** (0–1), and **Fire Music Fade Speed** (volume units per second). An accepted Fire press emits **Music Raise Requested** with those settings; the assigned manager receives it automatically. No extra event wiring is needed. Already-playing music keeps its playback position. If stopped, the manager starts the assigned clip when **Play If Stopped** is enabled. Speed 0 applies the target immediately; positive speed fades from the current volume without overshooting, using unscaled time. A new request replaces the previous fade. **Volume Reached** is emitted when the target is reached. Leaving Music Manager empty keeps the music hookup optional; custom listeners can use the event instead.
 
 ## Physical button settings
 
@@ -53,6 +63,8 @@ For your own scene models, add **XR Simple Interactable** to each button root an
 The generated buttons retain the XR Starter Assets sample's collider, `XRPokeFilter` (negative local Y, 45-degree approach threshold), moving cap, smoothing speed 16, 0.045 maximum travel, return on release, and visual affordance. Replace only the model mesh to use custom art, keeping the collider stationary and moving only the cap.
 
 The rig needs an active XR Poke Interactor at the hands, a shared XR Interaction Manager, and matching interaction/physics layers (sample buttons use Default). The sample also permits ray selection; use interaction layers if only hands should reach the buttons. The adapter can also reference existing `VRPressButton` tutorial buttons; it resets their latch before enabling them.
+
+
 
 
 

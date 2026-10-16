@@ -56,10 +56,14 @@ public sealed class MissileLauncherControllerEditor : Editor
         launchers.GetArrayElementAtIndex(0).objectReferenceValue = launcher;
         actionSettings.ApplyModifiedProperties();
 
+        var tutorialAudio = Undo.AddComponent<AudioSource>(root);
+        tutorialAudio.playOnAwake = false;
+        tutorialAudio.loop = false;
         var orchestrator = Undo.AddComponent<MissileLauncherTutorialOrchestrator>(root);
         var tutorialSettings = new SerializedObject(orchestrator);
         tutorialSettings.FindProperty("buttons").objectReferenceValue = buttons;
         tutorialSettings.FindProperty("actions").objectReferenceValue = actions;
+        tutorialSettings.FindProperty("tutorialAudioSource").objectReferenceValue = tutorialAudio;
         tutorialSettings.ApplyModifiedProperties();
         Undo.CollapseUndoOperations(group);
         Selection.activeGameObject = root;

@@ -104,4 +104,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   facingAxis: 4
-  worldYOffset: -10
+  worldYOffset: -15
