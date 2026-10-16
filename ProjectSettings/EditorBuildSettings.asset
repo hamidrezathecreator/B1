@@ -6,20 +6,17 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Menu.unity
+    guid: 09921c85a75107f4fa553ea936aa612f
+  - enabled: 1
     path: Assets/Scenes/B1.unity
     guid: e856ab703ecac954689629910a5cfb74
   - enabled: 1
-    path: Assets/Temp/Menu.unity
-    guid: 62af6d4dc1cbb8b4bb9ff64667f89ec0
+    path: Assets/Scenes/Hospital.unity
+    guid: 13ef3fd923adcd646bd6eb700c078072
   - enabled: 1
-    path: Assets/Temp/Main Scene.unity
-    guid: af87ea2778d59974dad5c8d57fd192f0
-  - enabled: 1
-    path: Assets/Temp/ketabKhaneScene.unity
-    guid: 4524b66e44fd25440aa217438583962b
-  - enabled: 1
-    path: Assets/Temp/Video.unity
-    guid: 9b051264e83a33541b714a54ee36f13b
+    path: Assets/Scenes/Missiles.unity
+    guid: c4df2151244d6b64d8f51c2ad8646de2
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: bfa1182bd221b4ca89619141f66f1260, type: 2}
     Unity.XR.WindowsMR.Settings: {fileID: 11400000, guid: dc5a169419fa04987b057f65238cf3ba, type: 2}

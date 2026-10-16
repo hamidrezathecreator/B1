@@ -9982,9 +9982,9 @@ MonoBehaviour:
   sceneToLoad: B1
   delayBeforeLoad: 0
   fade: 1
-  fadeOutSeconds: 0.35
-  holdBlackSeconds: 0
-  fadeInSeconds: 0.35
+  fadeOutSeconds: 1
+  holdBlackSeconds: 0.5
+  fadeInSeconds: 1
 --- !u!4 &888288022
 Transform:
   m_ObjectHideFlags: 0
@@ -19745,7 +19745,7 @@ Light:
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
   m_Shadows:
-    m_Type: 2
+    m_Type: 1
     m_Resolution: -1
     m_CustomResolution: -1
     m_Strength: 1
@@ -23653,8 +23653,38 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 0e9aa35e43f21cc4c929f4780891f417, type: 3}
       insertIndex: -1
       addedObject: {fileID: 183339735}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 0e9aa35e43f21cc4c929f4780891f417, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1999034772}
   m_SourcePrefab: {fileID: 100100000, guid: 0e9aa35e43f21cc4c929f4780891f417, type: 3}
+--- !u!1 &1999034771 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 0e9aa35e43f21cc4c929f4780891f417, type: 3}
+  m_PrefabInstance: {fileID: 1999034770}
+  m_PrefabAsset: {fileID: 0}
+--- !u!64 &1999034772
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999034771}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: -8319201950373552244, guid: 0e9aa35e43f21cc4c929f4780891f417, type: 3}
 --- !u!1001 &2000814672
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -5405,7 +5405,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0317534bc83b42c8a5e71a4d6b53e7e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
-  shakePivot: {fileID: 866790202}
+  shakePivot: {fileID: 1483102144}
   strength: {x: 0.003, y: 0.002, z: 0}
   duration: 0.18
   frequency: 18
@@ -9692,11 +9692,6 @@ PrefabInstance:
 --- !u!20 &866790198 stripped
 Camera:
   m_CorrespondingSourceObject: {fileID: 1767192439, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
-  m_PrefabInstance: {fileID: 1483102143}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &866790202 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1767192434, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
   m_PrefabInstance: {fileID: 1483102143}
   m_PrefabAsset: {fileID: 0}
 --- !u!4 &868316223 stripped
@@ -16746,6 +16741,11 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 431200650}
   m_SourcePrefab: {fileID: 100100000, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+--- !u!4 &1483102144 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+  m_PrefabInstance: {fileID: 1483102143}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &1485068440 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5389714785122409429, guid: 07c5f045f92456e4ba149a48e0413134, type: 3}
