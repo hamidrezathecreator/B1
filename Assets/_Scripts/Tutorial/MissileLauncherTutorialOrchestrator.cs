@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Serialization;
+using UnityEngine.Video;
 
 [System.Serializable]
 public sealed class MusicVolumeRequestEvent : UnityEvent<float, float> { }
@@ -10,7 +11,7 @@ public sealed class MusicVolumeRequestEvent : UnityEvent<float, float> { }
 [RequireComponent(typeof(AudioSource))]
 public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 {
-    public enum TutorialPhase { Idle, ShowingRotateCard, AwaitingRotate, Rotating, ShowingFireCard, AwaitingFire, Firing, Completed, Failed, PlayingRotateAudio, PlayingFireAudio, WaitingToBegin }
+    public enum TutorialPhase { Idle, ShowingRotateCard, AwaitingRotate, Rotating, ShowingFireCard, AwaitingFire, Firing, Completed, Failed, PlayingRotateAudio, PlayingFireAudio, WaitingToBegin, WaitingForFinalLogo, PreparingFinalLogo, PlayingFinalLogo, ReturningToMenu }
 
     [SerializeField] MissileLauncherButtons buttons;
     [SerializeField] MissileLauncherActions actions;
@@ -38,19 +39,40 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     [SerializeField] bool beginAfterDelay = true;
     [Tooltip("Seconds to wait before the first sound/card. Also applied when Begin is called by a Timeline signal.")]
     [SerializeField, Min(0f)] float beginDelay = 3f;
+    [Header("Final logo and return to menu")]
+    [SerializeField] bool showFinalLogo = true;
+    [Tooltip("Existing CanvasGroup containing your logo RawImage. UI/video rendering settings are left as authored.")]
+    [SerializeField] CanvasGroup finalLogoGroup;
+    [SerializeField] VideoPlayer finalLogoPlayer;
+    [Tooltip("Delay after all launcher firing sequences complete, before preparing and showing the logo.")]
+    [SerializeField, Min(0f)] float finalLogoDelay = 3f;
+    [SerializeField, Min(0f)] float finalLogoFadeInDuration = 1f;
+    [SerializeField, Min(0.1f)] float finalLogoPrepareTimeout = 30f;
+    [SerializeField] SceneTransitionManager sceneTransitionManager;
+    [SerializeField] string menuSceneName = "Menu";
     public UnityEvent tutorialCompleted = new UnityEvent();
     public UnityEvent tutorialFailed = new UnityEvent();
     public TutorialPhase Phase { get; private set; }
     Coroutine cardRoutine;
     Coroutine introRoutine;
     Coroutine beginRoutine;
+    Coroutine finalLogoRoutine;
     bool ownsAudioPlayback;
+    bool ownsLogoPlayback;
+    bool finalLogoFinished;
+    string finalLogoError;
 
     void Awake()
     {
         if (tutorialAudioSource == null) tutorialAudioSource = GetComponent<AudioSource>();
         if (tutorialAudioSource == null) tutorialAudioSource = gameObject.AddComponent<AudioSource>();
         tutorialAudioSource.playOnAwake = false;
+        if (finalLogoGroup != null) finalLogoGroup.alpha = 0f;
+        if (showFinalLogo && finalLogoPlayer != null)
+        {
+            finalLogoPlayer.playOnAwake = false;
+            finalLogoPlayer.Stop();
+        }
         HideCardsImmediate();
     }
 
@@ -80,6 +102,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         if (!Application.isPlaying || !isActiveAndEnabled) return;
         StopBeginDelay();
         StopIntroAudio();
+        StopFinalLogo();
         if (buttons == null || !buttons.isActiveAndEnabled || !buttons.IsConfigured || actions == null || !actions.isActiveAndEnabled ||
             rotateCard == null || fireCard == null || rotateCard == fireCard ||
             !rotateCard.gameObject.activeInHierarchy || !fireCard.gameObject.activeInHierarchy)
@@ -209,12 +232,105 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     void OnAllLaunchSequencesCompleted()
     {
         if (Phase != TutorialPhase.Firing) return;
+        if (showFinalLogo)
+        {
+            Phase = TutorialPhase.WaitingForFinalLogo;
+            finalLogoRoutine = StartCoroutine(PlayFinalLogoAndReturn());
+            return;
+        }
         Phase = TutorialPhase.Completed;
         tutorialCompleted.Invoke();
     }
 
+    bool FinalLogoReferencesReady() => finalLogoGroup != null && finalLogoGroup != rotateCard && finalLogoGroup != fireCard &&
+        finalLogoGroup.gameObject.activeInHierarchy && finalLogoPlayer != null && finalLogoPlayer.isActiveAndEnabled &&
+        sceneTransitionManager != null && sceneTransitionManager.isActiveAndEnabled;
+
+    IEnumerator PlayFinalLogoAndReturn()
+    {
+        if (!FinalLogoReferencesReady() || string.IsNullOrWhiteSpace(menuSceneName) || !Application.CanStreamedLevelBeLoaded(menuSceneName.Trim()))
+        {
+            Debug.LogError("Assign an active final-logo CanvasGroup, VideoPlayer, SceneTransitionManager, and a menu scene enabled in Build Settings.", this);
+            Fail();
+            yield break;
+        }
+        buttons.DisableButtons();
+        finalLogoGroup.alpha = 0f;
+        var elapsed = 0f;
+        while (elapsed < finalLogoDelay)
+        {
+            yield return null;
+            elapsed += Time.unscaledDeltaTime;
+        }
+        if (!FinalLogoReferencesReady()) { Fail(); yield break; }
+        Phase = TutorialPhase.PreparingFinalLogo;
+        finalLogoFinished = false;
+        finalLogoError = null;
+        finalLogoPlayer.loopPointReached += OnFinalLogoFinished;
+        finalLogoPlayer.errorReceived += OnFinalLogoError;
+        ownsLogoPlayback = true;
+        finalLogoPlayer.Stop();
+        finalLogoPlayer.isLooping = false;
+        finalLogoPlayer.Prepare();
+        elapsed = 0f;
+        while (FinalLogoReferencesReady() && !finalLogoPlayer.isPrepared && finalLogoError == null && elapsed < finalLogoPrepareTimeout)
+        {
+            yield return null;
+            elapsed += Time.unscaledDeltaTime;
+        }
+        if (!FinalLogoReferencesReady() || finalLogoError != null || !finalLogoPlayer.isPrepared)
+        {
+            Debug.LogError("Final logo could not be prepared: " + (finalLogoError ?? "player unavailable or preparation timed out."), this);
+            Fail();
+            yield break;
+        }
+        Phase = TutorialPhase.PlayingFinalLogo;
+        finalLogoPlayer.Play();
+        elapsed = 0f;
+        while (elapsed < finalLogoFadeInDuration)
+        {
+            if (!FinalLogoReferencesReady() || finalLogoError != null) { Fail(); yield break; }
+            elapsed += Time.unscaledDeltaTime;
+            finalLogoGroup.alpha = Mathf.Clamp01(elapsed / finalLogoFadeInDuration);
+            yield return null;
+        }
+        finalLogoGroup.alpha = 1f;
+        while (!finalLogoFinished && finalLogoError == null && FinalLogoReferencesReady()) yield return null;
+        if (!FinalLogoReferencesReady() || finalLogoError != null) { Fail(); yield break; }
+
+        // Keep the last video frame visible while the scene manager fades to the menu.
+        UnbindFinalLogoEvents();
+        finalLogoRoutine = null;
+        Phase = TutorialPhase.ReturningToMenu;
+        sceneTransitionManager.LoadScene(menuSceneName.Trim());
+        tutorialCompleted.Invoke();
+    }
+
+    void OnFinalLogoFinished(VideoPlayer _) => finalLogoFinished = true;
+    void OnFinalLogoError(VideoPlayer _, string message) => finalLogoError = message;
+
+    void UnbindFinalLogoEvents()
+    {
+        if (finalLogoPlayer == null) return;
+        finalLogoPlayer.loopPointReached -= OnFinalLogoFinished;
+        finalLogoPlayer.errorReceived -= OnFinalLogoError;
+    }
+
+    void StopFinalLogo()
+    {
+        if (finalLogoRoutine != null) StopCoroutine(finalLogoRoutine);
+        finalLogoRoutine = null;
+        UnbindFinalLogoEvents();
+        if (ownsLogoPlayback && finalLogoPlayer != null) finalLogoPlayer.Stop();
+        ownsLogoPlayback = false;
+        finalLogoFinished = false;
+        finalLogoError = null;
+        if (finalLogoGroup != null) finalLogoGroup.alpha = 0f;
+    }
+
     void Fail()
     {
+        StopFinalLogo();
         StopBeginDelay();
         StopIntroAudio();
         Phase = TutorialPhase.Failed;
@@ -271,6 +387,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnDisable()
     {
+        StopFinalLogo();
         if (musicManager != null) musicRaiseRequested.RemoveListener(musicManager.FadeToVolume);
         StopBeginDelay();
         if (buttons != null)

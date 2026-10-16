@@ -13,6 +13,8 @@ namespace GoWhere
         [SerializeField] private PathDatabase database;
         [Tooltip("Choose uniformly from all usable routes each time this car is activated.")]
         [SerializeField] private bool randomPath = true;
+        [Tooltip("Start at a random distance along the chosen route when activated. Later laps still snap to its first point.")]
+        [SerializeField] private bool randomStartPosition = true;
         [Tooltip("Used when Random Path is disabled.")]
         [SerializeField] private string pathId;
         [SerializeField] private bool playOnStart = true;
@@ -24,8 +26,6 @@ namespace GoWhere
         [SerializeField] private bool startAtFullSpeed = true;
         [Min(0.01f)] [SerializeField] private float acceleration = 3f;
         [Min(0f)] [SerializeField] private float rotationSpeed = 180f;
-        [Tooltip("Height above the route, e.g. to match the car prefab's pivot.")]
-        [SerializeField] private float yOffset;
 
         private PathWalker _walker;
         private bool _started;
@@ -92,12 +92,11 @@ namespace GoWhere
             float lower = Mathf.Max(0.1f, Mathf.Min(minSpeed, maxSpeed));
             float upper = Mathf.Max(lower, Mathf.Max(minSpeed, maxSpeed));
             SelectedSpeed = Random.Range(lower, upper);
-            // The database returns a private copy for each car.
-            for (int i = 0; i < points.Length; i++) points[i].y += yOffset;
             _walker.SetMaxSpeed(SelectedSpeed);
             _walker.SetAcceleration(acceleration);
             _walker.SetRotationSpeed(rotationSpeed);
-            _walker.GoTo(points, id, startAtFullSpeed ? SelectedSpeed : 0f, reversed);
+            float startProgress = randomStartPosition ? Random.value : 0f;
+            _walker.GoTo(points, id, startAtFullSpeed ? SelectedSpeed : 0f, reversed, startProgress);
         }
 
         private void OnValidate()

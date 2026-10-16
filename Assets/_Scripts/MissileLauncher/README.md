@@ -38,7 +38,8 @@ The sequence is:
 2. Rotate press hides the card, disables both buttons, and rotates every assigned launcher.
 3. Wait for `rotationCompleted` from every launcher. Play **Fire Intro Sound** and wait for playback to finish. Fade in the fire card, then enable only Fire.
 4. Fire press hides the card, disables both buttons, and fires every assigned launcher.
-5. Wait for all `missileSequenceCompleted` events, then emit `tutorialCompleted`. This means all sequences dispatched their missiles, not that missile flights have ended.
+5. Wait for all `missileSequenceCompleted` events. These mean all sequences dispatched their missiles, not that missile flights have ended.
+6. With **Show Final Logo** enabled, wait **Final Logo Delay**, prepare and play the logo video while fading in its existing CanvasGroup, then return to the menu through `SceneTransitionManager` when the video finishes. `tutorialCompleted` is emitted when the menu transition is requested. With Show Final Logo off, completion is emitted immediately after step 5.
 
 Assign both intro clips in the orchestrator's **Audio Before Each Card** section. **Tutorial Audio Source** should be a dedicated, active source; it defaults to the AudioSource on the orchestrator object. Both physical buttons stay disabled during playback and card fades. An unassigned clip skips that audio step. Restart, failure, or disabling the orchestrator cancels its pending sound/card progression. Playback completion is checked on the source, including AudioListener pauses, so it is not tied to the game's time scale or a hardcoded clip-length timer.
 
@@ -47,6 +48,14 @@ Assign both intro clips in the orchestrator's **Audio Before Each Card** section
 The orchestrator subscribes automatically; do not also wire button presses directly to launchers or actions when using this tutorial. Existing panels created by the earlier **Create Wired VR Push Buttons** command should be replaced by the new setup, since they call individual launchers directly. Input action references have been removed from launcher behavior; physical presses use events.
 
 For non-tutorial use, the button adapter's `rotatePressed`/`firePressed` UnityEvents can instead call group actions. Call `EnableRotate()`/`EnableFire()` to choose the available button. Do not attach the tutorial orchestrator in that mode.
+
+## Final logo and menu
+
+In the orchestrator's **Final Logo And Return To Menu** section, assign **Final Logo Group** to the CanvasGroup containing your existing logo RawImage, **Final Logo Player** to its configured VideoPlayer, and **Scene Transition Manager** to the existing transition component. Keep these objects active and use a separate logo group from the rotate/fire cards. Set the VideoPlayer's clip or URL, target render texture, and RawImage texture as usual; the orchestrator leaves those rendering connections untouched.
+
+**Final Logo Delay** defaults to 3 seconds after all firing sequences finish. Increase it to leave more time for missile flights. **Final Logo Fade In Duration** defaults to 1 second. The video prepares while hidden, then plays once during the fade; playback completion, not a guessed duration, triggers `SceneTransitionManager.LoadScene(menuSceneName)`. **Menu Scene Name** defaults to `Menu`, which is enabled in this project's Build Settings. Transition fade settings come from the assigned manager. The final video frame stays visible while the scene transition starts.
+
+Preparation times out after **Final Logo Prepare Timeout** (default 30 seconds). Invalid references, a preparation failure, or video playback errors emit `tutorialFailed` and do not load the menu. Begin/restart and disabling cancel pending logo delay/preparation/playback and remove video event handlers.
 
 ## Music after pressing Fire
 

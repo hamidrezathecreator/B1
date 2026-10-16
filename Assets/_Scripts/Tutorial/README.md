@@ -36,4 +36,6 @@ The missile orchestrator owns card fades and enables the relevant physical butto
 
 Assign **Rotate Intro Sound** and **Fire Intro Sound** on the orchestrator to play audio before the corresponding card. The first sound starts after Begin Delay elapses; the second starts only after every assigned launcher finishes rotation. Each sound must finish before its card fades in, and only after the fade does its physical button become interactable. Use a dedicated **Tutorial Audio Source** (defaults to the source on the orchestrator). Empty clips skip playback. Restarting or disabling cancels pending playback and progression.
 
+For the final logo, assign the existing **Final Logo Group** CanvasGroup and **Final Logo Player** VideoPlayer, plus **Scene Transition Manager**. After all firing sequences complete, **Final Logo Delay** elapses, the video is prepared hidden, and the existing group fades in while it plays once. The video's completion event returns to **Menu Scene Name** (default Menu) through the scene manager's fade. Keep your VideoPlayer/RawImage render-texture setup and logo objects active. `tutorialCompleted` now fires at the menu transition request; turn off **Show Final Logo** to retain completion immediately after the firing sequences. Restart/disable cancels the pending logo stage.
+
 

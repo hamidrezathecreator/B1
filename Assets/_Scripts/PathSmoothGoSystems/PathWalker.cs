@@ -83,7 +83,9 @@ namespace GoWhere
         public void GoTo(Vector3[] points, string label = null, bool[] reversedFlags = null) =>
             GoTo(points, label, 0f, reversedFlags);
 
-        public void GoTo(Vector3[] points, string label, float initialSpeed, bool[] reversedFlags = null)
+        /// <param name="startProgress">Initial fraction of total route distance. Later laps begin at zero.</param>
+        public void GoTo(Vector3[] points, string label, float initialSpeed, bool[] reversedFlags = null,
+            float startProgress = 0f)
         {
             if (points == null || points.Length < 2)
             {
@@ -108,7 +110,7 @@ namespace GoWhere
                 ? (bool[])reversedFlags.Clone() : null;
             _currentPathId = label;
             _currentSpeed = Mathf.Clamp(initialSpeed, 0f, maxSpeed);
-            SnapToStart();
+            SnapToStart(startProgress);
             TransitionState(_currentSpeed >= maxSpeed ? MoveState.Cruising : MoveState.Accelerating);
             if (isActiveAndEnabled) MovementTickSystem.EnsureInstance().Register(this);
             onPathStarted?.Invoke();
@@ -229,12 +231,41 @@ namespace GoWhere
         private bool IsSegmentReversed(int index) =>
             _reversedFlags != null && index >= 0 && index < _reversedFlags.Length && _reversedFlags[index];
 
-        private void SnapToStart()
+        private void SnapToStart(float startProgress = 0f)
         {
             float height = transform.position.y;
             _tickPos = _pathPoints[0];
             if (lockY) _tickPos.y = height;
             _waypointIndex = 1;
+            if (startProgress > 0f)
+            {
+                float totalLength = 0f;
+                Vector3 previous = _tickPos;
+                for (int i = 1; i < _pathPoints.Length; i++)
+                {
+                    Vector3 target = GetWaypoint(i);
+                    totalLength += Vector3.Distance(previous, target);
+                    previous = target;
+                }
+
+                // Choose by distance rather than waypoint index so densely sampled
+                // corners do not attract more cars. Stay just short of the endpoint.
+                float remaining = Mathf.Clamp(startProgress, 0f, 0.999999f) * totalLength;
+                while (_waypointIndex < _pathPoints.Length)
+                {
+                    Vector3 target = GetWaypoint(_waypointIndex);
+                    float length = Vector3.Distance(_tickPos, target);
+                    if (length > 0.000001f && remaining < length)
+                    {
+                        _tickPos = Vector3.Lerp(_tickPos, target, remaining / length);
+                        break;
+                    }
+                    remaining = Mathf.Max(0f, remaining - length);
+                    _tickPos = target;
+                    _waypointIndex++;
+                }
+                _waypointIndex = Mathf.Min(_waypointIndex, _pathPoints.Length - 1);
+            }
             // Skip duplicate starting points before choosing the initial heading.
             while (_waypointIndex < _pathPoints.Length - 1 &&
                 (GetWaypoint(_waypointIndex) - _tickPos).sqrMagnitude <= 0.000001f)

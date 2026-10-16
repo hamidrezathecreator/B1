@@ -38,9 +38,15 @@ public class PathDatabaseEditor : Editor
             int suffix = index;
             while (Database.HasGlobalPath(id)) id = "CarPath_" + (++suffix);
             path.FindPropertyRelative("id").stringValue = id;
+            path.FindPropertyRelative("reverse").boolValue = false;
             path.FindPropertyRelative("points").ClearArray();
             path.FindPropertyRelative("pointReversed").ClearArray();
             path.FindPropertyRelative("pointSharp").ClearArray();
+            path.FindPropertyRelative("snapToGround").boolValue = true;
+            path.FindPropertyRelative("groundLayers").intValue = 0;
+            path.FindPropertyRelative("yOffset").floatValue = 0f;
+            path.FindPropertyRelative("groundRayHeight").floatValue = 100f;
+            path.FindPropertyRelative("groundRayDistance").floatValue = 1000f;
             path.FindPropertyRelative("overrideSmoothing").boolValue = false;
             path.FindPropertyRelative("smoothMode").enumValueIndex = 0;
             path.FindPropertyRelative("interpolationSteps").intValue = 8;
@@ -74,6 +80,18 @@ public class PathDatabaseEditor : Editor
         var selected = Database.GlobalPaths[selectedPath];
         if (selected != null)
         {
+            if (GUILayout.Button("Snap Selected Path to Ground"))
+            {
+                Undo.RecordObject(Database, "Snap Car Path to Ground");
+                selected.snapToGround = true;
+                Physics.SyncTransforms();
+                Changed();
+                SceneView.RepaintAll();
+            }
+            EditorGUILayout.HelpBox(
+                "Set Snap To Ground, Ground Layers and Y Offset on the path above. " +
+                "They apply to the entire route, including smoothed points. " +
+                "Choose ground-only layers to exclude cars and other objects.", MessageType.Info);
             if (selected.points == null || selected.points.Count < 2)
                 EditorGUILayout.HelpBox("Add at least two distinct waypoints.", MessageType.Warning);
             int matches = 0;
@@ -98,16 +116,19 @@ public class PathDatabaseEditor : Editor
         var points = path.points;
         for (int i = 0; i < points.Count; i++)
         {
+            Vector3 placedPoint = Database.GetPlacedPoint(path, points[i]);
             EditorGUI.BeginChangeCheck();
-            Vector3 point = Handles.PositionHandle(points[i], Quaternion.identity);
+            Vector3 point = Handles.PositionHandle(placedPoint, Quaternion.identity);
             if (EditorGUI.EndChangeCheck())
             {
                 Undo.RecordObject(Database, "Move Car Waypoint");
-                points[i] = point;
+                points[i] = point - Vector3.up * path.yOffset;
                 Changed();
             }
-            string label = i == 0 ? "START" : i == points.Count - 1 ? "END (snap to START)" : i.ToString();
-            Handles.Label(points[i] + Vector3.up * 0.4f, label);
+            bool isStart = i == (path.reverse ? points.Count - 1 : 0);
+            bool isEnd = i == (path.reverse ? 0 : points.Count - 1);
+            string label = isStart ? "START" : isEnd ? "END (snap to START)" : i.ToString();
+            Handles.Label(placedPoint + Vector3.up * 0.4f, label);
         }
 
         if (!placing) return;
@@ -124,7 +145,8 @@ public class PathDatabaseEditor : Editor
         HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
         Ray ray = HandleUtility.GUIPointToWorldRay(current.mousePosition);
         Vector3 position;
-        int mask = LayerMask.GetMask("Ground");
+        int mask = path.groundLayers.value;
+        if (mask == 0) mask = LayerMask.GetMask("Ground");
         if (mask == 0) mask = Physics.DefaultRaycastLayers;
         if (Physics.Raycast(ray, out var hit, Mathf.Infinity, mask, QueryTriggerInteraction.Ignore))
             position = hit.point;
@@ -136,8 +158,10 @@ public class PathDatabaseEditor : Editor
             position = ray.GetPoint(distance);
         }
         Handles.color = Color.cyan;
-        Handles.SphereHandleCap(0, position, Quaternion.identity, 0.3f, EventType.Repaint);
-        if (points.Count > 0) Handles.DrawDottedLine(points[points.Count - 1], position, 4f);
+        Vector3 placedPosition = Database.GetPlacedPoint(path, position);
+        Handles.SphereHandleCap(0, placedPosition, Quaternion.identity, 0.3f, EventType.Repaint);
+        if (points.Count > 0)
+            Handles.DrawDottedLine(Database.GetPlacedPoint(path, points[points.Count - 1]), placedPosition, 4f);
         if (current.type == EventType.MouseDown && current.button == 0 && !current.alt)
         {
             Undo.RecordObject(Database, "Add Car Waypoint");

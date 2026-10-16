@@ -56,6 +56,7 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   database: {fileID: 0}
   randomPath: 1
+  randomStartPosition: 1
   pathId:
   playOnStart: 1
   minSpeed: 5
@@ -63,7 +64,6 @@ MonoBehaviour:
   startAtFullSpeed: 1
   acceleration: 3
   rotationSpeed: 180
-  yOffset: 0
 --- !u!1 &100001
 GameObject:
   m_ObjectHideFlags: 0

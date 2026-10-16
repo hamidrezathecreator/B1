@@ -10,8 +10,29 @@ namespace GoWhere
         [Tooltip("Unique name for this car route.")]
         public string id = "CarPath";
 
+        [Tooltip("Travel from the last authored waypoint to the first. Cars face the travel direction and snap back to the last waypoint at the end of each lap.")]
+        public bool reverse;
+
         [Tooltip("Ordered world-space waypoints. Cars snap from the end back to the start; do not close the path.")]
         public List<Vector3> points = new List<Vector3>();
+
+        [Header("Ground Placement (whole path)")]
+        [Tooltip("Project every smoothed waypoint onto ground colliders before applying Y Offset.")]
+        public bool snapToGround = true;
+
+        [Tooltip("Ground collider layers. Nothing automatically uses the Ground layer, or all raycast layers if it is absent.")]
+        public LayerMask groundLayers;
+
+        [Tooltip("Vertical offset added to the whole path after ground snapping. Also applies with snapping disabled.")]
+        public float yOffset;
+
+        [Min(0.01f)]
+        [Tooltip("Start each downward ground ray this far above the waypoint's authored height.")]
+        public float groundRayHeight = 100f;
+
+        [Min(0.01f)]
+        [Tooltip("Maximum downward distance from the ray start. A missed ray keeps the authored height plus Y Offset.")]
+        public float groundRayDistance = 1000f;
 
         [Tooltip("Per-waypoint reverse flag — same length as points.")]
         public List<bool> pointReversed = new List<bool>();
@@ -114,7 +135,8 @@ namespace GoWhere
         public Vector3[] GetRawGlobalPath(string id)
         {
             int index = IndexOfGlobal(id);
-            return index < 0 ? null : globalPaths[index].points?.ToArray();
+            if (index < 0) return null;
+            return ApplyGroundPlacement(globalPaths[index], globalPaths[index].points?.ToArray());
         }
 
         /// <summary>Uniformly selects a usable route, ignoring empty and stationary paths.</summary>
@@ -165,16 +187,45 @@ namespace GoWhere
         private Vector3[] LinearResample(Vector3[] points, int steps) =>
             PathSmoothing.LinearResample(points, steps);
 
+        /// <summary>Resolve one authored position using the route's ground and height settings.</summary>
+        public Vector3 GetPlacedPoint(GlobalPathData path, Vector3 point)
+        {
+            if (path.snapToGround)
+            {
+                int mask = path.groundLayers.value;
+                if (mask == 0)
+                {
+                    mask = LayerMask.GetMask("Ground");
+                    if (mask == 0) mask = Physics.DefaultRaycastLayers;
+                }
+                Vector3 origin = point + Vector3.up * Mathf.Max(0.01f, path.groundRayHeight);
+                if (Physics.Raycast(origin, Vector3.down, out var hit,
+                    Mathf.Max(0.01f, path.groundRayDistance), mask, QueryTriggerInteraction.Ignore))
+                    point.y = hit.point.y;
+            }
+            point.y += path.yOffset;
+            return point;
+        }
+
+        private Vector3[] ApplyGroundPlacement(GlobalPathData path, Vector3[] points)
+        {
+            if (points == null) return null;
+            for (int i = 0; i < points.Length; i++) points[i] = GetPlacedPoint(path, points[i]);
+            // Reverse the resolved copy, preserving the authored points and smoothing.
+            if (path.reverse) Array.Reverse(points);
+            return points;
+        }
+
         private Vector3[] BuildSmoothedGlobal(GlobalPathData path)
         {
             if (path.points == null || path.points.Count < 2)
-                return path.points?.ToArray() ?? Array.Empty<Vector3>();
+                return ApplyGroundPlacement(path, path.points?.ToArray() ?? Array.Empty<Vector3>());
 
             Vector3[]  arr   = path.points.ToArray();
             SmoothMode mode  = path.overrideSmoothing ? path.smoothMode        : smoothMode;
             int        steps = Mathf.Clamp(path.overrideSmoothing ? path.interpolationSteps : interpolationSteps, 2, 30);
 
-            if (mode == SmoothMode.None) return arr;
+            if (mode == SmoothMode.None) return ApplyGroundPlacement(path, arr);
 
             var result   = new List<Vector3>();
             int n        = arr.Length;
@@ -205,10 +256,24 @@ namespace GoWhere
                 }
             }
 
-            return result.ToArray();
+            // Project after smoothing so intermediate samples follow uneven ground too.
+            // Authored points stay untouched, so rebuilding never accumulates offsets.
+            return ApplyGroundPlacement(path, result.ToArray());
         }
 
         private bool[] BuildReversedFlagsGlobal(GlobalPathData path)
+        {
+            bool[] flags = BuildForwardReversedFlagsGlobal(path);
+            if (!path.reverse || flags == null) return flags;
+
+            // Flags describe backing on the segment ending at each waypoint.
+            // Move each flag to the same physical segment in the opposite traversal.
+            var reversed = new bool[flags.Length];
+            for (int i = 1; i < flags.Length; i++) reversed[i] = flags[flags.Length - i];
+            return reversed;
+        }
+
+        private bool[] BuildForwardReversedFlagsGlobal(GlobalPathData path)
         {
             if (path.points == null || path.points.Count < 2) return null;
             if (path.pointReversed == null || path.pointReversed.Count == 0) return null;
@@ -248,7 +313,8 @@ namespace GoWhere
 
 
 #if UNITY_EDITOR
-        private void OnValidate() => RebuildCache();
+        // Physics queries run when rebuilding on the main thread, not in OnValidate.
+        private void OnValidate() => globalSmoothedCache = null;
 
         public Vector3[] Editor_GetSmoothedGlobalPoints(int index)
         {
