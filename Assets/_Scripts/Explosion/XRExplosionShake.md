@@ -48,6 +48,12 @@ argument is clamped to 0..1. Zero/negative values are ignored. These one-shot
 calls have no distance attenuation: the explosion decides when to send the
 event and what intensity to request. Rising shake handles distance separately.
 
+Set **Delay** under **Small positional shake** to the shock travel time in
+seconds. It defaults to 0 (immediate) and delays each launch/impact or explicit
+shake call without shortening its duration. Rising shake is unaffected. The
+delay follows **Use Unscaled Time**; stopping or disabling shake cancels pending
+pulses.
+
 ## Rising shake
 
 The container-to-sky `MissileProjectile` system also registers active flights.

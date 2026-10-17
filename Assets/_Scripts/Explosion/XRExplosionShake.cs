@@ -1,3 +1,4 @@
+using System.Collections;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 
@@ -12,6 +13,8 @@ public sealed class XRExplosionShake : MonoBehaviour
     [SerializeField] private Transform shakePivot;
 
     [Header("Small positional shake (local units; normally metres)")]
+    [Tooltip("Seconds from a launch/impact or Shake call until its positional shake starts. Rising shake is unaffected.")]
+    [Min(0f)] [SerializeField] private float delay = 0f;
     [SerializeField] private Vector3 strength = new Vector3(0.003f, 0.002f, 0f);
     [Min(0.01f)] [SerializeField] private float duration = 0.18f;
     [Min(1f)] [SerializeField] private float frequency = 18f;
@@ -74,6 +77,24 @@ public sealed class XRExplosionShake : MonoBehaviour
             return;
         if (!TryInitialize()) return;
 
+        if (delay > 0f)
+            StartCoroutine(DelayedPulse(Mathf.Clamp01(value), delay));
+        else
+            StartPulse(Mathf.Clamp01(value));
+    }
+
+    private IEnumerator DelayedPulse(float value, float remaining)
+    {
+        while (remaining > 0f)
+        {
+            yield return null;
+            remaining -= useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
+        }
+        if (shakeEnabled) StartPulse(value);
+    }
+
+    private void StartPulse(float value)
+    {
         // Keep one waveform running while missiles overlap. Hits never add to
         // the offset or weaken an existing stronger pulse.
         intensity = Mathf.Max(GetPulseIntensity(), Mathf.Clamp01(value));
@@ -84,6 +105,12 @@ public sealed class XRExplosionShake : MonoBehaviour
 
     /// <summary>Stop immediately and restore the pivot.</summary>
     public void StopShake()
+    {
+        StopAllCoroutines();
+        StopMotion();
+    }
+
+    private void StopMotion()
     {
         if (shaking && cachedPivot != null) cachedPivot.localPosition = restPosition;
         shaking = false;
@@ -203,7 +230,8 @@ public sealed class XRExplosionShake : MonoBehaviour
         float combinedIntensity = Mathf.Clamp01(Mathf.Max(GetPulseIntensity(), currentRisingIntensity));
         if (!shakeEnabled || cachedPivot == null || combinedIntensity <= 0f)
         {
-            StopShake();
+            if (!shakeEnabled || cachedPivot == null) StopShake();
+            else StopMotion();
             return;
         }
 
