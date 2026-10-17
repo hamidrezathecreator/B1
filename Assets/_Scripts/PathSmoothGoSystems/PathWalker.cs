@@ -145,7 +145,7 @@ namespace GoWhere
 
         public void Resume()
         {
-            if (_pathPoints == null || _state is not (MoveState.Paused or MoveState.Stopped)) return;
+            if (_pathPoints == null || _state is not (MoveState.Paused or MoveState.Stopped or MoveState.Braking)) return;
             TransitionState(MoveState.Accelerating);
             if (isActiveAndEnabled) MovementTickSystem.EnsureInstance().Register(this);
             onResumed?.Invoke();

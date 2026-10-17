@@ -12,6 +12,12 @@ public sealed class MissileLaunchedEvent : UnityEvent<MissileProjectile> { }
 
 public sealed class MissileLauncherController : MonoBehaviour
 {
+    /// <summary>One notification per missile dispatched by this container launcher.</summary>
+    public static event System.Action<MissileLauncherController> MissileFired;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetFireEvent() => MissileFired = null;
+
     [System.Serializable]
     public sealed class MissileSlot
     {
@@ -148,6 +154,7 @@ public sealed class MissileLauncherController : MonoBehaviour
             // Scene missiles keep their authored pose, even when a launch point is assigned.
             var direction = missile.transform.TransformDirection(localSkyDirection.sqrMagnitude > 0.0001f ? localSkyDirection.normalized : Vector3.up);
             missile.Launch(missile.transform.position + direction * skyDistance, arcHeight, flightCurve);
+            MissileFired?.Invoke(this);
             missileLaunched?.Invoke(missile);
             var wait = delayBetweenMissiles + slot.extraDelay + Random.Range(-randomDelay, randomDelay);
             if (wait > 0f) yield return new WaitForSeconds(wait);

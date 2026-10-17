@@ -1,57 +1,88 @@
 # XR explosion shake
 
-Add `XRExplosionShake` to the GameObject that has `XROrigin`.
-Create an empty `Shake Pivot` directly under the existing `Camera Offset`.
-Reset the pivot's local position/rotation to zero and scale to one, then move
-Main Camera and both controller roots beneath it, preserving their transforms:
+Add `XRExplosionShake` to the GameObject that has `XROrigin`. B1 and Missiles
+are already configured. Leave **Shake Pivot** empty for automatic setup: on the
+first shake the script creates an identity pivot under Camera Offset and moves
+all offset children beneath it, preserving their local poses. Invalid old
+assignments (including the XR Origin itself) also use this automatic setup.
 
 ```text
 XR Origin  [XROrigin, XRExplosionShake]
   Camera Offset  [keep this assigned as Camera Floor Offset Object]
-    Shake Pivot  [assign to XRExplosionShake.Shake Pivot]
+    Explosion Shake Pivot  [created at runtime, or assigned manually]
       Main Camera  [keep its tracked pose driver]
       Left Controller
       Right Controller
 ```
 
-Include tracked hand roots here too if your rig uses them. Keep the XR Origin's
-Camera reference pointing at Main Camera. Only the shake script should animate
-the pivot's local position; locomotion still moves the XR Origin. The script
-does not automatically modify any scene or rig hierarchy.
+For a manually authored pivot, include all controller and tracked hand roots.
+Keep the XR Origin's Camera reference pointing at Main Camera and Camera Floor
+Offset Object pointing at Camera Offset. Only the shake script should animate
+the pivot; locomotion still moves the XR Origin. Automatic hierarchy changes
+exist only at runtime and are not saved into the scene.
 
 ## Explosion events
 
-In an explosion's UnityEvent, add the XR Origin GameObject and choose
-`XRExplosionShake > Shake()`. For example, use a missile's `flightCompleted`
-event if impact is when the explosion occurs. For a custom C# event, subscribe
-`shake.Shake` when enabled and unsubscribe when disabled.
+Missile shakes require no Timeline signals or Inspector event wiring. The rig
+subscribes when enabled and unsubscribes when disabled. Events are filtered to
+the rig's own scene, keeping the two missile systems independent even with
+additive scene loading:
+
+- `MissileAToB/MissileLauncherSystem` emits `MissileImpacted(source, position)`
+  every time an individual missile reaches its endpoint, independently of quad
+  playback. Enable **Shake On A To B Impact** on the rig (enabled in B1).
+- `MissileLauncher/MissileLauncherController` emits `MissileFired(source)` for
+  each missile immediately after `Launch`. Enable **Shake On Launcher Fire**
+  on the rig (enabled in Missiles). Rotation, sequence completion, and reaching
+  the sky endpoint do not trigger this shake.
+
+The existing Timeline callbacks to `Shake()` have been disconnected in B1,
+Menu, and Hospital. Other Timeline reactions are unchanged. Neither missile
+system references the other or contains XR rig logic.
+
+Other gameplay systems can call `Shake()` from a UnityEvent, or subscribe
+`shake.Shake` to a custom C# event when enabled and unsubscribe when disabled.
 
 Code can also call `shake.ShakeWithStrength(0.5f)` for half strength. The
-argument is clamped to 0..1. Zero/negative values are ignored. There is no
-automatic explosion detection or distance attenuation: the explosion decides
-when to send the event and what intensity to request.
+argument is clamped to 0..1. Zero/negative values are ignored. These one-shot
+calls have no distance attenuation: the explosion decides when to send the
+event and what intensity to request. Rising shake handles distance separately.
 
-## Timeline signals
+## Rising shake
 
-1. Add a `Signal Receiver` component to the XR Origin GameObject.
-2. Add a Signal Track to the Timeline and bind it to that receiver.
-3. Add a Signal Emitter at the explosion time and assign/create a Signal Asset.
-4. In the receiver, add a reaction for that same Signal Asset. Add the XR Origin
-   GameObject to the reaction and select `XRExplosionShake > Shake()`.
+The container-to-sky `MissileProjectile` system also registers active flights.
+With **Rising Shake Enabled**, the rig continuously measures each active
+missile's distance from the headset. This is configured in Missiles and disabled
+in B1; the A-to-B missile system does not participate.
 
-Use `StopShake()` for a separate stop signal if needed. The shake runs in Play
-Mode; Timeline edit-mode scrubbing does not animate it. Use Emit Once on the
-signal when it should fire once per playback rather than on every loop, and
-leave Retroactive disabled if seeking past the explosion should not trigger it.
+- **Rising Intensity**: fraction of the main Strength at close range (default 0.6).
+- **Rising Full Strength Distance**: full intensity within this distance (default 5 world units).
+- **Rising Max Distance**: fades linearly to zero here (default 60 world units).
+- **Rising Fade Time**: seconds to ramp one full intensity unit up/down (default 0.15), smoothing starts, ends, and source changes.
+
+Only the strongest nearby missile contributes. Rising shake and launch/impact
+pulses also use their maximum, never their sum. They share a continuous waveform
+and the main Strength limit, so launching many missiles does not stack motion
+or restart the rising waveform. Completed, reset, disabled, or destroyed missiles
+leave the active-flight registry; there is no shake from missiles sitting at
+their sky endpoints. Re-enabling the rig during flight picks up active missiles.
+`SetShakeEnabled(false)` disables both effects. `StopShake()` clears the current
+motion immediately; active missiles can start rising shake again next frame.
+
+The component context menu **Test Shake (Play Mode)** lets you check the effect
+without firing missiles. `StopShake()` immediately restores the pivot.
 
 ## Behavior and tuning
 
 Defaults are a 0.18-second fading shake with 0.003/0.002 local-unit strength on
-X/Y (3/2 mm at unit rig scale), no Z movement, and no rotation. PrimeTween updates
-the pivot in LateUpdate; headset/controller tracking keeps owning the tracked
-children. Repeated hits restart one shake from its original resting position,
-so they cannot stack or drift. Completion, stopping, disabling, and destruction
-restore the pivot. Scaled time is the default so paused gameplay also pauses
+X/Y (3/2 mm at unit rig scale), no Z movement, and no rotation. The script updates
+the pivot in LateUpdate and reapplies the same offset before XR rendering;
+headset/controller tracking keeps owning the tracked children. It never writes
+the tracked camera, locomotion origin, or floor-height offset. Repeated hits
+refresh the pulse envelope without restarting a running waveform, so they cannot
+stack or drift. When both the pulse and rising shake finish, the resting position
+is restored. Stopping, disabling, and destruction also restore the pivot.
+Scaled time is the default so paused gameplay also pauses
 the effect; enable Use Unscaled Time when desired.
 
 Small artificial view motion can still be uncomfortable in VR. Start with these

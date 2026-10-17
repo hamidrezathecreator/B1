@@ -13,6 +13,12 @@ Assign **Flight Particle Prefab** to spawn exhaust/trail particles attached to t
 
 Attached flight particles ramp from **Particle Starting Power** (default 0.05, or 5%) to the prefab's full power over **Particle Ramp Duration** (default 1.25 seconds). This smoothly scales emission rates, burst counts, starting size, and starting speed, including child particle systems. Prewarmed particles are cleared so the effect starts gently. Increase the duration for a slower buildup, or set starting power to 0 to start from nothing. These controls affect the attached flight effect; separate launch/ignition particles remain unchanged.
 
+## Flight audio
+
+`Flight Sounds` contains loopable clips: one is chosen randomly per launch and loops on a separate 3D AudioSource attached to the missile. It stops on flight completion, reset, disable, or destruction. Initiation sounds still play once on the existing Audio Source.
+
+Set **Flight Sound Volume** for the loop level (also multiplied by the existing Audio Source volume). **Flight Sound Min Distance** defaults to 1 world unit for full volume; volume decreases linearly to silence at **Flight Sound Max Distance** (default 100). Distances are measured from the active AudioListener. The loop uses the existing Audio Source's mixer routing, pitch, priority, and mute setting when assigned, and works without an assigned source. Doppler is disabled to preserve the loop's pitch during accelerating flight.
+
 ## Attached trembling flight light
 
 Assign **Flight Light Prefab** to a prefab containing `MissileLaunchLight`. The provided **Flight Light.prefab** uses intensity 6–12, tremble speed 18, and a random noise offset per instance so missiles flicker independently. Optionally assign a child nozzle as **Flight Light Anchor** and set the local position/rotation offsets. It follows the missile, builds brightness using the same starting-power/ramp-duration controls as the attached particles, and is removed on flight completion or reset. The missile in `Scenes/Missiles.unity` is already assigned this prefab. The stationary launch flash retains its own prefab and lifetime.

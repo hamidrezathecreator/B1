@@ -9,6 +9,12 @@ using UnityEngine.Events;
 [DisallowMultipleComponent]
 public sealed class MissileLauncherSystem : MonoBehaviour
 {
+    /// <summary>One notification per arriving missile, independent of quad playback.</summary>
+    public static event System.Action<MissileLauncherSystem, Vector3> MissileImpacted;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetImpactEvent() => MissileImpacted = null;
+
     [Header("Flight")]
     [Tooltip("Missile prefab assets. Each shot randomly picks one of the non-empty entries.")]
     [SerializeField] private GameObject[] missilePrefabs = new GameObject[0];
@@ -197,6 +203,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
 
     private void HandleArrival(Vector3 impactPosition)
     {
+        MissileImpacted?.Invoke(this, impactPosition);
         if (!ValidatePrefab()) return;
 
         // Anchor to the captured endpoint, then apply the quad's world-space height adjustment.

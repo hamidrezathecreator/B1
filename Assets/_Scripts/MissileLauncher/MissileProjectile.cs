@@ -1,9 +1,28 @@
 ﻿using UnityEngine;
 using UnityEngine.Events;
+using System.Collections.Generic;
 
 /// <summary>Missile flight for prefab instances and missiles placed in a scene.</summary>
 public sealed class MissileProjectile : MonoBehaviour
 {
+    // Register only this projectile system, avoiding scene searches during flight.
+    static readonly HashSet<MissileProjectile> activeFlights = new HashSet<MissileProjectile>();
+    public static IReadOnlyCollection<MissileProjectile> ActiveFlights => activeFlights;
+    public bool IsInFlight { get; private set; }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetActiveFlights() => activeFlights.Clear();
+
+    void EndFlight()
+    {
+        IsInFlight = false;
+        activeFlights.Remove(this);
+        if (flightAudioSource != null) flightAudioSource.Stop();
+    }
+
+    void OnDisable() => EndFlight();
+    void OnDestroy() => EndFlight();
+
     [Header("Flight")]
     [SerializeField, Min(0.01f)] float flightDuration = 2.5f;
     [Tooltip("1 is constant progress; 2 starts slowly and continuously accelerates. Higher values spend longer near the launcher.")]
@@ -38,6 +57,12 @@ public sealed class MissileProjectile : MonoBehaviour
     [SerializeField] AudioSource audioSource;
     [SerializeField] AudioClip[] initiationSounds;
     [SerializeField] AudioClip[] flightSounds;
+    [Tooltip("Flight loop volume before distance attenuation.")]
+    [SerializeField, Range(0f, 1f)] float flightSoundVolume = 1f;
+    [Tooltip("Distance from the listener within which the flight loop plays at full volume.")]
+    [SerializeField, Min(0.01f)] float flightSoundMinDistance = 1f;
+    [Tooltip("Distance from the listener at which the flight loop becomes silent.")]
+    [SerializeField, Min(0.02f)] float flightSoundMaxDistance = 100f;
 
     public UnityEvent launched;
     public UnityEvent flightCompleted;
@@ -54,6 +79,7 @@ public sealed class MissileProjectile : MonoBehaviour
     GameObject flightParticleInstance;
     ParticleSystem[] flightParticleSystems;
     ParticlePowerSettings[] particlePowerSettings;
+    AudioSource flightAudioSource;
 
     sealed class ParticlePowerSettings
     {
@@ -76,6 +102,7 @@ public sealed class MissileProjectile : MonoBehaviour
     public void ResetProjectile()
     {
         if (!Application.isPlaying || !poseCaptured) return;
+        EndFlight();
         StopAllCoroutines();
         if (launchLightInstance != null) Destroy(launchLightInstance);
         ClearFlightParticles();
@@ -113,6 +140,8 @@ public sealed class MissileProjectile : MonoBehaviour
         enabled = true;
         transform.SetParent(null, true);
         launchedOnce = true;
+        IsInFlight = true;
+        activeFlights.Add(this);
         if (launchParticles != null)
             foreach (var particle in launchParticles) if (particle != null) { particle.gameObject.SetActive(true); particle.Play(true); }
         PlayRandom(initiationSounds);
@@ -130,7 +159,7 @@ public sealed class MissileProjectile : MonoBehaviour
         var start = transform.position;
         var duration = Mathf.Max(0.01f, flightDuration);
         var activeCurve = curve != null && curve.length > 0 ? curve : defaultFlightCurve;
-        PlayRandom(flightSounds);
+        PlayFlightSound();
         var elapsed = 0f;
         while (elapsed < duration)
         {
@@ -148,6 +177,7 @@ public sealed class MissileProjectile : MonoBehaviour
             yield return null;
         }
         transform.position = target;
+        EndFlight();
         StopFlightParticles();
         ClearFlightLight();
         flightCompleted?.Invoke();
@@ -293,6 +323,36 @@ public sealed class MissileProjectile : MonoBehaviour
         var instance = Instantiate(launchLightPrefab, transform.position + transform.TransformVector(launchLightOffset), Quaternion.identity);
         launchLightInstance = instance;
         if (launchLightLifetime > 0f) Destroy(instance, launchLightLifetime);
+    }
+
+    void PlayFlightSound()
+    {
+        if (flightSounds == null || flightSounds.Length == 0) return;
+        var clip = flightSounds[Random.Range(0, flightSounds.Length)];
+        if (clip == null) return;
+        if (flightAudioSource == null)
+        {
+            var soundObject = new GameObject("Flight Audio");
+            soundObject.transform.SetParent(transform, false);
+            flightAudioSource = soundObject.AddComponent<AudioSource>();
+        }
+        flightAudioSource.playOnAwake = false;
+        flightAudioSource.loop = true;
+        flightAudioSource.spatialBlend = 1f;
+        flightAudioSource.rolloffMode = AudioRolloffMode.Linear;
+        flightAudioSource.minDistance = Mathf.Max(0.01f, flightSoundMinDistance);
+        flightAudioSource.maxDistance = Mathf.Max(flightAudioSource.minDistance + 0.01f, flightSoundMaxDistance);
+        flightAudioSource.dopplerLevel = 0f;
+        flightAudioSource.volume = Mathf.Clamp01(flightSoundVolume) * (audioSource != null ? audioSource.volume : 1f);
+        if (audioSource != null)
+        {
+            flightAudioSource.outputAudioMixerGroup = audioSource.outputAudioMixerGroup;
+            flightAudioSource.pitch = audioSource.pitch;
+            flightAudioSource.priority = audioSource.priority;
+            flightAudioSource.mute = audioSource.mute;
+        }
+        flightAudioSource.clip = clip;
+        flightAudioSource.Play();
     }
 
     void PlayRandom(AudioClip[] clips)
