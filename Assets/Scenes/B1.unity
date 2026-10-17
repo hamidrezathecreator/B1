@@ -6947,7 +6947,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
   shakePivot: {fileID: 0}
-  delay: 0
+  delay: 0.5
   strength: {x: 0.1, y: 0.1, z: 0}
   duration: 1
   frequency: 25
@@ -8365,13 +8365,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VrBlinkEffect
   eyelidColor: {r: 0, g: 0, b: 0, a: 1}
-  halfBlinkAmount: 0.5
-  curvature: 0.035
-  edgeSoftness: 0.04
+  halfBlinkAmount: 0.632
+  curvature: 3.71
+  edgeSoftness: 0.0924
   closeDuration: 1
+  slowCloseDuration: 5
   openDuration: 1
-  fullBlinkHold: 0.04
-  targetCamera: {fileID: 0}
+  fullBlinkHold: 0
+  targetCamera: {fileID: 866790198}
   canvasDistance: 0.05
   sortingOrder: 32760
 --- !u!4 &479005028
@@ -45453,7 +45454,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: b00dc33e0d2dbd64a9d1770ea6027fe0, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -54939,7 +54940,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: b00dc33e0d2dbd64a9d1770ea6027fe0, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

@@ -8,11 +8,13 @@ public sealed class VrBlinkEffect : MonoBehaviour
     [Header("Appearance")]
     [SerializeField] private Color eyelidColor = Color.black;
     [Range(0f, 1f)] [SerializeField] private float halfBlinkAmount = 0.5f;
-    [Range(0f, 1f)] [SerializeField] private float curvature = 1f;
+    [Range(0f, 5f)] [SerializeField] private float curvature = 1f;
     [Range(0.001f, 0.25f)] [SerializeField] private float edgeSoftness = 0.04f;
 
     [Header("Timing")]
     [Min(0f)] [SerializeField] private float closeDuration = 0.12f;
+    [Tooltip("Time in seconds for CloseSlowly to fully close the eyelids and keep them closed.")]
+    [Min(0f)] [SerializeField] private float slowCloseDuration = 2f;
     [Min(0f)] [SerializeField] private float openDuration = 0.18f;
     [Min(0f)] [SerializeField] private float fullBlinkHold = 0.04f;
 
@@ -91,6 +93,10 @@ public sealed class VrBlinkEffect : MonoBehaviour
 
     [ContextMenu("Full Blink")]
     public void FullBlink() => StartBlink(1f);
+
+    /// <summary>Closes from the current amount and stays closed. Callable from a Timeline Signal Receiver.</summary>
+    [ContextMenu("Close Slowly")]
+    public void CloseSlowly() => StartTo(1f, slowCloseDuration);
 
     public void FadeIn() => StartTo(1f, closeDuration);
     public void FadeOut() => StartTo(0f, openDuration);

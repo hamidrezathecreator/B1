@@ -55,6 +55,7 @@ public sealed class VrBlinkEffectEditor : Editor
             {
                 if (GUILayout.Button("Half Blink")) effect.HalfBlink();
                 if (GUILayout.Button("Full Blink")) effect.FullBlink();
+                if (GUILayout.Button("Close Slowly")) effect.CloseSlowly();
             }
         }
         if (GUILayout.Button("Stop & Reset (Fully Open)"))
