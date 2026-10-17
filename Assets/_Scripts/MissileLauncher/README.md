@@ -15,9 +15,9 @@ Attached flight particles ramp from **Particle Starting Power** (default 0.05, o
 
 ## Flight audio
 
-`Flight Sounds` contains loopable clips: one is chosen randomly per launch and loops on a separate 3D AudioSource attached to the missile. It stops on flight completion, reset, disable, or destruction. Initiation sounds still play once on the existing Audio Source.
+`Flight Sounds` contains loopable clips: one is chosen randomly per launch and loops on a separate AudioSource attached to the missile. It stops on flight completion, reset, disable, or destruction. Initiation sounds still play once on the existing Audio Source.
 
-Set **Flight Sound Volume** for the loop level (also multiplied by the existing Audio Source volume). **Flight Sound Min Distance** defaults to 1 world unit for full volume; volume decreases linearly to silence at **Flight Sound Max Distance** (default 100). Distances are measured from the active AudioListener. The loop uses the existing Audio Source's mixer routing, pitch, priority, and mute setting when assigned, and works without an assigned source. Doppler is disabled to preserve the loop's pitch during accelerating flight.
+Set **Flight Sound Volume** for the loop level (also multiplied by the existing Audio Source volume). Volume is updated every frame from distance to `Camera.main`: full at zero distance, half at half of **Flight Sound Max Distance**, and silent at or beyond that limit (default 100 world units). Without a main camera the flight loop is silent. The source uses 2D playback so listener distance does not apply a second attenuation. The loop uses the existing Audio Source's mixer routing, pitch, priority, and mute setting when assigned, and works without an assigned source.
 
 ## Attached trembling flight light
 
@@ -69,7 +69,9 @@ The music manager has **Fade In On Start** enabled by default: it starts at volu
 
 Add `SingleMusicManager` to the object with your music AudioSource and assign its **Music Source** (defaults to the local source). Set that source's music clip, starting volume, and Loop as desired. Use a separate source from tutorial narration. The manager controls the source's volume directly.
 
-On the tutorial orchestrator, assign **Music Manager**, **Fire Music Volume** (0–1), and **Fire Music Fade Speed** (volume units per second). An accepted Fire press emits **Music Raise Requested** with those settings; the assigned manager receives it automatically. No extra event wiring is needed. Already-playing music keeps its playback position. If stopped, the manager starts the assigned clip when **Play If Stopped** is enabled. Speed 0 applies the target immediately; positive speed fades from the current volume without overshooting, using unscaled time. A new request replaces the previous fade. **Volume Reached** is emitted when the target is reached. Leaving Music Manager empty keeps the music hookup optional; custom listeners can use the event instead.
+On the tutorial orchestrator, assign **Music Manager**, **Fire Music Volume** (0–1), and **Fire Music Fade Speed** (volume units per second). Fire holds the current music level and tracks missiles from this tutorial's launcher group. As their camera-distance volume fades, the orchestrator calls the assigned manager directly, raising the music proportionally toward Fire Music Volume. The loudest remaining missile paces the rise; later launches never pull music back down. Once flights end or reach their distance limit, music finishes fading to the target. Tracking continues after launcher sequences finish and stops on restart, failure, or disable. No music-request event wiring is needed.
+
+Already-playing music keeps its playback position. If stopped, the manager starts the assigned clip when **Play If Stopped** is enabled. Speed 0 follows the distance-based target immediately; positive speed limits the rise using unscaled time. Music already above Fire Music Volume is never lowered by this effect. **Volume Reached** is emitted when a requested target is reached. Leaving Music Manager empty keeps this music effect optional.
 
 ## Physical button settings
 

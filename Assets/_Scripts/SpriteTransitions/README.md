@@ -1,7 +1,11 @@
-# Sprite crossfade transitions
+# Sprite material transitions
 
-Add `SpriteCrossfadePair` to a parent object with two child `SpriteRenderer`s. Assign the renderers (or let the component discover the first two), choose the starting renderer, fade duration, and that pair's random delay range.
+Add SpriteCrossfadeController and assign a collection of MeshRenderers and one Target Material for your atlas. Refresh Mesh Renderers in the component menu collects meshes below the controller, including inactive objects. No pair component or second renderer is needed.
 
-Add `SpriteCrossfadeController` to a parent collection and use **Refresh Pairs** in its component menu. `BroadcastCrossfade()` is available to UnityEvents and Timeline Signal Receivers. It sends the command to every pair, while each pair chooses its own random delay. `BroadcastFrom(Sprite)` restricts the broadcast to pairs currently showing a particular sprite.
+Set Fade Duration, Random Delay Min/Max, and Use Unscaled Time on the controller. BroadcastCrossfade() works with UnityEvents and Timeline Signal Receivers. Each mesh waits its own random delay, fades out, switches all material slots to the target material, and fades in. Duration applies to each half; total time is the delay plus twice Fade Duration. Zero duration swaps immediately after the delay. Meshes and atlas UVs stay the same.
 
-For a direct Timeline track, add a **Sprite Crossfade Track**, bind it to the controller, and place a **Sprite Crossfade Clip**. The clip triggers once when playback enters it.
+Both current and target materials must use alpha-transparent shaders exposing _BaseColor (preferred) or _Color. Configure materials for transparent alpha blending. Temporary material instances fade individual meshes without modifying shared material assets. On completion, meshes reference the target material itself. Existing renderer property blocks must not override the shader's color/alpha.
+
+Retriggering or disabling the controller cancels pending fades and restores each material's original opacity. Meshes that already switched keep the target; other meshes keep their source materials. Temporary instances are cleaned up.
+
+For Timeline, add a Sprite Crossfade Track, bind it to the controller, and place a Sprite Crossfade Clip. The existing clip triggers BroadcastCrossfade() once when playback enters it.

@@ -79,6 +79,17 @@ public sealed class MissileProjectile : MonoBehaviour
     ParticlePowerSettings[] particlePowerSettings;
     AudioSource flightAudioSource;
 
+    public float FlightSoundDistanceVolume
+    {
+        get
+        {
+            var mainCamera = Camera.main;
+            return IsInFlight && mainCamera != null
+                ? Mathf.Clamp01(1f - Vector3.Distance(transform.position, mainCamera.transform.position) / Mathf.Max(0.02f, flightSoundMaxDistance))
+                : 0f;
+        }
+    }
+
     void LateUpdate()
     {
         if (IsInFlight) UpdateFlightSoundVolume();
@@ -87,11 +98,7 @@ public sealed class MissileProjectile : MonoBehaviour
     void UpdateFlightSoundVolume()
     {
         if (flightAudioSource == null) return;
-        var mainCamera = Camera.main;
-        var distanceVolume = mainCamera != null
-            ? Mathf.Clamp01(1f - Vector3.Distance(transform.position, mainCamera.transform.position) / Mathf.Max(0.02f, flightSoundMaxDistance))
-            : 0f;
-        flightAudioSource.volume = Mathf.Clamp01(flightSoundVolume) * distanceVolume
+        flightAudioSource.volume = Mathf.Clamp01(flightSoundVolume) * FlightSoundDistanceVolume
             * (audioSource != null ? audioSource.volume : 1f);
     }
 

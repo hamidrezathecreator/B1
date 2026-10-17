@@ -14,15 +14,35 @@ public sealed class SceneTransitionManager : MonoBehaviour
     [Header("Transition")]
     [Min(0f)] [SerializeField] private float delayBeforeLoad = 0f;
     [SerializeField] private bool fade = true;
+    [Tooltip("Duration of fading the current scene to black before loading.")]
     [Min(0f)] [SerializeField] private float fadeOutSeconds = 0.35f;
     [Min(0f)] [SerializeField] private float holdBlackSeconds = 0f;
+    [Tooltip("Duration of fading both the black overlay and text away after the hold.")]
     [Min(0f)] [SerializeField] private float fadeInSeconds = 0.35f;
+
+    [Header("Audio")]
+    [Tooltip("Optional source whose current volume fades to zero with Fade Out Seconds, before loading the next scene.")]
+    [SerializeField] private AudioSource audioSourceToFadeOut;
+
+    [Header("Text above fade")]
+    [Tooltip("UI text prefab used by the WithText methods. Its text and styling are preserved.")]
+    [SerializeField] private RTLTMPro.RTLTextMeshPro transitionTextPrefab;
+    [Tooltip("Text fades in during the black hold after loading. The hold extends if needed to finish this fade.")]
+    [Min(0f)] [SerializeField] private float textFadeInSeconds = 0.35f;
 
     /// <summary>Use this no-argument method for a Signal Receiver or button.</summary>
     public void LoadConfiguredScene() => LoadScene(sceneToLoad);
 
+    /// <summary>Load the configured scene with centered text above the fade.</summary>
+    public void LoadConfiguredSceneWithText() => LoadSceneWithText(sceneToLoad);
+
+    /// <summary>Load a scene with the assigned RTL text prefab above the fade.</summary>
+    public void LoadSceneWithText(string sceneName) => LoadSceneInternal(sceneName, true);
+
     /// <summary>Load any scene listed in Build Settings; works without Timeline.</summary>
-    public void LoadScene(string sceneName)
+    public void LoadScene(string sceneName) => LoadSceneInternal(sceneName, false);
+
+    private void LoadSceneInternal(string sceneName, bool showText)
     {
         if (string.IsNullOrWhiteSpace(sceneName))
         {
@@ -37,8 +57,12 @@ public sealed class SceneTransitionManager : MonoBehaviour
             return;
         }
 
+        if (showText && transitionTextPrefab == null)
+            Debug.LogWarning("SceneTransitionManager: Assign Transition Text Prefab to show text above the fade.", this);
+
         SceneTransitionRunner.Begin(sceneName, fade, delayBeforeLoad,
-            fadeOutSeconds, holdBlackSeconds, fadeInSeconds);
+            fadeOutSeconds, holdBlackSeconds, fadeInSeconds,
+            showText ? transitionTextPrefab : null, textFadeInSeconds, audioSourceToFadeOut);
     }
 }
 

@@ -1,11 +1,9 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Serialization;
 using UnityEngine.Video;
-
-[System.Serializable]
-public sealed class MusicVolumeRequestEvent : UnityEvent<float, float> { }
 
 /// <summary>Shows cards, gates physical buttons, and waits for the entire launcher group between steps.</summary>
 [RequireComponent(typeof(AudioSource))]
@@ -27,13 +25,11 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     [SerializeField] AudioSource tutorialAudioSource;
     [SerializeField] AudioClip rotateIntroSound;
     [SerializeField] AudioClip fireIntroSound;
-    [Header("Music after Fire is pressed")]
+    [Header("Music as missile flight sounds fade")]
     [SerializeField] SingleMusicManager musicManager;
     [SerializeField, Range(0f, 1f)] float fireMusicVolume = 0.8f;
     [Tooltip("Volume units per second. For example, 0.2 raises volume by 0.2 each second. Zero sets it immediately.")]
     [SerializeField, Min(0f)] float fireMusicFadeSpeed = 0.2f;
-    [Tooltip("Emits target volume and fade speed on an accepted Fire press. The assigned music manager is subscribed automatically.")]
-    public MusicVolumeRequestEvent musicRaiseRequested = new MusicVolumeRequestEvent();
     [Header("Begin delay")]
     [FormerlySerializedAs("beginOnStart")]
     [SerializeField] bool beginAfterDelay = true;
@@ -61,6 +57,10 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     bool ownsLogoPlayback;
     bool finalLogoFinished;
     string finalLogoError;
+    readonly List<MissileProjectile> musicMissiles = new List<MissileProjectile>();
+    bool trackingFlightMusic;
+    float musicStartVolume;
+    float musicRiseProgress;
 
     void Awake()
     {
@@ -78,7 +78,6 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnEnable()
     {
-        if (musicManager != null) musicRaiseRequested.AddListener(musicManager.FadeToVolume);
         if (buttons != null)
         {
             buttons.DisableButtons();
@@ -90,6 +89,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
             actions.allRotationsCompleted.AddListener(OnAllRotationsCompleted);
             actions.allLaunchSequencesCompleted.AddListener(OnAllLaunchSequencesCompleted);
             actions.actionFailed.AddListener(Fail);
+            actions.missileLaunched.AddListener(OnMissileLaunched);
         }
     }
 
@@ -100,6 +100,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     public void Begin()
     {
         if (!Application.isPlaying || !isActiveAndEnabled) return;
+        StopFlightMusicTracking();
         StopBeginDelay();
         StopIntroAudio();
         StopFinalLogo();
@@ -225,8 +226,39 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         Phase = TutorialPhase.Firing;
         buttons.DisableButtons();
         TransitionCards(null);
-        musicRaiseRequested.Invoke(fireMusicVolume, fireMusicFadeSpeed);
+        musicMissiles.Clear();
+        musicRiseProgress = 0f;
+        musicStartVolume = musicManager != null ? musicManager.CurrentVolume : 0f;
+        trackingFlightMusic = musicManager != null;
+        // Hold the current level while nearby missiles are loud, including during the startup fade.
+        if (musicManager != null) musicManager.FadeToVolume(musicStartVolume, 0f);
         actions.FireAll();
+    }
+
+    void OnMissileLaunched(MissileProjectile missile)
+    {
+        if (trackingFlightMusic && missile != null) musicMissiles.Add(missile);
+    }
+
+    void LateUpdate()
+    {
+        if (!trackingFlightMusic || musicManager == null || musicMissiles.Count == 0 || Camera.main == null) return;
+        var loudestFlight = 0f;
+        foreach (var missile in musicMissiles)
+            if (missile != null) loudestFlight = Mathf.Max(loudestFlight, missile.FlightSoundDistanceVolume);
+
+        // Keep the cinematic build rising even when a later missile launches nearby.
+        var progress = 1f - loudestFlight;
+        if (progress <= musicRiseProgress) return;
+        musicRiseProgress = progress;
+        var target = Mathf.Lerp(musicStartVolume, Mathf.Max(musicStartVolume, fireMusicVolume), progress);
+        musicManager.FadeToVolume(target, fireMusicFadeSpeed);
+    }
+
+    void StopFlightMusicTracking()
+    {
+        trackingFlightMusic = false;
+        musicMissiles.Clear();
     }
 
     void OnAllLaunchSequencesCompleted()
@@ -330,6 +362,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void Fail()
     {
+        StopFlightMusicTracking();
         StopFinalLogo();
         StopBeginDelay();
         StopIntroAudio();
@@ -388,7 +421,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     void OnDisable()
     {
         StopFinalLogo();
-        if (musicManager != null) musicRaiseRequested.RemoveListener(musicManager.FadeToVolume);
+        StopFlightMusicTracking();
         StopBeginDelay();
         if (buttons != null)
         {
@@ -401,6 +434,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
             actions.allRotationsCompleted.RemoveListener(OnAllRotationsCompleted);
             actions.allLaunchSequencesCompleted.RemoveListener(OnAllLaunchSequencesCompleted);
             actions.actionFailed.RemoveListener(Fail);
+            actions.missileLaunched.RemoveListener(OnMissileLaunched);
         }
         StopCardFade();
         HideCardsImmediate();

@@ -45,8 +45,9 @@ namespace GoWhere
                 spinAngle = 0f;
                 previousPhase = 0f;
                 steeringRotation = Quaternion.identity;
-                spinTween = Tween.Custom(this, 0f, 360f,
-                    new TweenSettings(SpinCycleDuration, Ease.Linear, cycles: -1, updateType: UpdateType.LateUpdate),
+                spinTween = Tween.Custom(this,
+                    new TweenSettings<float>(0f, 360f,
+                        new TweenSettings(SpinCycleDuration, Ease.Linear, cycles: -1, updateType: UpdateType.LateUpdate)),
                     static (wheel, phase) => wheel.ApplySpin(phase));
                 spinTween.timeScale = 0f;
             }
@@ -75,8 +76,14 @@ namespace GoWhere
         [Range(0f, 80f)] [SerializeField] private float maxSteeringAngle = 35f;
         [Tooltip("How quickly the steering wheels turn, in degrees per second. Zero snaps to the target angle.")]
         [Min(0f)] [SerializeField] private float steeringSpeed = 180f;
+        [Tooltip("Camera used for wheel distance culling. Leave empty to use the main camera.")]
+        [SerializeField] private Camera cullingCamera;
+        [Tooltip("Pause wheel spin and steering beyond this camera distance, in world units. Zero disables culling.")]
+        [Min(0f)] [SerializeField] private float cullDistance = 60f;
 
         private PathWalker _walker;
+        private Camera _mainCamera;
+        private bool _isCulled;
         private Vector3 _previousForward;
         private float _steeringAngle;
         private float _targetSteering;
@@ -85,8 +92,10 @@ namespace GoWhere
         private void OnEnable()
         {
             _walker = GetComponent<PathWalker>();
+            _isCulled = false;
             foreach (var wheel in wheels) wheel?.StartSpin();
             ResetHeading();
+            UpdateDistanceCulling();
             if (_walker == null) return;
             _walker.OnPathStarted += ResetHeading;
             _walker.OnLoopCompleted += ResetHeading;
@@ -115,7 +124,7 @@ namespace GoWhere
             if (_steeringTween.isAlive) _steeringTween.Stop();
             _steeringAngle = 0f;
             _targetSteering = 0f;
-            ApplyWheelPoses();
+            if (!_isCulled) ApplyWheelPoses();
         }
 
         private void Update()
@@ -125,6 +134,7 @@ namespace GoWhere
 
         private void UpdateWheelTargets(float deltaTime)
         {
+            if (UpdateDistanceCulling()) return;
             if (_walker == null || deltaTime <= 0f) return;
 
             float speed = _walker.isActiveAndEnabled && _walker.IsMoving ? _walker.CurrentSpeed : 0f;
@@ -155,6 +165,35 @@ namespace GoWhere
             ApplyWheelPoses();
         }
 
+        private bool UpdateDistanceCulling()
+        {
+            bool culled = false;
+            if (cullDistance > 0f)
+            {
+                Camera camera = cullingCamera;
+                if (camera == null)
+                {
+                    if (_mainCamera == null || !_mainCamera.isActiveAndEnabled)
+                        _mainCamera = Camera.main;
+                    camera = _mainCamera;
+                }
+                if (camera != null)
+                    culled = (camera.transform.position - transform.position).sqrMagnitude
+                        > cullDistance * cullDistance;
+            }
+
+            if (culled == _isCulled) return culled;
+            _isCulled = culled;
+            foreach (var wheel in wheels)
+            {
+                if (wheel != null && wheel.spinTween.isAlive) wheel.spinTween.isPaused = culled;
+            }
+            if (_steeringTween.isAlive) _steeringTween.isPaused = culled;
+            // Heading changes while offscreen must not become one large steering input on return.
+            if (!culled) ResetHeading();
+            return culled;
+        }
+
         private void SetSteering(float target)
         {
             if (_steeringTween.isAlive && Mathf.Abs(target - _targetSteering) < 0.5f) return;
@@ -168,8 +207,9 @@ namespace GoWhere
                 return;
             }
             float duration = Mathf.Abs(target - _steeringAngle) / steeringSpeed;
-            _steeringTween = Tween.Custom(this, _steeringAngle, target,
-                new TweenSettings(duration, Ease.Linear, updateType: UpdateType.LateUpdate),
+            _steeringTween = Tween.Custom(this,
+                new TweenSettings<float>(_steeringAngle, target,
+                    new TweenSettings(duration, Ease.Linear, updateType: UpdateType.LateUpdate)),
                 static (animator, angle) =>
                 {
                     animator._steeringAngle = angle;
@@ -194,6 +234,7 @@ namespace GoWhere
             wheelbase = Mathf.Max(0.01f, wheelbase);
             maxSteeringAngle = Mathf.Clamp(maxSteeringAngle, 0f, 80f);
             steeringSpeed = Mathf.Max(0f, steeringSpeed);
+            cullDistance = Mathf.Max(0f, cullDistance);
             if (wheels == null) wheels = Array.Empty<Wheel>();
             foreach (var wheel in wheels)
             {

@@ -340,7 +340,7 @@ Transform:
   m_GameObject: {fileID: 74385446}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.0000019203871, y: 0.044996236, z: -0.0000011902303}
+  m_LocalPosition: {x: -0.0000000037252903, y: 0.04499998, z: -0.000000011175871}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -875,7 +875,8 @@ MonoBehaviour:
   flightLightLocalOffset: {x: 0, y: 0, z: 0}
   flightLightLocalEulerAngles: {x: 0, y: 0, z: 0}
   audioSource: {fileID: 233473640}
-  initiationSounds: []
+  initiationSounds:
+  - {fileID: 8300000, guid: 4a1a0dadcb5eff346bdbcf6a6f92e52f, type: 3}
   flightSounds:
   - {fileID: 8300000, guid: 0f2748e9292c627468684a40aea55858, type: 3}
   flightSoundVolume: 1
@@ -1968,6 +1969,9 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   actionFailed:
+    m_PersistentCalls:
+      m_Calls: []
+  missileLaunched:
     m_PersistentCalls:
       m_Calls: []
 --- !u!4 &604826255
@@ -3723,10 +3727,7 @@ MonoBehaviour:
   fireIntroSound: {fileID: 8300000, guid: f7681b80d6c8c6041a84876ee18792aa, type: 3}
   musicManager: {fileID: 1216808921}
   fireMusicVolume: 0.8
-  fireMusicFadeSpeed: 0.2
-  musicRaiseRequested:
-    m_PersistentCalls:
-      m_Calls: []
+  fireMusicFadeSpeed: 0.4
   beginAfterDelay: 1
   beginDelay: 5
   showFinalLogo: 1
@@ -4707,7 +4708,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 2411, y: 1125.5}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1319429907
 MonoBehaviour:
@@ -6477,7 +6478,8 @@ MonoBehaviour:
   flightLightLocalOffset: {x: 0, y: 0, z: 0}
   flightLightLocalEulerAngles: {x: 0, y: 0, z: 0}
   audioSource: {fileID: 1819892533}
-  initiationSounds: []
+  initiationSounds:
+  - {fileID: 8300000, guid: 4a1a0dadcb5eff346bdbcf6a6f92e52f, type: 3}
   flightSounds:
   - {fileID: 8300000, guid: 0f2748e9292c627468684a40aea55858, type: 3}
   flightSoundVolume: 1
@@ -6730,7 +6732,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 2411, y: 1125.5}
+  m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!328 &1886769440
 VideoPlayer:
@@ -6744,7 +6746,7 @@ VideoPlayer:
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
-  m_TargetTexture: {fileID: 8400000, guid: 65e8b019c45629d4da803b98fc8bac48, type: 2}
+  m_TargetTexture: {fileID: 8400000, guid: 3085de4f3f56ff9419b8f830bb977336, type: 2}
   m_TimeReference: 0
   m_TargetMaterialRenderer: {fileID: 0}
   m_TargetMaterialProperty: <noninit>
@@ -6941,7 +6943,8 @@ MonoBehaviour:
   flightLightLocalOffset: {x: 0, y: 0, z: 0}
   flightLightLocalEulerAngles: {x: 0, y: 0, z: 0}
   audioSource: {fileID: 1988379353}
-  initiationSounds: []
+  initiationSounds:
+  - {fileID: 8300000, guid: 4a1a0dadcb5eff346bdbcf6a6f92e52f, type: 3}
   flightSounds:
   - {fileID: 8300000, guid: 0f2748e9292c627468684a40aea55858, type: 3}
   flightSoundVolume: 1
@@ -7082,8 +7085,8 @@ RectTransform:
   - {fileID: 1319429906}
   m_Father: {fileID: 125732932}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -7270,7 +7273,7 @@ Transform:
   m_GameObject: {fileID: 8144985230433616513}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.0000019278377, y: 0.04499623, z: -0.0000011660159}
+  m_LocalPosition: {x: -0.0000000055879354, y: 0.044999976, z: -0.0000000037252903}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

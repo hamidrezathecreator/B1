@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using RTLTMPro;
+using TMPro;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -15,9 +17,12 @@ public sealed class SceneTransitionRunner : MonoBehaviour
     private Canvas overlayCanvas;
     private CanvasGroup overlayGroup;
     private RectTransform overlayRect;
+    private CanvasGroup textGroup;
+    private GameObject textOverlay;
 
     public static void Begin(string sceneName, bool fade, float delay, float fadeOut,
-        float holdBlack, float fadeIn)
+        float holdBlack, float fadeIn, RTLTextMeshPro textPrefab = null,
+        float textFadeIn = 0.35f, AudioSource audioSourceToFadeOut = null)
     {
         if (active != null)
         {
@@ -28,7 +33,8 @@ public sealed class SceneTransitionRunner : MonoBehaviour
         var runnerObject = new GameObject("Scene Transition (temporary)");
         DontDestroyOnLoad(runnerObject);
         active = runnerObject.AddComponent<SceneTransitionRunner>();
-        active.StartCoroutine(active.Transition(sceneName, fade, delay, fadeOut, holdBlack, fadeIn));
+        active.StartCoroutine(active.Transition(sceneName, fade, delay, fadeOut, holdBlack, fadeIn,
+            textPrefab, textFadeIn, audioSourceToFadeOut));
     }
 
     private void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
@@ -37,6 +43,7 @@ public sealed class SceneTransitionRunner : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (textOverlay != null) Destroy(textOverlay);
         if (active == this) active = null;
     }
 
@@ -52,15 +59,19 @@ public sealed class SceneTransitionRunner : MonoBehaviour
     }
 
     private IEnumerator Transition(string sceneName, bool fade, float delay,
-        float fadeOut, float holdBlack, float fadeIn)
+        float fadeOut, float holdBlack, float fadeIn, RTLTextMeshPro textPrefab, float textFadeIn,
+        AudioSource audioSourceToFadeOut)
     {
         if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+
+        if (textPrefab != null) CreateTextOverlay(textPrefab, 0f);
 
         if (fade)
         {
             CreateOverlay();
-            yield return FadeTo(1f, fadeOut);
+            yield return FadeTo(1f, fadeOut, overlayGroup, audioSourceToFadeOut: audioSourceToFadeOut);
         }
+        else if (audioSourceToFadeOut != null) audioSourceToFadeOut.volume = 0f;
 
         AsyncOperation loading = null;
         try
@@ -75,41 +86,101 @@ public sealed class SceneTransitionRunner : MonoBehaviour
         if (loading == null)
         {
             Debug.LogError($"Could not load scene '{sceneName}'.", this);
-            if (overlayGroup != null) yield return FadeTo(0f, fadeIn);
+            if (overlayGroup != null) yield return FadeTo(0f, fadeIn, overlayGroup);
             Destroy(gameObject);
             yield break;
         }
 
         while (!loading.isDone) yield return null;
 
-        if (fade)
+        if (fade || textGroup != null)
         {
             // Give the new scene's XR camera a frame to initialize behind the black view.
             PositionOverlay();
             yield return null;
-            if (holdBlack > 0f) yield return new WaitForSecondsRealtime(holdBlack);
-            yield return FadeTo(0f, fadeIn);
+            // Text fades in during the hold, then leaves with the black overlay.
+            float holdStarted = Time.realtimeSinceStartup;
+            if (textGroup != null) yield return FadeTo(1f, textFadeIn, textGroup);
+            float remainingHold = holdBlack - (Time.realtimeSinceStartup - holdStarted);
+            if (remainingHold > 0f) yield return new WaitForSecondsRealtime(remainingHold);
+            yield return FadeTo(0f, fadeIn, fade ? overlayGroup : textGroup,
+                fade ? textGroup : null);
         }
 
         Destroy(gameObject);
     }
 
-    private IEnumerator FadeTo(float target, float duration)
+    private IEnumerator FadeTo(float target, float duration, CanvasGroup group,
+        CanvasGroup otherGroup = null, AudioSource audioSourceToFadeOut = null)
     {
         if (duration <= 0f)
         {
-            overlayGroup.alpha = target;
+            group.alpha = target;
+            if (otherGroup != null) otherGroup.alpha = target;
+            if (audioSourceToFadeOut != null) audioSourceToFadeOut.volume = 0f;
             yield break;
         }
 
-        float start = overlayGroup.alpha;
-        for (float elapsed = 0f; elapsed < duration;)
+        float start = group.alpha;
+        float otherStart = otherGroup != null ? otherGroup.alpha : 0f;
+        float startVolume = audioSourceToFadeOut != null ? audioSourceToFadeOut.volume : 0f;
+        double started = Time.realtimeSinceStartupAsDouble;
+        while (true)
         {
-            elapsed += Time.unscaledDeltaTime;
-            overlayGroup.alpha = Mathf.Lerp(start, target, Mathf.Clamp01(elapsed / duration));
+            // Start at the current time instead of consuming the scene-loading frame's delta.
+            float progress = Mathf.Clamp01((float)((Time.realtimeSinceStartupAsDouble - started) / duration));
+            group.alpha = Mathf.Lerp(start, target, progress);
+            if (otherGroup != null) otherGroup.alpha = Mathf.Lerp(otherStart, target, progress);
+            if (audioSourceToFadeOut != null)
+                audioSourceToFadeOut.volume = Mathf.Lerp(startVolume, 0f, progress);
+            if (progress >= 1f) break;
             yield return null;
         }
-        overlayGroup.alpha = target;
+        group.alpha = target;
+        if (otherGroup != null) otherGroup.alpha = target;
+        if (audioSourceToFadeOut != null) audioSourceToFadeOut.volume = 0f;
+    }
+
+    private void CreateTextOverlay(RTLTextMeshPro textPrefab, float alpha)
+    {
+        var overlay = new GameObject("Scene Transition Text", typeof(RectTransform),
+            typeof(Canvas), typeof(CanvasScaler));
+        overlay.SetActive(false);
+        // Keep screen-space overlay canvases at the hierarchy root across scene loads.
+        textOverlay = overlay;
+        DontDestroyOnLoad(overlay);
+        overlay.layer = LayerMask.NameToLayer("UI");
+
+        var canvas = overlay.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = 32767;
+
+        var scaler = overlay.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        RTLTextMeshPro text = Instantiate(textPrefab, overlay.transform, false);
+        textGroup = text.GetComponent<CanvasGroup>();
+        if (textGroup == null) textGroup = text.gameObject.AddComponent<CanvasGroup>();
+        textGroup.enabled = true;
+        textGroup.alpha = alpha;
+        textGroup.blocksRaycasts = false;
+        textGroup.interactable = false;
+
+        RectTransform rect = text.rectTransform;
+        Vector2 size = textPrefab.rectTransform.rect.size;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = size;
+        rect.anchoredPosition3D = Vector3.zero;
+        rect.localRotation = Quaternion.identity;
+        rect.localScale = Vector3.one;
+        text.alignment = TextAlignmentOptions.Center;
+        text.raycastTarget = false;
+        text.gameObject.SetActive(true);
+        overlay.SetActive(true);
     }
 
     private void CreateOverlay()
@@ -123,7 +194,7 @@ public sealed class SceneTransitionRunner : MonoBehaviour
         overlayCanvas = overlay.GetComponent<Canvas>();
         overlayCanvas.renderMode = RenderMode.WorldSpace;
         overlayCanvas.overrideSorting = true;
-        overlayCanvas.sortingOrder = 32767;
+        overlayCanvas.sortingOrder = 32766;
 
         var image = overlay.GetComponent<Image>();
         image.color = Color.black;

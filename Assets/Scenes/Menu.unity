@@ -5422,11 +5422,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
   shakePivot: {fileID: 866790202}
+  delay: 0
   strength: {x: 0.003, y: 0.002, z: 0}
   duration: 0.18
   frequency: 18
   useUnscaledTime: 0
   shakeEnabled: 1
+  shakeOnAToBImpact: 1
+  shakeOnLauncherFire: 1
+  risingShakeEnabled: 1
+  risingIntensity: 0.6
+  risingFullStrengthDistance: 5
+  risingMaxDistance: 60
+  risingFadeTime: 0.15
 --- !u!1001 &432913956
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -9970,9 +9978,12 @@ MonoBehaviour:
   sceneToLoad: B1
   delayBeforeLoad: 0
   fade: 1
-  fadeOutSeconds: 1
-  holdBlackSeconds: 0.5
-  fadeInSeconds: 1
+  fadeOutSeconds: 5
+  holdBlackSeconds: 2
+  fadeInSeconds: 5
+  audioSourceToFadeOut: {fileID: 722825940}
+  transitionTextPrefab: {fileID: 1137037007770241460, guid: b9b8d318725d2ad4a9eb839df54c1299, type: 3}
+  textFadeInSeconds: 1
 --- !u!4 &888288022
 Transform:
   m_ObjectHideFlags: 0
@@ -16484,11 +16495,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5826056641483426609, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LeftHand
-      value:
+      value: 
       objectReference: {fileID: 7300000000000000103}
     - target: {fileID: 5826056641483426609, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_RightHand
-      value:
+      value: 
       objectReference: {fileID: 7300000000000000104}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -24566,7 +24577,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 888288021}
         m_TargetAssemblyTypeName: SceneTransitionManager, Assembly-CSharp
-        m_MethodName: LoadScene
+        m_MethodName: LoadSceneWithText
         m_Mode: 5
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -25448,11 +25459,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: cbe917958553f184997cad5991dcf65b, type: 3}
---- !u!4 &7300000000000000101 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1680501587, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
-  m_PrefabInstance: {fileID: 1483102143}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &7300000000000000100
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -25466,6 +25472,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
+--- !u!4 &7300000000000000101 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1680501587, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+  m_PrefabInstance: {fileID: 1483102143}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &7300000000000000102 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7300000000000000002, guid: b217e190391cba11e3e656dec302e8ff, type: 3}

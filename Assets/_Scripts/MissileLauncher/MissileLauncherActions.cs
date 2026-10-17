@@ -10,6 +10,7 @@ public sealed class MissileLauncherActions : MonoBehaviour
     [Tooltip("All launch sequences dispatched their missiles; this does not wait for flights to end.")]
     public UnityEvent allLaunchSequencesCompleted = new UnityEvent();
     public UnityEvent actionFailed = new UnityEvent();
+    public MissileLaunchedEvent missileLaunched = new MissileLaunchedEvent();
 
     public bool IsBusy => handlers.Count > 0;
     readonly Dictionary<MissileLauncherController, UnityAction> handlers = new Dictionary<MissileLauncherController, UnityAction>();
@@ -51,6 +52,7 @@ public sealed class MissileLauncherActions : MonoBehaviour
             handlers.Add(participant, callback);
             pending.Add(participant);
             PhaseEvent(participant).AddListener(callback);
+            if (!rotation) participant.missileLaunched.AddListener(OnMissileLaunched);
         }
         dispatching = true;
         foreach (var launcher in participants)
@@ -64,6 +66,8 @@ public sealed class MissileLauncherActions : MonoBehaviour
     }
 
     UnityEvent PhaseEvent(MissileLauncherController launcher) => rotating ? launcher.rotationCompleted : launcher.missileSequenceCompleted;
+
+    void OnMissileLaunched(MissileProjectile missile) => missileLaunched.Invoke(missile);
 
     void OnCompleted(MissileLauncherController launcher)
     {
@@ -109,7 +113,11 @@ public sealed class MissileLauncherActions : MonoBehaviour
     void ClearListeners()
     {
         foreach (var pair in handlers)
-            if (pair.Key != null) PhaseEvent(pair.Key).RemoveListener(pair.Value);
+            if (pair.Key != null)
+            {
+                PhaseEvent(pair.Key).RemoveListener(pair.Value);
+                pair.Key.missileLaunched.RemoveListener(OnMissileLaunched);
+            }
         handlers.Clear();
         pending.Clear();
         dispatching = false;

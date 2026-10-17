@@ -20,6 +20,8 @@ public sealed class SingleMusicManager : MonoBehaviour
     float fadeSpeed;
     bool volumeRequested;
 
+    public float CurrentVolume => musicSource != null ? musicSource.volume : 0f;
+
     void Awake()
     {
         if (musicSource == null) musicSource = GetComponent<AudioSource>();
