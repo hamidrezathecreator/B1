@@ -8365,6 +8365,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VrBlinkEffect
   eyelidColor: {r: 0, g: 0, b: 0, a: 1}
+  smallBlinkAmount: 0.264
   halfBlinkAmount: 0.632
   curvature: 3.71
   edgeSoftness: 0.0924
@@ -8372,6 +8373,7 @@ MonoBehaviour:
   slowCloseDuration: 5
   openDuration: 1
   fullBlinkHold: 0
+  blinkOnSmallShake: 1
   targetCamera: {fileID: 866790198}
   canvasDistance: 0.05
   sortingOrder: 32760

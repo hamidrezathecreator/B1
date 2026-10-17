@@ -7,6 +7,7 @@ public sealed class VrBlinkEffect : MonoBehaviour
 {
     [Header("Appearance")]
     [SerializeField] private Color eyelidColor = Color.black;
+    [Range(0f, 1f)] [SerializeField] private float smallBlinkAmount = 0.1f;
     [Range(0f, 1f)] [SerializeField] private float halfBlinkAmount = 0.5f;
     [Range(0f, 5f)] [SerializeField] private float curvature = 1f;
     [Range(0.001f, 0.25f)] [SerializeField] private float edgeSoftness = 0.04f;
@@ -17,6 +18,10 @@ public sealed class VrBlinkEffect : MonoBehaviour
     [Min(0f)] [SerializeField] private float slowCloseDuration = 2f;
     [Min(0f)] [SerializeField] private float openDuration = 0.18f;
     [Min(0f)] [SerializeField] private float fullBlinkHold = 0.04f;
+
+    [Header("Gameplay Events")]
+    [Tooltip("React to small explosion shake pulses in this scene. Existing blinks and closed eyelids take priority.")]
+    [SerializeField] private bool blinkOnSmallShake = true;
 
     [Header("Camera")]
     [SerializeField] private Camera targetCamera;
@@ -47,6 +52,8 @@ public sealed class VrBlinkEffect : MonoBehaviour
     private void OnEnable()
     {
         ResetBlink();
+        XRExplosionShake.SmallShakeStarted -= OnSmallShakeStarted;
+        XRExplosionShake.SmallShakeStarted += OnSmallShakeStarted;
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.update -= EditorTick;
         UnityEditor.EditorApplication.update += EditorTick;
@@ -86,6 +93,21 @@ public sealed class VrBlinkEffect : MonoBehaviour
         if (targetCamera == null) return;
         overlayCanvas.worldCamera = targetCamera;
         overlayCanvas.planeDistance = Mathf.Max(targetCamera.nearClipPlane + 0.01f, canvasDistance);
+    }
+
+    private void OnSmallShakeStarted(XRExplosionShake source)
+    {
+        if (Application.isPlaying && blinkOnSmallShake &&
+            source != null && source.gameObject.scene == gameObject.scene)
+            SmallBlink();
+    }
+
+    /// <summary>Small reflex blink for gameplay events, UnityEvents, or Timeline signals. Does not interrupt existing eye animations.</summary>
+    [ContextMenu("Small Blink (10% Default)")]
+    public void SmallBlink()
+    {
+        if (animating || amount > OpenThreshold) return;
+        StartBlink(Mathf.Clamp01(smallBlinkAmount));
     }
 
     [ContextMenu("Half Blink")]
@@ -258,6 +280,7 @@ public sealed class VrBlinkEffect : MonoBehaviour
 
     private void OnDisable()
     {
+        XRExplosionShake.SmallShakeStarted -= OnSmallShakeStarted;
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.update -= EditorTick;
 #endif

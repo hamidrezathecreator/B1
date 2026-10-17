@@ -54,6 +54,14 @@ shake call without shortening its duration. Rising shake is unaffected. The
 delay follows **Use Unscaled Time**; stopping or disabling shake cancels pending
 pulses.
 
+Each small pulse raises the C# event `XRExplosionShake.SmallShakeStarted(source)`
+when it actually starts, after **Delay**. Rising shake does not raise this event.
+`VrBlinkEffect` listens automatically for pulses in its own scene when **Blink On
+Small Shake** is enabled (default). Its **Small Blink Amount** defaults to 0.1
+(10%), using the existing blink close/hold/open timings. Requests during an
+active blink or while the eyelids are closed are ignored. Other gameplay events,
+UnityEvents, and Timeline signals can call `VrBlinkEffect.SmallBlink()` directly.
+
 ## Rising shake
 
 The container-to-sky `MissileProjectile` system also registers active flights.

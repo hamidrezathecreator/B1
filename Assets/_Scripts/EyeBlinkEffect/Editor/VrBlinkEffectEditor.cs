@@ -51,6 +51,7 @@ public sealed class VrBlinkEffectEditor : Editor
 
         using (new EditorGUI.DisabledScope(!effect.isActiveAndEnabled))
         {
+            if (GUILayout.Button("Small Blink (10% Default)")) effect.SmallBlink();
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("Half Blink")) effect.HalfBlink();

@@ -9,6 +9,9 @@ using UnityEngine;
 [RequireComponent(typeof(XROrigin))]
 public sealed class XRExplosionShake : MonoBehaviour
 {
+    /// <summary>Raised when a small shake pulse actually starts, after any configured delay. Rising shake does not raise this event.</summary>
+    public static event System.Action<XRExplosionShake> SmallShakeStarted;
+
     [Tooltip("Optional dedicated child of Camera Offset containing camera and controllers. An invalid or empty assignment creates a pivot at runtime.")]
     [SerializeField] private Transform shakePivot;
 
@@ -101,6 +104,7 @@ public sealed class XRExplosionShake : MonoBehaviour
         elapsed = 0f;
         BeginShake();
         ApplyShake();
+        SmallShakeStarted?.Invoke(this);
     }
 
     /// <summary>Stop immediately and restore the pivot.</summary>
