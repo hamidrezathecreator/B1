@@ -16,6 +16,7 @@ namespace GoWhere
         public UnityEvent onLoopCompleted;
 
         public event Action<MoveState> StateChanged;
+        public event Action OnPathStarted;
         public event Action OnPaused;
         public event Action OnResumed;
         public event Action<int> OnWaypointReached;
@@ -119,6 +120,7 @@ namespace GoWhere
             TransitionState(_currentSpeed >= maxSpeed ? MoveState.Cruising : MoveState.Accelerating);
             if (isActiveAndEnabled) MovementTickSystem.EnsureInstance().Register(this);
             onPathStarted?.Invoke();
+            OnPathStarted?.Invoke();
         }
 
         public void SetMaxSpeed(float speed)

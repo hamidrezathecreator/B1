@@ -59,9 +59,7 @@ public sealed class MissileProjectile : MonoBehaviour
     [SerializeField] AudioClip[] flightSounds;
     [Tooltip("Flight loop volume before distance attenuation.")]
     [SerializeField, Range(0f, 1f)] float flightSoundVolume = 1f;
-    [Tooltip("Distance from the listener within which the flight loop plays at full volume.")]
-    [SerializeField, Min(0.01f)] float flightSoundMinDistance = 1f;
-    [Tooltip("Distance from the listener at which the flight loop becomes silent.")]
+    [Tooltip("Distance from the main camera at which the flight loop becomes silent. Volume fades linearly from full at zero distance.")]
     [SerializeField, Min(0.02f)] float flightSoundMaxDistance = 100f;
 
     public UnityEvent launched;
@@ -80,6 +78,22 @@ public sealed class MissileProjectile : MonoBehaviour
     ParticleSystem[] flightParticleSystems;
     ParticlePowerSettings[] particlePowerSettings;
     AudioSource flightAudioSource;
+
+    void LateUpdate()
+    {
+        if (IsInFlight) UpdateFlightSoundVolume();
+    }
+
+    void UpdateFlightSoundVolume()
+    {
+        if (flightAudioSource == null) return;
+        var mainCamera = Camera.main;
+        var distanceVolume = mainCamera != null
+            ? Mathf.Clamp01(1f - Vector3.Distance(transform.position, mainCamera.transform.position) / Mathf.Max(0.02f, flightSoundMaxDistance))
+            : 0f;
+        flightAudioSource.volume = Mathf.Clamp01(flightSoundVolume) * distanceVolume
+            * (audioSource != null ? audioSource.volume : 1f);
+    }
 
     sealed class ParticlePowerSettings
     {
@@ -338,12 +352,10 @@ public sealed class MissileProjectile : MonoBehaviour
         }
         flightAudioSource.playOnAwake = false;
         flightAudioSource.loop = true;
-        flightAudioSource.spatialBlend = 1f;
-        flightAudioSource.rolloffMode = AudioRolloffMode.Linear;
-        flightAudioSource.minDistance = Mathf.Max(0.01f, flightSoundMinDistance);
-        flightAudioSource.maxDistance = Mathf.Max(flightAudioSource.minDistance + 0.01f, flightSoundMaxDistance);
+        // Camera distance controls the volume directly; avoid a second listener-based attenuation.
+        flightAudioSource.spatialBlend = 0f;
         flightAudioSource.dopplerLevel = 0f;
-        flightAudioSource.volume = Mathf.Clamp01(flightSoundVolume) * (audioSource != null ? audioSource.volume : 1f);
+        UpdateFlightSoundVolume();
         if (audioSource != null)
         {
             flightAudioSource.outputAudioMixerGroup = audioSource.outputAudioMixerGroup;

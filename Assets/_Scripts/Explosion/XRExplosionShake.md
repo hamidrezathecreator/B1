@@ -58,7 +58,8 @@ Each small pulse raises the C# event `XRExplosionShake.SmallShakeStarted(source)
 when it actually starts, after **Delay**. Rising shake does not raise this event.
 `VrBlinkEffect` listens automatically for pulses in its own scene when **Blink On
 Small Shake** is enabled (default). Its **Small Blink Amount** defaults to 0.1
-(10%), using the existing blink close/hold/open timings. Requests during an
+(10%). **Small Blink Duration** sets its total time (default 0.3 seconds), split
+40% closing and 60% reopening, with no hold. Requests during an
 active blink or while the eyelids are closed are ignored. Other gameplay events,
 UnityEvents, and Timeline signals can call `VrBlinkEffect.SmallBlink()` directly.
 

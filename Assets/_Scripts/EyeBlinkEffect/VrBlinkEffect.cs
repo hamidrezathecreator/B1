@@ -13,6 +13,8 @@ public sealed class VrBlinkEffect : MonoBehaviour
     [Range(0.001f, 0.25f)] [SerializeField] private float edgeSoftness = 0.04f;
 
     [Header("Timing")]
+    [Tooltip("Total small blink duration in seconds: 40% closing, 60% reopening, with no hold.")]
+    [Min(0f)] [SerializeField] private float smallBlinkDuration = 0.3f;
     [Min(0f)] [SerializeField] private float closeDuration = 0.12f;
     [Tooltip("Time in seconds for CloseSlowly to fully close the eyelids and keep them closed.")]
     [Min(0f)] [SerializeField] private float slowCloseDuration = 2f;
@@ -107,7 +109,8 @@ public sealed class VrBlinkEffect : MonoBehaviour
     public void SmallBlink()
     {
         if (animating || amount > OpenThreshold) return;
-        StartBlink(Mathf.Clamp01(smallBlinkAmount));
+        float duration = Mathf.Max(0f, smallBlinkDuration);
+        StartBlink(Mathf.Clamp01(smallBlinkAmount), duration * 0.4f, duration * 0.6f, 0f);
     }
 
     [ContextMenu("Half Blink")]
@@ -142,6 +145,9 @@ public sealed class VrBlinkEffect : MonoBehaviour
     }
 
     private void StartBlink(float targetAmount)
+        => StartBlink(targetAmount, closeDuration, openDuration, fullBlinkHold);
+
+    private void StartBlink(float targetAmount, float closing, float opening, float hold)
     {
         if (!isActiveAndEnabled) return;
         ResetBlink();
@@ -149,9 +155,9 @@ public sealed class VrBlinkEffect : MonoBehaviour
         blinkCycle = true;
         animationFrom = 0f;
         animationTarget = Mathf.Clamp01(targetAmount);
-        animationCloseDuration = Mathf.Max(0f, closeDuration);
-        animationOpenDuration = Mathf.Max(0f, openDuration);
-        animationHold = Mathf.Max(0f, fullBlinkHold);
+        animationCloseDuration = Mathf.Max(0f, closing);
+        animationOpenDuration = Mathf.Max(0f, opening);
+        animationHold = Mathf.Max(0f, hold);
         pendingStart = true;
         animating = true;
     }
