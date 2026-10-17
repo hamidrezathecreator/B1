@@ -13,7 +13,8 @@ GameObject:
   - component: {fileID: 1943164650977241654}
   - component: {fileID: 4643995129749825851}
   - component: {fileID: 702338352315000729}
-  m_Layer: 0
+  - component: {fileID: 2136227603321932988}
+  m_Layer: 6
   m_Name: Dena (11)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -154,13 +155,51 @@ MonoBehaviour:
   rotationSpeed: 180
   carLayers:
     serializedVersion: 2
-    m_Bits: 0
-  raycastOffset: {x: 0, y: 0.5, z: 1}
+    m_Bits: 64
+  raycastOffset: {x: 0, y: 0, z: 0}
   detectionDistance: 8
   raycastAngle: 45
   raycastCount: 10
   brakeDuration: 0.75
   brakingDeceleration: 10
+--- !u!114 &2136227603321932988
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2100032479560784710}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 724481136a9919e44ae5b755e4bb52fd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GoWhere.CarWheelAnimator
+  wheels:
+  - tire: {fileID: 2869383443150684357}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 8456441534203523865}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 158188916101339341}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 8815643898108327863}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  wheelbase: 2.5
+  maxSteeringAngle: 35
+  steeringSpeed: 180
+  cullingCamera: {fileID: 0}
+  cullDistance: 150
 --- !u!1 &2946651754264318866
 GameObject:
   m_ObjectHideFlags: 0
