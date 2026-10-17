@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using RTLTMPro;
 using TMPro;
 using Unity.XR.CoreUtils;
@@ -19,6 +20,9 @@ public sealed class SceneTransitionRunner : MonoBehaviour
     private RectTransform overlayRect;
     private CanvasGroup textGroup;
     private GameObject textOverlay;
+    private Canvas textCanvas;
+    private RectTransform textRect;
+    private readonly List<Material> textMaterials = new List<Material>();
 
     public static void Begin(string sceneName, bool fade, float delay, float fadeOut,
         float holdBlack, float fadeIn, RTLTextMeshPro textPrefab = null,
@@ -37,13 +41,22 @@ public sealed class SceneTransitionRunner : MonoBehaviour
             textPrefab, textFadeIn, audioSourceToFadeOut));
     }
 
-    private void OnEnable() => SceneManager.sceneLoaded += OnSceneLoaded;
+    private void OnEnable()
+    {
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        Application.onBeforeRender += PositionOverlay;
+    }
 
-    private void OnDisable() => SceneManager.sceneLoaded -= OnSceneLoaded;
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        Application.onBeforeRender -= PositionOverlay;
+    }
 
     private void OnDestroy()
     {
         if (textOverlay != null) Destroy(textOverlay);
+        foreach (Material material in textMaterials) Destroy(material);
         if (active == this) active = null;
     }
 
@@ -55,7 +68,7 @@ public sealed class SceneTransitionRunner : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (overlayGroup != null) PositionOverlay();
+        PositionOverlay();
     }
 
     private IEnumerator Transition(string sceneName, bool fade, float delay,
@@ -146,20 +159,20 @@ public sealed class SceneTransitionRunner : MonoBehaviour
         var overlay = new GameObject("Scene Transition Text", typeof(RectTransform),
             typeof(Canvas), typeof(CanvasScaler));
         overlay.SetActive(false);
-        // Keep screen-space overlay canvases at the hierarchy root across scene loads.
+        // Keep the canvas alive independently of either scene's XR camera.
         textOverlay = overlay;
         DontDestroyOnLoad(overlay);
         overlay.layer = LayerMask.NameToLayer("UI");
 
-        var canvas = overlay.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.overrideSorting = true;
-        canvas.sortingOrder = 32767;
+        textCanvas = overlay.GetComponent<Canvas>();
+        textCanvas.renderMode = RenderMode.WorldSpace;
+        textCanvas.overrideSorting = true;
+        textCanvas.sortingOrder = 32767;
+        textRect = overlay.GetComponent<RectTransform>();
+        textRect.sizeDelta = new Vector2(1920f, 1080f);
 
         var scaler = overlay.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 0.5f;
+        scaler.dynamicPixelsPerUnit = 10f;
 
         RTLTextMeshPro text = Instantiate(textPrefab, overlay.transform, false);
         textGroup = text.GetComponent<CanvasGroup>();
@@ -181,6 +194,25 @@ public sealed class SceneTransitionRunner : MonoBehaviour
         text.raycastTarget = false;
         text.gameObject.SetActive(true);
         overlay.SetActive(true);
+        // Use the stereo-capable TMP overlay shader without modifying the prefab's materials.
+        Material overlayTemplate = Resources.Load<Material>("SceneTransitionTextOverlay");
+        if (overlayTemplate != null)
+        {
+            text.ForceMeshUpdate();
+            Material[] materials = text.fontSharedMaterials;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                if (materials[i] == null || !materials[i].HasProperty("_GradientScale")) continue;
+                Material material = new Material(materials[i]);
+                material.shader = overlayTemplate.shader;
+                material.renderQueue = 4000;
+                textMaterials.Add(material);
+                materials[i] = material;
+            }
+            text.fontSharedMaterials = materials;
+        }
+        else Debug.LogError("Scene transition text overlay material is missing.", this);
+        PositionOverlay();
     }
 
     private void CreateOverlay()
@@ -208,24 +240,33 @@ public sealed class SceneTransitionRunner : MonoBehaviour
 
     private void PositionOverlay()
     {
-        if (overlayRect == null) return;
+        if (overlayRect == null && textRect == null) return;
         if (viewCamera == null)
         {
-            viewCamera = Camera.main;
-            if (viewCamera == null)
-            {
-                XROrigin origin = FindFirstObjectByType<XROrigin>();
-                if (origin != null) viewCamera = origin.Camera;
-            }
+            XROrigin origin = FindFirstObjectByType<XROrigin>();
+            if (origin != null) viewCamera = origin.Camera;
+            if (viewCamera == null) viewCamera = Camera.main;
             if (viewCamera == null) viewCamera = FindFirstObjectByType<Camera>();
         }
         if (viewCamera == null) return;
 
         float distance = Mathf.Max(viewCamera.nearClipPlane + 0.03f, 0.1f);
         Transform cameraTransform = viewCamera.transform;
-        overlayRect.SetPositionAndRotation(cameraTransform.position + cameraTransform.forward * distance,
-            cameraTransform.rotation);
-        overlayRect.localScale = Vector3.one * (distance * 0.005f);
-        overlayCanvas.worldCamera = viewCamera;
+        if (overlayRect != null)
+        {
+            overlayRect.SetPositionAndRotation(cameraTransform.position + cameraTransform.forward * distance,
+                cameraTransform.rotation);
+            overlayRect.localScale = Vector3.one * (distance * 0.005f);
+            overlayCanvas.worldCamera = viewCamera;
+        }
+        if (textRect != null)
+        {
+            // A one-meter viewing distance gives stereo text a comfortable depth.
+            float textDistance = Mathf.Max(1f, viewCamera.nearClipPlane + 0.1f);
+            textRect.SetPositionAndRotation(cameraTransform.position + cameraTransform.forward * textDistance,
+                cameraTransform.rotation);
+            textRect.localScale = Vector3.one * (textDistance * 1.6f / 1920f);
+            textCanvas.worldCamera = viewCamera;
+        }
     }
 }

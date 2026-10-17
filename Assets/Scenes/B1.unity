@@ -1316,6 +1316,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: WhiteDena (4)
       objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
       value: 110.000015
@@ -2105,11 +2109,11 @@ PrefabInstance:
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 193467742}
+    m_TransformParent: {fileID: 674050374}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: e62a447dcf76ce84d877f1e7c2b8fda7, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 21.795227
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e62a447dcf76ce84d877f1e7c2b8fda7, type: 3}
       propertyPath: m_LocalPosition.y
@@ -2117,7 +2121,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e62a447dcf76ce84d877f1e7c2b8fda7, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -7.1876373
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e62a447dcf76ce84d877f1e7c2b8fda7, type: 3}
       propertyPath: m_LocalRotation.w
@@ -3920,9 +3924,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 624927988}
-  - {fileID: 79827153}
   - {fileID: 1925952011}
-  - {fileID: 1604271289}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &194290789 stripped
@@ -9066,6 +9068,11 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 5389714785122409429, guid: 07c5f045f92456e4ba149a48e0413134, type: 3}
   m_PrefabInstance: {fileID: 469337015}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &509300765 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 2116b7252da5ce64dbc04bca4064047e, type: 3}
+  m_PrefabInstance: {fileID: 1604271288}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &510633923 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 13c01c162cd274d4db3e48a383f2cea9, type: 3}
@@ -11109,6 +11116,59 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 5389714785122409429, guid: 07c5f045f92456e4ba149a48e0413134, type: 3}
   m_PrefabInstance: {fileID: 1698130936}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &674050372
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 674050374}
+  - component: {fileID: 674050373}
+  m_Layer: 0
+  m_Name: 6
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &674050373
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 674050372}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8667c078259841ff8599d705941d0c03, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ModelCrossfader
+  first: {fileID: 1498532887}
+  second: {fileID: 509300765}
+  firstStartsVisible: 1
+  fadeDuration: 0.5
+  randomDelayMin: 0
+  randomDelayMax: 0.5
+  useUnscaledTime: 0
+--- !u!4 &674050374
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 674050372}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 518.4852, y: 66.8, z: -71.967636}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 79827153}
+  - {fileID: 1604271289}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &674186883
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -11474,6 +11534,10 @@ PrefabInstance:
     - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_Name
       value: WhiteDena (8)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
@@ -13827,6 +13891,10 @@ PrefabInstance:
     - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_Name
       value: WhiteDena (6)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
@@ -16582,6 +16650,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: WhiteDena (3)
       objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
       value: 110.000015
@@ -18561,6 +18633,10 @@ PrefabInstance:
     - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_Name
       value: WhiteDena (2)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
@@ -20798,6 +20874,10 @@ PrefabInstance:
     - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_Name
       value: WhiteDena (7)
+      objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
       objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
@@ -23642,6 +23722,11 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 1748848203568762650, guid: c3dfeac3da73984488acab5da3c6328f, type: 3}
   m_PrefabInstance: {fileID: 460045054}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1498532887 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: e62a447dcf76ce84d877f1e7c2b8fda7, type: 3}
+  m_PrefabInstance: {fileID: 79827152}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1503164264
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -25503,14 +25588,6 @@ PrefabInstance:
       value: WhiteDena (1)
       objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
-      propertyPath: m_LocalScale.x
-      value: 110.000015
-      objectReference: {fileID: 0}
-    - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
-      propertyPath: m_LocalScale.z
-      value: 110.000015
-      objectReference: {fileID: 0}
-    - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalPosition.x
       value: 473.93
       objectReference: {fileID: 0}
@@ -25927,19 +26004,19 @@ PrefabInstance:
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 193467742}
+    m_TransformParent: {fileID: 674050374}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 2116b7252da5ce64dbc04bca4064047e, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 21.81
+      value: 0.014770508
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2116b7252da5ce64dbc04bca4064047e, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2116b7252da5ce64dbc04bca4064047e, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -7.15
+      value: 0.037635803
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2116b7252da5ce64dbc04bca4064047e, type: 3}
       propertyPath: m_LocalRotation.w
@@ -29915,6 +29992,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: WhiteDena (5)
       objectReference: {fileID: 0}
+    - target: {fileID: 1609754476948175410, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
     - target: {fileID: 2097885255685333128, guid: dad448d15ccc35344b74cbef2a8f165f, type: 3}
       propertyPath: m_LocalScale.x
       value: 110.000015
@@ -30592,13 +30673,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 161a69926e12dad43ada4f02019837a9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SpriteCrossfadePair
-  first: {fileID: 0}
-  second: {fileID: 0}
-  firstStartsVisible: 1
-  fadeDuration: 0.2
-  randomDelayMin: 0
-  randomDelayMax: 0
-  firstVisible: 0
 --- !u!4 &1880881689 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1748848203568762650, guid: c3dfeac3da73984488acab5da3c6328f, type: 3}
@@ -61875,6 +61949,7 @@ SceneRoots:
   - {fileID: 443238702}
   - {fileID: 1367508151}
   - {fileID: 572226829}
+  - {fileID: 674050374}
   - {fileID: 193467742}
   - {fileID: 2102511468}
   - {fileID: 1485730731}

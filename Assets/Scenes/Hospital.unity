@@ -1076,7 +1076,7 @@ MonoBehaviour:
     m_SelectOnRight: {fileID: 0}
   m_Transition: 1
   m_Colors:
-    m_NormalColor: {r: 0.5031446, g: 0.5031446, b: 0.5031446, a: 1}
+    m_NormalColor: {r: 0.5031446, g: 0.5031446, b: 0.5031446, a: 0.4745098}
     m_HighlightedColor: {r: 0.09411765, g: 0.4392157, b: 0.7137255, a: 1}
     m_PressedColor: {r: 0.34509805, g: 0.6901961, b: 0.9647059, a: 1}
     m_SelectedColor: {r: 0.1254902, g: 0.5882353, b: 0.9529412, a: 1}
@@ -2037,15 +2037,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 2.285
+      value: 1.863
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.437
+      value: 0.439
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 2.767
+      value: 2.734
       objectReference: {fileID: 0}
     - target: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_LocalRotation.w
@@ -3975,18 +3975,18 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1017479819}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 8.017}
+  m_LocalRotation: {x: 0.3846386, y: -0, z: -0, w: 0.9230673}
+  m_LocalPosition: {x: 0, y: 0, z: 5.216}
   m_LocalScale: {x: 0.0029933103, y: 0.0029933103, z: 0.0029933103}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 947432738}
   - {fileID: 234361678}
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 45.243, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: 2.653, y: 2.63}
+  m_AnchoredPosition: {x: 1.599, y: 0.365}
   m_SizeDelta: {x: 633.5191, y: 302.8172}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1001 &1083595927
@@ -5119,7 +5119,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1642222146}
   m_Enabled: 1
-  m_VideoClip: {fileID: 32900000, guid: 70fd467eb1f610f4a9534f1def32c0b3, type: 3}
+  m_VideoClip: {fileID: 32900000, guid: e9f5d221bec86964cbb10ed4a39f0282, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -5447,7 +5447,10 @@ MonoBehaviour:
   fade: 1
   fadeOutSeconds: 1
   holdBlackSeconds: 0.5
-  fadeInSeconds: 1
+  fadeInSeconds: 2
+  audioSourceToFadeOut: {fileID: 0}
+  transitionTextPrefab: {fileID: 0}
+  textFadeInSeconds: 0.35
 --- !u!4 &1917898038
 Transform:
   m_ObjectHideFlags: 0

@@ -1,8 +1,10 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Serialization;
+using UnityEngine.UI;
 using UnityEngine.Video;
 
 /// <summary>Shows cards, gates physical buttons, and waits for the entire launcher group between steps.</summary>
@@ -37,9 +39,13 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     [SerializeField, Min(0f)] float beginDelay = 3f;
     [Header("Final logo and return to menu")]
     [SerializeField] bool showFinalLogo = true;
-    [Tooltip("Existing CanvasGroup containing your logo RawImage. UI/video rendering settings are left as authored.")]
+    [Tooltip("Existing CanvasGroup containing the logo RawImage. Moved into a head-following world-space canvas during playback.")]
     [SerializeField] CanvasGroup finalLogoGroup;
     [SerializeField] VideoPlayer finalLogoPlayer;
+    [Tooltip("Distance in meters from the XR camera to the logo.")]
+    [SerializeField, Min(0.1f)] float finalLogoDistance = 1f;
+    [Tooltip("Logo width in meters at the configured viewing distance. Aspect ratio follows the video render texture.")]
+    [SerializeField, Min(0.1f)] float finalLogoWidth = 1.6f;
     [Tooltip("Delay after all launcher firing sequences complete, before preparing and showing the logo.")]
     [SerializeField, Min(0f)] float finalLogoDelay = 3f;
     [SerializeField, Min(0f)] float finalLogoFadeInDuration = 1f;
@@ -57,6 +63,19 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     bool ownsLogoPlayback;
     bool finalLogoFinished;
     string finalLogoError;
+    Canvas finalLogoCanvas;
+    RectTransform finalLogoRect;
+    Camera finalLogoCamera;
+    RawImage finalLogoImage;
+    Material finalLogoMaterial;
+    Material originalLogoMaterial;
+    Texture originalLogoTexture;
+    RectTransform logoContentRect;
+    Transform originalLogoParent;
+    int originalLogoSibling;
+    Vector2 originalLogoAnchorMin, originalLogoAnchorMax, originalLogoPivot, originalLogoSize;
+    Vector3 originalLogoPosition, originalLogoScale;
+    Quaternion originalLogoRotation;
     readonly List<MissileProjectile> musicMissiles = new List<MissileProjectile>();
     bool trackingFlightMusic;
     float musicStartVolume;
@@ -78,6 +97,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnEnable()
     {
+        Application.onBeforeRender += PositionFinalLogo;
         if (buttons != null)
         {
             buttons.DisableButtons();
@@ -242,6 +262,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void LateUpdate()
     {
+        PositionFinalLogo();
         if (!trackingFlightMusic || musicManager == null || musicMissiles.Count == 0 || Camera.main == null) return;
         var loudestFlight = 0f;
         foreach (var missile in musicMissiles)
@@ -295,6 +316,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
             elapsed += Time.unscaledDeltaTime;
         }
         if (!FinalLogoReferencesReady()) { Fail(); yield break; }
+        if (!CreateFinalLogoOverlay()) { Fail(); yield break; }
         Phase = TutorialPhase.PreparingFinalLogo;
         finalLogoFinished = false;
         finalLogoError = null;
@@ -318,12 +340,12 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         }
         Phase = TutorialPhase.PlayingFinalLogo;
         finalLogoPlayer.Play();
-        elapsed = 0f;
-        while (elapsed < finalLogoFadeInDuration)
+        double fadeStarted = Time.realtimeSinceStartupAsDouble;
+        while (finalLogoFadeInDuration > 0f)
         {
             if (!FinalLogoReferencesReady() || finalLogoError != null) { Fail(); yield break; }
-            elapsed += Time.unscaledDeltaTime;
-            finalLogoGroup.alpha = Mathf.Clamp01(elapsed / finalLogoFadeInDuration);
+            finalLogoGroup.alpha = Mathf.Clamp01((float)((Time.realtimeSinceStartupAsDouble - fadeStarted) / finalLogoFadeInDuration));
+            if (finalLogoGroup.alpha >= 1f) break;
             yield return null;
         }
         finalLogoGroup.alpha = 1f;
@@ -340,6 +362,107 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnFinalLogoFinished(VideoPlayer _) => finalLogoFinished = true;
     void OnFinalLogoError(VideoPlayer _, string message) => finalLogoError = message;
+
+    bool CreateFinalLogoOverlay()
+    {
+        finalLogoImage = finalLogoGroup.GetComponentInChildren<RawImage>(true);
+        logoContentRect = finalLogoGroup.transform as RectTransform;
+        Shader shader = Resources.Load<Shader>("FinalLogoOverlay");
+        if (finalLogoImage == null || logoContentRect == null || shader == null ||
+            finalLogoPlayer.renderMode != VideoRenderMode.RenderTexture || finalLogoPlayer.targetTexture == null)
+        {
+            Debug.LogError("Final logo needs a UI RawImage, a VideoPlayer targeting a RenderTexture, and the FinalLogoOverlay shader resource.", this);
+            logoContentRect = null;
+            finalLogoImage = null;
+            return false;
+        }
+
+        originalLogoParent = logoContentRect.parent;
+        originalLogoSibling = logoContentRect.GetSiblingIndex();
+        originalLogoAnchorMin = logoContentRect.anchorMin;
+        originalLogoAnchorMax = logoContentRect.anchorMax;
+        originalLogoPivot = logoContentRect.pivot;
+        originalLogoSize = logoContentRect.sizeDelta;
+        originalLogoPosition = logoContentRect.anchoredPosition3D;
+        originalLogoRotation = logoContentRect.localRotation;
+        originalLogoScale = logoContentRect.localScale;
+        originalLogoMaterial = finalLogoImage.material;
+        originalLogoTexture = finalLogoImage.texture;
+
+        var overlay = new GameObject("Final Logo (head-following)", typeof(RectTransform), typeof(Canvas));
+        overlay.layer = finalLogoGroup.gameObject.layer;
+        finalLogoCanvas = overlay.GetComponent<Canvas>();
+        finalLogoCanvas.renderMode = RenderMode.WorldSpace;
+        finalLogoCanvas.overrideSorting = true;
+        // Keep scene-transition black (32766) and transition text (32767) above the logo.
+        finalLogoCanvas.sortingOrder = 32765;
+        finalLogoRect = overlay.GetComponent<RectTransform>();
+        RenderTexture texture = finalLogoPlayer.targetTexture;
+        finalLogoRect.sizeDelta = new Vector2(1920f, 1920f * texture.height / Mathf.Max(1, texture.width));
+
+        logoContentRect.SetParent(finalLogoRect, false);
+        logoContentRect.anchorMin = Vector2.zero;
+        logoContentRect.anchorMax = Vector2.one;
+        logoContentRect.pivot = new Vector2(0.5f, 0.5f);
+        logoContentRect.sizeDelta = Vector2.zero;
+        logoContentRect.anchoredPosition3D = Vector3.zero;
+        logoContentRect.localRotation = Quaternion.identity;
+        logoContentRect.localScale = Vector3.one;
+
+        finalLogoMaterial = new Material(shader);
+        finalLogoImage.material = finalLogoMaterial;
+        finalLogoImage.texture = texture;
+        finalLogoCamera = null;
+        PositionFinalLogo();
+        return true;
+    }
+
+    void PositionFinalLogo()
+    {
+        if (finalLogoRect == null) return;
+        if (finalLogoCamera == null || !finalLogoCamera.isActiveAndEnabled)
+        {
+            XROrigin origin = FindFirstObjectByType<XROrigin>();
+            finalLogoCamera = origin != null ? origin.Camera : null;
+            if (finalLogoCamera == null) finalLogoCamera = Camera.main;
+        }
+        if (finalLogoCamera == null) return;
+
+        Transform head = finalLogoCamera.transform;
+        float distance = Mathf.Max(finalLogoDistance, finalLogoCamera.nearClipPlane + 0.1f);
+        finalLogoRect.SetPositionAndRotation(head.position + head.forward * distance, head.rotation);
+        finalLogoRect.localScale = Vector3.one * (Mathf.Max(0.1f, finalLogoWidth) / 1920f);
+        finalLogoCanvas.worldCamera = finalLogoCamera;
+    }
+
+    void RestoreFinalLogoOverlay()
+    {
+        if (finalLogoImage != null && finalLogoMaterial != null)
+        {
+            finalLogoImage.material = originalLogoMaterial;
+            finalLogoImage.texture = originalLogoTexture;
+        }
+        if (logoContentRect != null && finalLogoCanvas != null)
+        {
+            logoContentRect.SetParent(originalLogoParent, false);
+            logoContentRect.SetSiblingIndex(originalLogoSibling);
+            logoContentRect.anchorMin = originalLogoAnchorMin;
+            logoContentRect.anchorMax = originalLogoAnchorMax;
+            logoContentRect.pivot = originalLogoPivot;
+            logoContentRect.sizeDelta = originalLogoSize;
+            logoContentRect.anchoredPosition3D = originalLogoPosition;
+            logoContentRect.localRotation = originalLogoRotation;
+            logoContentRect.localScale = originalLogoScale;
+        }
+        if (finalLogoCanvas != null) Destroy(finalLogoCanvas.gameObject);
+        if (finalLogoMaterial != null) Destroy(finalLogoMaterial);
+        finalLogoCanvas = null;
+        finalLogoRect = null;
+        finalLogoCamera = null;
+        finalLogoImage = null;
+        finalLogoMaterial = null;
+        logoContentRect = null;
+    }
 
     void UnbindFinalLogoEvents()
     {
@@ -358,6 +481,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         finalLogoFinished = false;
         finalLogoError = null;
         if (finalLogoGroup != null) finalLogoGroup.alpha = 0f;
+        RestoreFinalLogoOverlay();
     }
 
     void Fail()
@@ -420,6 +544,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnDisable()
     {
+        Application.onBeforeRender -= PositionFinalLogo;
         StopFinalLogo();
         StopFlightMusicTracking();
         StopBeginDelay();

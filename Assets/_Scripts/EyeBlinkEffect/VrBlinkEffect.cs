@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using Unity.XR.CoreUtils;
 
 /// <summary>XR-safe curved eyelid blink effect ported from the legacy shader implementation.</summary>
 [ExecuteAlways]
@@ -27,6 +28,7 @@ public sealed class VrBlinkEffect : MonoBehaviour
 
     [Header("Camera")]
     [SerializeField] private Camera targetCamera;
+    [Tooltip("Head-relative world-space distance. Kept beyond the camera near clip plane.")]
     [Min(0.01f)] [SerializeField] private float canvasDistance = 0.05f;
     [SerializeField] private int sortingOrder = 32760;
 
@@ -56,6 +58,7 @@ public sealed class VrBlinkEffect : MonoBehaviour
         ResetBlink();
         XRExplosionShake.SmallShakeStarted -= OnSmallShakeStarted;
         XRExplosionShake.SmallShakeStarted += OnSmallShakeStarted;
+        Application.onBeforeRender += PositionOverlay;
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.update -= EditorTick;
         UnityEditor.EditorApplication.update += EditorTick;
@@ -88,13 +91,19 @@ public sealed class VrBlinkEffect : MonoBehaviour
     }
 #endif
 
-    private void LateUpdate()
+    private void LateUpdate() => PositionOverlay();
+
+    private void PositionOverlay()
     {
         if (overlayCanvas == null) return;
-        if (targetCamera == null) targetCamera = FindSceneCamera();
+        if (targetCamera == null || !targetCamera.isActiveAndEnabled) targetCamera = FindSceneCamera();
         if (targetCamera == null) return;
         overlayCanvas.worldCamera = targetCamera;
-        overlayCanvas.planeDistance = Mathf.Max(targetCamera.nearClipPlane + 0.01f, canvasDistance);
+        float distance = Mathf.Max(targetCamera.nearClipPlane + 0.03f, Mathf.Max(0.1f, canvasDistance));
+        Transform head = targetCamera.transform;
+        overlayCanvas.transform.SetPositionAndRotation(head.position + head.forward * distance, head.rotation);
+        // Overscan both eyes; the shader computes the eyelid shape in each eye's screen coordinates.
+        overlayCanvas.transform.localScale = Vector3.one * (distance * 0.005f);
     }
 
     private void OnSmallShakeStarted(XRExplosionShake source)
@@ -224,18 +233,15 @@ public sealed class VrBlinkEffect : MonoBehaviour
 
         GameObject canvasObject = new GameObject("VR Blink Overlay", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler));
         canvasObject.hideFlags = HideFlags.HideAndDontSave;
-        canvasObject.transform.SetParent(targetCamera.transform, false);
         overlayCanvas = canvasObject.GetComponent<Canvas>();
-        overlayCanvas.renderMode = RenderMode.ScreenSpaceCamera;
+        overlayCanvas.renderMode = RenderMode.WorldSpace;
         overlayCanvas.worldCamera = targetCamera;
-        overlayCanvas.planeDistance = Mathf.Max(targetCamera.nearClipPlane + 0.01f, canvasDistance);
+        canvasObject.GetComponent<RectTransform>().sizeDelta = new Vector2(2000f, 2000f);
         overlayCanvas.overrideSorting = true;
         overlayCanvas.sortingOrder = sortingOrder;
 
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+        scaler.dynamicPixelsPerUnit = 10f;
 
         GameObject imageObject = new GameObject("Curved Eyelids", typeof(RectTransform), typeof(Image));
         imageObject.hideFlags = HideFlags.HideAndDontSave;
@@ -249,14 +255,16 @@ public sealed class VrBlinkEffect : MonoBehaviour
         rect.offsetMax = Vector2.zero;
         overlayImage.raycastTarget = false;
 
-        Shader shader = Shader.Find("UI/XR Blink Eyelids");
-        if (shader == null)
+        Material template = Resources.Load<Material>("VRBlinkOverlay");
+        if (template == null)
         {
-            Debug.LogError("VrBlinkEffect could not find UI/XR Blink Eyelids shader.", this);
+            Debug.LogError("VrBlinkEffect could not find the VRBlinkOverlay material resource.", this);
+            ReleaseOverlay();
             return;
         }
-        overlayMaterial = new Material(shader) { name = "VR Blink Material (Runtime)", hideFlags = HideFlags.HideAndDontSave };
+        overlayMaterial = new Material(template) { name = "VR Blink Material (Runtime)", hideFlags = HideFlags.HideAndDontSave };
         overlayImage.material = overlayMaterial;
+        PositionOverlay();
         SetAmount(amount);
     }
 
@@ -276,7 +284,12 @@ public sealed class VrBlinkEffect : MonoBehaviour
             overlayImage.enabled = overlayMaterial != null && amount > OpenThreshold;
     }
 
-    private Camera FindSceneCamera() => Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
+    private Camera FindSceneCamera()
+    {
+        XROrigin origin = FindFirstObjectByType<XROrigin>();
+        if (origin != null && origin.Camera != null && origin.Camera.isActiveAndEnabled) return origin.Camera;
+        return Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
+    }
 
     private void StopAnimation()
     {
@@ -287,6 +300,7 @@ public sealed class VrBlinkEffect : MonoBehaviour
     private void OnDisable()
     {
         XRExplosionShake.SmallShakeStarted -= OnSmallShakeStarted;
+        Application.onBeforeRender -= PositionOverlay;
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.update -= EditorTick;
 #endif

@@ -483,7 +483,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.01
-  far clip plane: 1000
+  far clip plane: 10000
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -1104,11 +1104,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
   shakePivot: {fileID: 1767192434}
+  delay: 0
   strength: {x: 0.003, y: 0.002, z: 0}
   duration: 0.18
   frequency: 18
   useUnscaledTime: 0
   shakeEnabled: 1
+  shakeOnAToBImpact: 1
+  shakeOnLauncherFire: 1
+  risingShakeEnabled: 1
+  risingIntensity: 0.6
+  risingFullStrengthDistance: 5
+  risingMaxDistance: 60
+  risingFadeTime: 0.15
 --- !u!114 &4933883413185516620
 MonoBehaviour:
   m_ObjectHideFlags: 0

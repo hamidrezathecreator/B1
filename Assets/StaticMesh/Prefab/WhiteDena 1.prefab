@@ -370,7 +370,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalScale.x
-      value: 110
+      value: 110.000015
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalScale.y
@@ -378,19 +378,19 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalScale.z
-      value: 110
+      value: 110.000015
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 24.48999
+      value: 473.93
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.226
+      value: 67.086
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 54
+      value: -23.030003
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       propertyPath: m_LocalRotation.w
@@ -444,6 +444,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: WhiteDena 1
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
+      propertyPath: m_Layer
+      value: 6
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -466,6 +470,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2154054324424506257}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 732436196098013263}
   m_SourcePrefab: {fileID: 100100000, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
 --- !u!1 &1609754476948175410 stripped
 GameObject:
@@ -526,13 +533,51 @@ MonoBehaviour:
   rotationSpeed: 180
   carLayers:
     serializedVersion: 2
-    m_Bits: 0
-  raycastOffset: {x: 0, y: 0.5, z: 1}
+    m_Bits: 64
+  raycastOffset: {x: 0, y: 0, z: 0}
   detectionDistance: 8
   raycastAngle: 45
   raycastCount: 10
   brakeDuration: 0.75
   brakingDeceleration: 10
+--- !u!114 &732436196098013263
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1609754476948175410}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 724481136a9919e44ae5b755e4bb52fd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GoWhere.CarWheelAnimator
+  wheels:
+  - tire: {fileID: 5383427900499809811}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 8495629294081086881}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 4467026340305628618}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  - tire: {fileID: 6102569057188179583}
+    radius: 1
+    spinAxis: {x: 1, y: 0, z: 0}
+    invertSpin: 1
+    steer: 0
+  wheelbase: 2.5
+  maxSteeringAngle: 35
+  steeringSpeed: 180
+  cullingCamera: {fileID: 0}
+  cullDistance: 150
 --- !u!4 &2097885255685333128 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 1a0c4e67e0e200449bc92044d997af2d, type: 3}
