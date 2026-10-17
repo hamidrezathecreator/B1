@@ -38,6 +38,8 @@ namespace GoWhere
         private float _currentSpeed;
         private MoveState _state = MoveState.Idle;
         private string _currentPathId;
+        private PathDatabase _sourceDatabase;
+        private PathDirection _routeDirection;
 
         public MoveState State => _state;
         public bool IsMoving => _state is MoveState.Accelerating or MoveState.Cruising or MoveState.Braking;
@@ -76,8 +78,8 @@ namespace GoWhere
                 Debug.LogError("[PathWalker] No PathDatabase in scene.", this);
                 return;
             }
-            var points = database.GetGlobalPath(pathId, out var reversed);
-            GoTo(points, pathId, 0f, reversed);
+            var points = database.GetGlobalPath(pathId, out var direction);
+            GoTo(points, pathId, 0f, sourceDatabase: database, sourceDirection: direction);
         }
 
         public void GoTo(Vector3[] points, string label = null, bool[] reversedFlags = null) =>
@@ -85,7 +87,8 @@ namespace GoWhere
 
         /// <param name="startProgress">Initial fraction of total route distance. Later laps begin at zero.</param>
         public void GoTo(Vector3[] points, string label, float initialSpeed, bool[] reversedFlags = null,
-            float startProgress = 0f)
+            float startProgress = 0f, PathDatabase sourceDatabase = null,
+            PathDirection sourceDirection = PathDirection.Forward)
         {
             if (points == null || points.Length < 2)
             {
@@ -106,9 +109,11 @@ namespace GoWhere
             }
 
             _pathPoints = (Vector3[])points.Clone();
-            _reversedFlags = reversedFlags != null && reversedFlags.Length == points.Length
+            _reversedFlags = sourceDatabase == null && reversedFlags != null && reversedFlags.Length == points.Length
                 ? (bool[])reversedFlags.Clone() : null;
             _currentPathId = label;
+            _sourceDatabase = sourceDatabase;
+            _routeDirection = sourceDirection;
             _currentSpeed = Mathf.Clamp(initialSpeed, 0f, maxSpeed);
             SnapToStart(startProgress);
             TransitionState(_currentSpeed >= maxSpeed ? MoveState.Cruising : MoveState.Accelerating);
@@ -163,6 +168,7 @@ namespace GoWhere
 
         public void MovementTick(float tickDelta)
         {
+            RefreshPathDirection();
             if (!IsMoving || _pathPoints == null || tickDelta <= 0f) return;
             if (_state == MoveState.Braking)
             {
@@ -213,6 +219,27 @@ namespace GoWhere
             }
         }
 
+        private void RefreshPathDirection()
+        {
+            if (_sourceDatabase == null || _pathPoints == null ||
+                !_sourceDatabase.TryGetPathDirection(_currentPathId, out var direction) ||
+                direction == _routeDirection) return;
+
+            // After a script reload, recover the direction from the actual route copy.
+            var desiredPoints = _sourceDatabase.GetGlobalPath(_currentPathId);
+            _routeDirection = direction;
+            if (desiredPoints != null && desiredPoints.Length == _pathPoints.Length &&
+                desiredPoints[0] == _pathPoints[0] &&
+                desiredPoints[desiredPoints.Length - 1] == _pathPoints[_pathPoints.Length - 1]) return;
+
+            // Keep the same physical segment and position, targeting its opposite end.
+            Array.Reverse(_pathPoints);
+            _waypointIndex = _pathPoints.Length - _waypointIndex;
+            _tickVelocityDir = -_tickVelocityDir;
+            if (rotationSpeed > 0f)
+                _tickRot = Quaternion.LookRotation(_tickVelocityDir, Vector3.up);
+        }
+
         public void SmoothStep(float interpolationSpeed, float frameDelta)
         {
             float blend = 1f - Mathf.Exp(-interpolationSpeed * frameDelta);
@@ -229,7 +256,8 @@ namespace GoWhere
         }
 
         private bool IsSegmentReversed(int index) =>
-            _reversedFlags != null && index >= 0 && index < _reversedFlags.Length && _reversedFlags[index];
+            _sourceDatabase == null && _reversedFlags != null &&
+            index >= 0 && index < _reversedFlags.Length && _reversedFlags[index];
 
         private void SnapToStart(float startProgress = 0f)
         {

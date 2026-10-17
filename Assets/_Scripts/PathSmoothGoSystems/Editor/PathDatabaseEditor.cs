@@ -16,7 +16,8 @@ public class PathDatabaseEditor : Editor
         serializedObject.Update();
         EditorGUILayout.HelpBox(
             "Car routes are open. Cars teleport from END to START; no closing segment is created. " +
-            "Waypoints are world positions. Use a car prefab with Car Path Driver.",
+            "Direction: Forward follows waypoint 0 to the last; Backward follows the last to waypoint 0. " +
+            "Scene arrows show actual travel. Cars always face that direction.",
             MessageType.Info);
         EditorGUI.BeginChangeCheck();
         DrawPropertiesExcluding(serializedObject, "m_Script");
@@ -38,9 +39,10 @@ public class PathDatabaseEditor : Editor
             int suffix = index;
             while (Database.HasGlobalPath(id)) id = "CarPath_" + (++suffix);
             path.FindPropertyRelative("id").stringValue = id;
-            path.FindPropertyRelative("reverse").boolValue = false;
+            path.FindPropertyRelative("direction").enumValueIndex = (int)PathDirection.Forward;
+            path.FindPropertyRelative("legacyBackward").boolValue = false;
+            path.FindPropertyRelative("directionMigrated").boolValue = true;
             path.FindPropertyRelative("points").ClearArray();
-            path.FindPropertyRelative("pointReversed").ClearArray();
             path.FindPropertyRelative("pointSharp").ClearArray();
             path.FindPropertyRelative("snapToGround").boolValue = true;
             path.FindPropertyRelative("groundLayers").intValue = 0;
@@ -61,7 +63,12 @@ public class PathDatabaseEditor : Editor
         selectedPath = Mathf.Clamp(selectedPath, 0, paths.arraySize - 1);
         var labels = new string[paths.arraySize];
         for (int i = 0; i < labels.Length; i++)
-            labels[i] = i + ": " + paths.GetArrayElementAtIndex(i).FindPropertyRelative("id").stringValue;
+        {
+            var path = paths.GetArrayElementAtIndex(i);
+            string direction = path.FindPropertyRelative("direction").enumDisplayNames[
+                path.FindPropertyRelative("direction").enumValueIndex];
+            labels[i] = i + ": " + path.FindPropertyRelative("id").stringValue + " (" + direction + ")";
+        }
         EditorGUI.BeginChangeCheck();
         selectedPath = EditorGUILayout.Popup("Scene Edit Path", selectedPath, labels);
         if (EditorGUI.EndChangeCheck()) SceneView.RepaintAll();
@@ -114,6 +121,9 @@ public class PathDatabaseEditor : Editor
         var path = Database.GlobalPaths[selectedPath];
         if (path == null || path.points == null) return;
         var points = path.points;
+        Color pathColor = Database.Editor_GetPathColor(path);
+        var labelStyle = new GUIStyle(EditorStyles.label);
+        labelStyle.normal.textColor = pathColor;
         for (int i = 0; i < points.Count; i++)
         {
             Vector3 placedPoint = Database.GetPlacedPoint(path, points[i]);
@@ -125,10 +135,11 @@ public class PathDatabaseEditor : Editor
                 points[i] = point - Vector3.up * path.yOffset;
                 Changed();
             }
-            bool isStart = i == (path.reverse ? points.Count - 1 : 0);
-            bool isEnd = i == (path.reverse ? 0 : points.Count - 1);
+            bool backward = path.direction == PathDirection.Backward;
+            bool isStart = i == (backward ? points.Count - 1 : 0);
+            bool isEnd = i == (backward ? 0 : points.Count - 1);
             string label = isStart ? "START" : isEnd ? "END (snap to START)" : i.ToString();
-            Handles.Label(placedPoint + Vector3.up * 0.4f, label);
+            Handles.Label(placedPoint + Vector3.up * 0.4f, label, labelStyle);
         }
 
         if (!placing) return;
@@ -157,18 +168,18 @@ public class PathDatabaseEditor : Editor
             if (!plane.Raycast(ray, out float distance)) return;
             position = ray.GetPoint(distance);
         }
-        Handles.color = Color.cyan;
+        Color previousColor = Handles.color;
+        Handles.color = pathColor;
         Vector3 placedPosition = Database.GetPlacedPoint(path, position);
         Handles.SphereHandleCap(0, placedPosition, Quaternion.identity, 0.3f, EventType.Repaint);
         if (points.Count > 0)
             Handles.DrawDottedLine(Database.GetPlacedPoint(path, points[points.Count - 1]), placedPosition, 4f);
+        Handles.color = previousColor;
         if (current.type == EventType.MouseDown && current.button == 0 && !current.alt)
         {
             Undo.RecordObject(Database, "Add Car Waypoint");
             points.Add(position);
-            if (path.pointReversed == null) path.pointReversed = new System.Collections.Generic.List<bool>();
             if (path.pointSharp == null) path.pointSharp = new System.Collections.Generic.List<bool>();
-            while (path.pointReversed.Count < points.Count) path.pointReversed.Add(false);
             while (path.pointSharp.Count < points.Count) path.pointSharp.Add(false);
             Changed();
             current.Use();

@@ -1,17 +1,24 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace GoWhere
 {
+    public enum PathDirection { Forward, Backward }
+
     [Serializable]
-    public class GlobalPathData
+    public class GlobalPathData : ISerializationCallbackReceiver
     {
         [Tooltip("Unique name for this car route.")]
         public string id = "CarPath";
 
-        [Tooltip("Travel from the last authored waypoint to the first. Cars face the travel direction and snap back to the last waypoint at the end of each lap.")]
-        public bool reverse;
+        [Tooltip("Forward travels from waypoint 0 to the last waypoint. Backward travels from the last waypoint to waypoint 0. Cars face their travel direction.")]
+        public PathDirection direction = PathDirection.Forward;
+
+        [FormerlySerializedAs("reverse")]
+        [SerializeField, HideInInspector] private bool legacyBackward;
+        [SerializeField, HideInInspector] private bool directionMigrated;
 
         [Tooltip("Ordered world-space waypoints. Cars snap from the end back to the start; do not close the path.")]
         public List<Vector3> points = new List<Vector3>();
@@ -34,9 +41,6 @@ namespace GoWhere
         [Tooltip("Maximum downward distance from the ray start. A missed ray keeps the authored height plus Y Offset.")]
         public float groundRayDistance = 1000f;
 
-        [Tooltip("Per-waypoint reverse flag — same length as points.")]
-        public List<bool> pointReversed = new List<bool>();
-
         [Tooltip("Per-waypoint sharp flag — same length as points.")]
         public List<bool> pointSharp = new List<bool>();
 
@@ -51,21 +55,17 @@ namespace GoWhere
 
         public string DisplayLabel => string.IsNullOrEmpty(id) ? "Unnamed Global Path" : id;
 
-        public bool IsReversed(int pointIndex) =>
-            pointReversed != null && pointIndex > 0 &&
-            pointIndex < pointReversed.Count && pointReversed[pointIndex];
-
         public bool IsSharp(int pointIndex) =>
             pointSharp != null && pointIndex < pointSharp.Count && pointSharp[pointIndex];
 
-        public bool IsReversalBoundary(int pointIndex)
-        {
-            if (pointIndex <= 0 || pointIndex >= (pointReversed?.Count ?? 0)) return false;
-            return pointReversed[pointIndex] != pointReversed[pointIndex - 1];
-        }
+        public void OnBeforeSerialize() { }
 
-        public bool IsEffectivelySharp(int pointIndex) =>
-            IsSharp(pointIndex) || IsReversalBoundary(pointIndex);
+        public void OnAfterDeserialize()
+        {
+            if (directionMigrated) return;
+            if (legacyBackward) direction = PathDirection.Backward;
+            directionMigrated = true;
+        }
     }
 
 
@@ -79,6 +79,11 @@ namespace GoWhere
         [SerializeField] private List<GlobalPathData> globalPaths = new List<GlobalPathData>();
         [SerializeField] private SmoothMode smoothMode = SmoothMode.CatmullRom;
         [Range(2, 30)] [SerializeField] private int interpolationSteps = 8;
+
+        [Header("Path Gizmos")]
+        [SerializeField] private Color forwardPathColor = new Color(0.3f, 0.8f, 1f);
+        [FormerlySerializedAs("reversePathColor")]
+        [SerializeField] private Color backwardPathColor = new Color(1f, 0.55f, 0.15f);
 
         public enum SmoothMode { None, CatmullRom, LinearResample }
         public IReadOnlyList<GlobalPathData> GlobalPaths => globalPaths;
@@ -105,45 +110,63 @@ namespace GoWhere
         {
             globalSmoothedCache = new Vector3[globalPaths.Count][];
             for (int i = 0; i < globalPaths.Count; i++)
+            {
                 globalSmoothedCache[i] = globalPaths[i] == null
                     ? Array.Empty<Vector3>() : BuildSmoothedGlobal(globalPaths[i]);
+            }
         }
 
         public bool HasGlobalPath(string id) => IndexOfGlobal(id) >= 0;
+
+        public bool TryGetPathDirection(string id, out PathDirection direction)
+        {
+            int index = IndexOfGlobal(id);
+            direction = index >= 0 ? globalPaths[index].direction : PathDirection.Forward;
+            return index >= 0;
+        }
+
+        private void EnsureCache()
+        {
+            if (globalSmoothedCache == null || globalSmoothedCache.Length != globalPaths.Count)
+                RebuildCache();
+        }
         public Vector3[] GetPath(string id) => GetGlobalPath(id);
         public Vector3[] GetRawPath(string id) => GetRawGlobalPath(id);
         public Vector3[] GetGlobalPath(string id) => GetGlobalPath(id, out _);
 
         // Return copies: offsets and other per-car changes must never modify the shared cache.
-        public Vector3[] GetGlobalPath(string id, out bool[] reversedFlags)
+        public Vector3[] GetGlobalPath(string id, out PathDirection direction)
         {
-            reversedFlags = null;
+            direction = PathDirection.Forward;
             int index = IndexOfGlobal(id);
-            return index < 0 ? null : GetGlobalPath(index, out reversedFlags);
+            return index < 0 ? null : GetGlobalPath(index, out direction);
         }
 
-        public Vector3[] GetGlobalPath(int index, out bool[] reversedFlags)
+        public Vector3[] GetGlobalPath(int index, out PathDirection direction)
         {
-            reversedFlags = null;
+            direction = PathDirection.Forward;
             if (index < 0 || index >= globalPaths.Count || globalPaths[index] == null) return null;
-            if (globalSmoothedCache == null || globalSmoothedCache.Length != globalPaths.Count)
-                RebuildCache();
-            reversedFlags = BuildReversedFlagsGlobal(globalPaths[index]);
-            return (Vector3[])globalSmoothedCache[index].Clone();
+            EnsureCache();
+            direction = globalPaths[index].direction;
+            var points = (Vector3[])globalSmoothedCache[index].Clone();
+            if (direction == PathDirection.Backward) Array.Reverse(points);
+            return points;
         }
 
         public Vector3[] GetRawGlobalPath(string id)
         {
             int index = IndexOfGlobal(id);
             if (index < 0) return null;
-            return ApplyGroundPlacement(globalPaths[index], globalPaths[index].points?.ToArray());
+            var path = globalPaths[index];
+            var points = ApplyGroundPlacement(path, path.points?.ToArray());
+            if (points != null && path.direction == PathDirection.Backward) Array.Reverse(points);
+            return points;
         }
 
         /// <summary>Uniformly selects a usable route, ignoring empty and stationary paths.</summary>
-        public bool TryGetRandomPath(out string id, out Vector3[] points, out bool[] reversedFlags)
+        public bool TryGetRandomPath(out string id, out Vector3[] points, out PathDirection direction)
         {
-            if (globalSmoothedCache == null || globalSmoothedCache.Length != globalPaths.Count)
-                RebuildCache();
+            EnsureCache();
             int chosen = -1;
             int count = 0;
             for (int i = 0; i < globalPaths.Count; i++)
@@ -157,8 +180,8 @@ namespace GoWhere
                 if (hasLength && UnityEngine.Random.Range(0, ++count) == 0) chosen = i;
             }
             id = chosen < 0 ? null : globalPaths[chosen].id;
-            points = chosen < 0 ? null : GetGlobalPath(chosen, out _);
-            reversedFlags = chosen < 0 ? null : BuildReversedFlagsGlobal(globalPaths[chosen]);
+            direction = PathDirection.Forward;
+            points = chosen < 0 ? null : GetGlobalPath(chosen, out direction);
             return chosen >= 0;
         }
 
@@ -211,8 +234,7 @@ namespace GoWhere
         {
             if (points == null) return null;
             for (int i = 0; i < points.Length; i++) points[i] = GetPlacedPoint(path, points[i]);
-            // Reverse the resolved copy, preserving the authored points and smoothing.
-            if (path.reverse) Array.Reverse(points);
+            // Cache only authored waypoint order. Direction is applied once when retrieving a route.
             return points;
         }
 
@@ -233,7 +255,7 @@ namespace GoWhere
 
             for (int i = 1; i < n; i++)
             {
-                bool atSharp = path.IsEffectivelySharp(i);
+                bool atSharp = path.IsSharp(i);
                 bool atEnd   = i == n - 1;
 
                 if (atSharp || atEnd)
@@ -261,78 +283,63 @@ namespace GoWhere
             return ApplyGroundPlacement(path, result.ToArray());
         }
 
-        private bool[] BuildReversedFlagsGlobal(GlobalPathData path)
-        {
-            bool[] flags = BuildForwardReversedFlagsGlobal(path);
-            if (!path.reverse || flags == null) return flags;
-
-            // Flags describe backing on the segment ending at each waypoint.
-            // Move each flag to the same physical segment in the opposite traversal.
-            var reversed = new bool[flags.Length];
-            for (int i = 1; i < flags.Length; i++) reversed[i] = flags[flags.Length - i];
-            return reversed;
-        }
-
-        private bool[] BuildForwardReversedFlagsGlobal(GlobalPathData path)
-        {
-            if (path.points == null || path.points.Count < 2) return null;
-            if (path.pointReversed == null || path.pointReversed.Count == 0) return null;
-
-            SmoothMode mode  = path.overrideSmoothing ? path.smoothMode        : smoothMode;
-            int        steps = Mathf.Clamp(path.overrideSmoothing ? path.interpolationSteps : interpolationSteps, 2, 30);
-            int        rawCount = path.points.Count;
-
-            if (mode == SmoothMode.None)
-            {
-                var flags = new bool[rawCount];
-                for (int i = 0; i < rawCount; i++) flags[i] = path.IsReversed(i);
-                return flags;
-            }
-
-            var result   = new List<bool>();
-            int segStart = 0;
-
-            for (int i = 1; i < rawCount; i++)
-            {
-                if (!path.IsEffectivelySharp(i) && i != rawCount - 1) continue;
-
-                int subRawSegs  = i - segStart;
-                int subSmoothed = subRawSegs > 0 ? subRawSegs * steps + 1 : 1;
-                int appendFrom  = result.Count == 0 ? 0 : 1;
-
-                for (int k = appendFrom; k < subSmoothed; k++)
-                {
-                    int  rawSeg = subRawSegs > 0 ? Mathf.Min(Mathf.Max(0, k - 1) / steps, subRawSegs - 1) : 0;
-                    bool rev    = path.IsReversed(segStart + rawSeg + 1);
-                    result.Add(rev);
-                }
-                segStart = i;
-            }
-            return result.ToArray();
-        }
-
-
 #if UNITY_EDITOR
         // Physics queries run when rebuilding on the main thread, not in OnValidate.
         private void OnValidate() => globalSmoothedCache = null;
 
         public Vector3[] Editor_GetSmoothedGlobalPoints(int index)
         {
-            if (globalSmoothedCache == null || globalSmoothedCache.Length != globalPaths.Count) RebuildCache();
-            return index >= 0 && index < globalSmoothedCache.Length ? globalSmoothedCache[index] : null;
+            return GetGlobalPath(index, out _);
         }
+
+        public Color Editor_GetPathColor(GlobalPathData path) =>
+            path.direction == PathDirection.Backward ? backwardPathColor : forwardPathColor;
 
         private void OnDrawGizmos()
         {
-            if (globalSmoothedCache == null) RebuildCache();
-            Gizmos.color = new Color(0.3f, 0.8f, 1f);
-            foreach (var points in globalSmoothedCache)
+            EnsureCache();
+            Color previousColor = Gizmos.color;
+            Color previousHandleColor = UnityEditor.Handles.color;
+            for (int pathIndex = 0; pathIndex < globalSmoothedCache.Length; pathIndex++)
             {
+                var path = globalPaths[pathIndex];
+                if (path == null) continue;
+                var points = GetGlobalPath(pathIndex, out var direction);
                 if (points == null || points.Length < 2) continue;
+                Gizmos.color = Editor_GetPathColor(path);
                 for (int i = 1; i < points.Length; i++) Gizmos.DrawLine(points[i - 1], points[i]);
                 Gizmos.DrawWireSphere(points[0], 0.3f);
                 Gizmos.DrawWireCube(points[points.Length - 1], Vector3.one * 0.5f);
+
+                var labelStyle = new GUIStyle(UnityEditor.EditorStyles.label);
+                labelStyle.normal.textColor = Gizmos.color;
+                UnityEditor.Handles.Label(points[0] + Vector3.up * 0.5f,
+                    $"{path.DisplayLabel} | {direction} | START", labelStyle);
+                UnityEditor.Handles.Label(points[points.Length - 1] + Vector3.up * 0.5f,
+                    $"{path.DisplayLabel} | {direction} | END", labelStyle);
+
+                // Sample arrows by distance so smoothing density cannot change their spacing.
+                float distanceToArrow = 0f;
+                UnityEditor.Handles.color = Gizmos.color;
+                for (int i = 1; i < points.Length; i++)
+                {
+                    Vector3 segment = points[i] - points[i - 1];
+                    float length = segment.magnitude;
+                    if (length <= 0.000001f) continue;
+                    Vector3 heading = segment / length;
+                    while (distanceToArrow <= length)
+                    {
+                        Vector3 position = points[i - 1] + heading * distanceToArrow;
+                        float size = UnityEditor.HandleUtility.GetHandleSize(position) * 0.6f;
+                        UnityEditor.Handles.ArrowHandleCap(0, position,
+                            Quaternion.LookRotation(heading), size, EventType.Repaint);
+                        distanceToArrow += Mathf.Max(5f, size * 3f);
+                    }
+                    distanceToArrow -= length;
+                }
             }
+            Gizmos.color = previousColor;
+            UnityEditor.Handles.color = previousHandleColor;
         }
 #endif
     }

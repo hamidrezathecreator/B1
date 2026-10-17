@@ -33,6 +33,10 @@ namespace GoWhere
         [Tooltip("Local ray origin. Position this near the front of the car at collider height.")]
         [SerializeField] private Vector3 raycastOffset = new Vector3(0f, 0.5f, 1f);
         [Min(0.1f)] [SerializeField] private float detectionDistance = 8f;
+        [Tooltip("Total horizontal angle covered by the rays, centered on forward.")]
+        [Range(0f, 180f)] [SerializeField] private float raycastAngle = 45f;
+        [Tooltip("Number of evenly spaced rays. One ray points straight forward.")]
+        [Min(1)] [SerializeField] private int raycastCount = 10;
         [Tooltip("Minimum braking time after the last detection.")]
         [Min(0f)] [SerializeField] private float brakeDuration = 0.75f;
         [Min(0.01f)] [SerializeField] private float brakingDeceleration = 10f;
@@ -85,7 +89,29 @@ namespace GoWhere
         private bool TryGetCarAhead(out RaycastHit nearestHit)
         {
             Vector3 origin = transform.TransformPoint(raycastOffset);
-            int hitCount = Physics.RaycastNonAlloc(origin, transform.forward, _carHits,
+            nearestHit = default;
+            float nearestDistance = float.PositiveInfinity;
+            int count = Mathf.Max(1, raycastCount);
+            for (int i = 0; i < count; i++)
+            {
+                if (!TryCastCarRay(origin, GetRayDirection(i, count), out var hit) ||
+                    hit.distance >= nearestDistance) continue;
+                nearestHit = hit;
+                nearestDistance = hit.distance;
+            }
+            return nearestDistance < float.PositiveInfinity;
+        }
+
+        private Vector3 GetRayDirection(int index, int count)
+        {
+            float angle = count <= 1 ? 0f : Mathf.Lerp(-raycastAngle * 0.5f, raycastAngle * 0.5f,
+                index / (float)(count - 1));
+            return Quaternion.AngleAxis(angle, transform.up) * transform.forward;
+        }
+
+        private bool TryCastCarRay(Vector3 origin, Vector3 direction, out RaycastHit nearestHit)
+        {
+            int hitCount = Physics.RaycastNonAlloc(origin, direction, _carHits,
                 detectionDistance, carLayers, QueryTriggerInteraction.Ignore);
             nearestHit = default;
             float nearestDistance = float.PositiveInfinity;
@@ -103,12 +129,10 @@ namespace GoWhere
         private void OnDrawGizmosSelected()
         {
             Vector3 origin = transform.TransformPoint(raycastOffset);
-            Vector3 forward = transform.forward;
-            Vector3 end = origin + forward * detectionDistance;
-            bool blocked = TryGetCarAhead(out var hit);
-            bool holdingBrake = Application.isPlaying && _brakingForCar && !blocked;
-            Color rayColor = blocked ? Color.red : holdingBrake ? new Color(1f, 0.65f, 0f) : Color.green;
-            if (!isActiveAndEnabled || carLayers.value == 0) rayColor = Color.gray;
+            bool holdingBrake = Application.isPlaying && _brakingForCar;
+            bool detectionEnabled = isActiveAndEnabled && carLayers.value != 0;
+            Color clearColor = !detectionEnabled ? Color.gray
+                : holdingBrake ? new Color(1f, 0.65f, 0f) : Color.green;
 
             Color previousColor = Gizmos.color;
             Matrix4x4 previousMatrix = Gizmos.matrix;
@@ -117,30 +141,51 @@ namespace GoWhere
 
             // The thin wire markers show the ray's origin and range, not a sphere cast radius.
             float markerSize = UnityEditor.HandleUtility.GetHandleSize(origin) * 0.06f;
-            Gizmos.color = rayColor;
+            Gizmos.color = clearColor;
             Gizmos.DrawWireSphere(origin, markerSize);
-            Gizmos.DrawLine(origin, blocked ? hit.point : end);
-            UnityEditor.Handles.color = rayColor;
-            UnityEditor.Handles.DrawWireDisc(end, forward, markerSize);
             float arrowSize = Mathf.Min(detectionDistance * 0.2f, markerSize * 3f);
-            Gizmos.DrawLine(end, end - forward * arrowSize + transform.right * arrowSize * 0.5f);
-            Gizmos.DrawLine(end, end - forward * arrowSize - transform.right * arrowSize * 0.5f);
-
-            if (blocked)
+            int count = Mathf.Max(1, raycastCount);
+            RaycastHit nearestHit = default;
+            float nearestDistance = float.PositiveInfinity;
+            for (int i = 0; i < count; i++)
             {
+                Vector3 direction = GetRayDirection(i, count);
+                Vector3 end = origin + direction * detectionDistance;
+                Vector3 right = Vector3.Cross(transform.up, direction);
+                bool rayBlocked = TryCastCarRay(origin, direction, out var hit);
+                Color rayColor = !detectionEnabled ? Color.gray : rayBlocked ? Color.red : clearColor;
+                Gizmos.color = rayColor;
+                Gizmos.DrawLine(origin, rayBlocked ? hit.point : end);
+                UnityEditor.Handles.color = rayColor;
+                UnityEditor.Handles.DrawWireDisc(end, direction, markerSize);
+                Gizmos.DrawLine(end, end - direction * arrowSize + right * arrowSize * 0.5f);
+                Gizmos.DrawLine(end, end - direction * arrowSize - right * arrowSize * 0.5f);
+
+                if (!rayBlocked) continue;
                 UnityEditor.Handles.color = new Color(rayColor.r, rayColor.g, rayColor.b, 0.3f);
                 UnityEditor.Handles.DrawDottedLine(hit.point, end, 4f);
                 Gizmos.DrawSphere(hit.point, markerSize * 0.6f);
                 Gizmos.DrawLine(hit.point, hit.point + hit.normal * markerSize * 4f);
+                if (hit.distance < nearestDistance)
+                {
+                    nearestHit = hit;
+                    nearestDistance = hit.distance;
+                }
             }
 
+            UnityEditor.Handles.color = clearColor;
+            if (count > 1 && raycastAngle > 0f)
+                UnityEditor.Handles.DrawWireArc(origin, transform.up, GetRayDirection(0, count),
+                    raycastAngle, detectionDistance);
+
+            bool blocked = nearestDistance < float.PositiveInfinity;
             string status = !isActiveAndEnabled ? "Detection disabled"
                 : carLayers.value == 0 ? "Select Car Layers in the Inspector"
-                : blocked ? $"Car: {hit.collider.name} ({hit.distance:F1} units)"
+                : blocked ? $"Car: {nearestHit.collider.name} ({nearestHit.distance:F1} units)"
                 : holdingBrake ? $"Braking: {Mathf.Max(0f, _brakeUntil - Time.time):F2}s"
                 : "Clear";
             UnityEditor.Handles.Label(origin + transform.up * markerSize * 3f,
-                $"{status}\nDetection range: {detectionDistance:F1} units");
+                $"{status}\n{count} rays / {raycastAngle:F1} degrees / {detectionDistance:F1} units");
 
             UnityEditor.Handles.color = previousHandleColor;
             Gizmos.color = previousColor;
@@ -158,25 +203,25 @@ namespace GoWhere
         {
             var paths = ResolveDatabase();
             if (paths == null) return;
-            if (!paths.TryGetRandomPath(out var id, out var points, out var reversed))
+            if (!paths.TryGetRandomPath(out var id, out var points, out var direction))
             {
                 Debug.LogWarning("[CarPathDriver] The database has no usable car routes.", this);
                 return;
             }
-            BeginDriving(id, points, reversed);
+            BeginDriving(paths, id, points, direction);
         }
 
         public void Drive(string id)
         {
             var paths = ResolveDatabase();
             if (paths == null) return;
-            var points = paths.GetGlobalPath(id, out var reversed);
+            var points = paths.GetGlobalPath(id, out var direction);
             if (points == null || points.Length < 2)
             {
                 Debug.LogWarning("[CarPathDriver] Missing or incomplete route: " + id, this);
                 return;
             }
-            BeginDriving(id, points, reversed);
+            BeginDriving(paths, id, points, direction);
         }
 
         public void SwitchPath(string id) => Drive(id);
@@ -188,7 +233,7 @@ namespace GoWhere
             return paths;
         }
 
-        private void BeginDriving(string id, Vector3[] points, bool[] reversed)
+        private void BeginDriving(PathDatabase paths, string id, Vector3[] points, PathDirection direction)
         {
             if (_walker == null) _walker = GetComponent<PathWalker>();
             _brakingForCar = false;
@@ -201,7 +246,8 @@ namespace GoWhere
             _walker.SetDeceleration(brakingDeceleration);
             _walker.SetRotationSpeed(rotationSpeed);
             float startProgress = randomStartPosition ? Random.value : 0f;
-            _walker.GoTo(points, id, startAtFullSpeed ? SelectedSpeed : 0f, reversed, startProgress);
+            _walker.GoTo(points, id, startAtFullSpeed ? SelectedSpeed : 0f,
+                startProgress: startProgress, sourceDatabase: paths, sourceDirection: direction);
         }
 
         private void OnValidate()
@@ -211,6 +257,8 @@ namespace GoWhere
             acceleration = Mathf.Max(0.01f, acceleration);
             rotationSpeed = Mathf.Max(0f, rotationSpeed);
             detectionDistance = Mathf.Max(0.1f, detectionDistance);
+            raycastAngle = Mathf.Clamp(raycastAngle, 0f, 180f);
+            raycastCount = Mathf.Max(1, raycastCount);
             brakeDuration = Mathf.Max(0f, brakeDuration);
             brakingDeceleration = Mathf.Max(0.01f, brakingDeceleration);
         }
