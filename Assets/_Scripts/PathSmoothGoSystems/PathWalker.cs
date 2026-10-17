@@ -52,7 +52,24 @@ namespace GoWhere
         public Quaternion TickRotation => _tickRot;
         public Vector3 TickVelocityDir => _tickVelocityDir;
         public string CurrentPathId => _currentPathId;
+        public PathDirection CurrentPathDirection
+        {
+            get
+            {
+                var paths = _sourceDatabase != null ? _sourceDatabase : PathDatabase.Instance;
+                return paths != null && paths.TryGetPathDirection(_currentPathId, out var direction)
+                    ? direction : _routeDirection;
+            }
+        }
         public bool IsCurrentSegmentReversed => IsSegmentReversed(_waypointIndex);
+        public bool CurrentPathInvertWheelSpin
+        {
+            get
+            {
+                var paths = _sourceDatabase != null ? _sourceDatabase : PathDatabase.Instance;
+                return paths != null && paths.TryGetPathInvertWheelSpin(_currentPathId, out bool invert) && invert;
+            }
+        }
 
         public float RemainingPathDistance
         {

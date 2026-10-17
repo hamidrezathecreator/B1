@@ -138,8 +138,9 @@ namespace GoWhere
             if (_walker == null || deltaTime <= 0f) return;
 
             float speed = _walker.isActiveAndEnabled && _walker.IsMoving ? _walker.CurrentSpeed : 0f;
-            // Backward routes still drive nose-first. Only actual backing changes tire spin direction.
+            // Path wheel spin is an explicit setting, independent of waypoint travel direction.
             float signedSpeed = _walker.IsCurrentSegmentReversed ? -speed : speed;
+            float routeSpinDirection = _walker.CurrentPathInvertWheelSpin ? -1f : 1f;
             Vector3 previousHeading = Vector3.ProjectOnPlane(_previousForward, transform.up);
             Vector3 heading = Vector3.ProjectOnPlane(transform.forward, transform.up);
             float yawRate = Vector3.SignedAngle(previousHeading, heading, transform.up)
@@ -157,7 +158,8 @@ namespace GoWhere
                     continue;
                 }
                 if (wheel.cachedTire != wheel.tire || !wheel.spinTween.isAlive) wheel.StartSpin();
-                wheel.spinDirection = (signedSpeed < 0f ? -1f : 1f) * (wheel.invertSpin ? -1f : 1f);
+                wheel.spinDirection = routeSpinDirection * (signedSpeed < 0f ? -1f : 1f)
+                    * (wheel.invertSpin ? -1f : 1f);
                 wheel.spinTween.timeScale = Mathf.Abs(signedSpeed) * SpinCycleDuration
                     / (2f * Mathf.PI * Mathf.Max(0.01f, wheel.radius));
             }

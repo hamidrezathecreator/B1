@@ -40,6 +40,7 @@ public class PathDatabaseEditor : Editor
             while (Database.HasGlobalPath(id)) id = "CarPath_" + (++suffix);
             path.FindPropertyRelative("id").stringValue = id;
             path.FindPropertyRelative("direction").enumValueIndex = (int)PathDirection.Forward;
+            path.FindPropertyRelative("invertWheelSpin").boolValue = false;
             path.FindPropertyRelative("legacyBackward").boolValue = false;
             path.FindPropertyRelative("directionMigrated").boolValue = true;
             path.FindPropertyRelative("points").ClearArray();

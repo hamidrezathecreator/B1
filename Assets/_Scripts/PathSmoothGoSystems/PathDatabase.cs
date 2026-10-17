@@ -16,6 +16,9 @@ namespace GoWhere
         [Tooltip("Forward travels from waypoint 0 to the last waypoint. Backward travels from the last waypoint to waypoint 0. Cars face their travel direction.")]
         public PathDirection direction = PathDirection.Forward;
 
+        [Tooltip("Flip every wheel's spin on cars using this path. Combines with each wheel's Invert Spin setting, independently of Direction.")]
+        public bool invertWheelSpin;
+
         [FormerlySerializedAs("reverse")]
         [SerializeField, HideInInspector] private bool legacyBackward;
         [SerializeField, HideInInspector] private bool directionMigrated;
@@ -122,6 +125,13 @@ namespace GoWhere
         {
             int index = IndexOfGlobal(id);
             direction = index >= 0 ? globalPaths[index].direction : PathDirection.Forward;
+            return index >= 0;
+        }
+
+        public bool TryGetPathInvertWheelSpin(string id, out bool invert)
+        {
+            int index = IndexOfGlobal(id);
+            invert = index >= 0 && globalPaths[index].invertWheelSpin;
             return index >= 0;
         }
 

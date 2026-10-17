@@ -3710,15 +3710,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cca14e0ee7bf7214a811b1d5526a3b3a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 48.68
+      value: 47.509773
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cca14e0ee7bf7214a811b1d5526a3b3a, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.12000275
+      value: -0.112205505
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cca14e0ee7bf7214a811b1d5526a3b3a, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 30.09
+      value: 28.838902
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cca14e0ee7bf7214a811b1d5526a3b3a, type: 3}
       propertyPath: m_LocalRotation.w
@@ -23535,6 +23535,7 @@ MonoBehaviour:
   globalPaths:
   - id: CarPath_1
     direction: 1
+    invertWheelSpin: 1
     legacyBackward: 1
     directionMigrated: 1
     points:
@@ -23564,6 +23565,7 @@ MonoBehaviour:
     interpolationSteps: 8
   - id: CarPath_2
     direction: 1
+    invertWheelSpin: 1
     legacyBackward: 1
     directionMigrated: 1
     points:
@@ -23591,8 +23593,9 @@ MonoBehaviour:
     overrideSmoothing: 0
     smoothMode: 0
     interpolationSteps: 8
-  - id: CarPath_4
+  - id: CarPath_3
     direction: 1
+    invertWheelSpin: 0
     legacyBackward: 1
     directionMigrated: 1
     points:
