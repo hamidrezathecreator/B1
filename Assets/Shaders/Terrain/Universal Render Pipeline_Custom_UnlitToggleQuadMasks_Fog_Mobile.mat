@@ -1,0 +1,89 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Universal Render Pipeline_Custom_UnlitToggleQuadMasks_Fog_Mobile
+  m_Shader: {fileID: 4800000, guid: 9e0637612fbcd104096aeeb93603fd19, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords:
+  - BASE_LAYER_ON
+  - DETAIL_LAYER_1_ON
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs:
+    - _BaseTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailTex1:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailTex2:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailTex3:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _DetailTex4:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MasksTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
+    m_Floats:
+    - _BaseLayerToggle: 1
+    - _BaseRandomRotation: 0
+    - _BaseRotation: 0
+    - _BaseStrength: 1
+    - _Detail1BlendMode: 0
+    - _Detail1RandomRotation: 0
+    - _Detail1Rotation: 0
+    - _Detail1Strength: 1
+    - _Detail2BlendMode: 0
+    - _Detail2RandomRotation: 0
+    - _Detail2Rotation: 0
+    - _Detail2Strength: 1
+    - _Detail3BlendMode: 0
+    - _Detail3RandomRotation: 0
+    - _Detail3Rotation: 0
+    - _Detail3Strength: 1
+    - _Detail4BlendMode: 0
+    - _Detail4RandomRotation: 0
+    - _Detail4Rotation: 0
+    - _Detail4Strength: 1
+    - _DetailLayer1Toggle: 1
+    - _DetailLayer2Toggle: 0
+    - _DetailLayer3Toggle: 0
+    - _DetailLayer4Toggle: 0
+    - _Mask1Tiling: 1
+    - _Mask2Tiling: 1
+    - _Mask3Tiling: 1
+    - _Mask4Tiling: 1
+    - _MaskClampMax: 1
+    - _MaskClampMin: 0
+    - _MaskContrast: 1
+    - _UseGlobalTint: 0
+    m_Colors:
+    - _Color: {r: 1, g: 1, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1
