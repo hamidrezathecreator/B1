@@ -11,7 +11,7 @@ namespace Unity.VRTemplate
     public class AnchorVisuals : MonoBehaviour
     {
         [SerializeField, Tooltip("The animation for the vertical glow element on the platform.")]
-        UnityEngine.Animation m_FadeAnimation;
+        Animation m_FadeAnimation;
 
         [SerializeField, Tooltip("The arrow transform, at the center of the platform.")]
         Transform m_Arrow;
