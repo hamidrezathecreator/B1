@@ -141,7 +141,7 @@ Material:
     - _BaseLayerToggle: 1
     - _BaseRandomRotation: 0.44
     - _BaseRotation: 124
-    - _BaseStrength: 0.77
+    - _BaseStrength: 1.97
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
     - _BumpScale: 1
@@ -162,9 +162,9 @@ Material:
     - _Detail3Rotation: 51
     - _Detail3Strength: 0.75
     - _Detail4BlendMode: 0
-    - _Detail4RandomRotation: 0.381
-    - _Detail4Rotation: 94
-    - _Detail4Strength: 1.4
+    - _Detail4RandomRotation: 0.272
+    - _Detail4Rotation: 114
+    - _Detail4Strength: 2.17
     - _DetailAlbedoMapScale: 1
     - _DetailLayer1Toggle: 1
     - _DetailLayer2Toggle: 1
@@ -182,7 +182,7 @@ Material:
     - _Mask1Tiling: 2.34
     - _Mask2Tiling: 1.79
     - _Mask3Tiling: 7.2
-    - _Mask4Tiling: 2.23
+    - _Mask4Tiling: 2.53
     - _MaskClampMax: 1
     - _MaskClampMin: 0
     - _MaskContrast: 1
