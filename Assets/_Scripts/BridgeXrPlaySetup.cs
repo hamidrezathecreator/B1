@@ -30,17 +30,22 @@ static class BridgeXrPlaySetup
         if (origin == null)
             return;
 
-        var foundCase = false;
         foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (!transform.name.StartsWith("SM_Hard_Camera_Case"))
                 continue;
-
-            foundCase = true;
             MakeGrabbable(transform.gameObject);
         }
 
-        if (!foundCase)
+        // Always plant the body/floor/teleport deck. Waiting for button A used to
+        // accidentally "fix" height only after a jump pulse; do it on load instead.
+        EnsurePlaySpace(origin);
+    }
+
+    /// <summary>Floor height, walk/teleport deck, and eye height for the active XR Origin.</summary>
+    public static void EnsurePlaySpace(XROrigin origin)
+    {
+        if (origin == null)
             return;
 
         EnsureHeadsetCamera(origin);
@@ -49,7 +54,8 @@ static class BridgeXrPlaySetup
         var floorY = FindFloorHeight(origin);
         var groundMask = BuildFlatFloor(origin, floorY);
         PlantBody(origin, floorY, groundMask);
-        KeepFeetOnFloor(origin, floorY);
+        if (origin.GetComponent<BridgeDeckLock>() == null)
+            KeepFeetOnFloor(origin, floorY);
     }
 
     static void EnsureHeadsetCamera(XROrigin origin)
@@ -119,30 +125,50 @@ static class BridgeXrPlaySetup
         if (groundLayer < 0)
             groundLayer = 0;
 
-        var deck = new GameObject("Walkable Deck");
+        var deck = GameObject.Find("Walkable Deck");
+        if (deck == null)
+        {
+            deck = new GameObject("Walkable Deck");
+            deck.AddComponent<BoxCollider>();
+            deck.AddComponent<TeleportationArea>();
+        }
+
         deck.layer = groundLayer;
         deck.transform.SetPositionAndRotation(
             new Vector3(origin.transform.position.x, floorY - 0.5f, origin.transform.position.z),
             Quaternion.identity);
-        var box = deck.AddComponent<BoxCollider>();
-        box.size = new Vector3(80f, 1f, 500f);
-        var area = deck.AddComponent<TeleportationArea>();
+        var box = deck.GetComponent<BoxCollider>();
+        // Footing only — teleport uses explicit Plane / elevator floor areas so walls stay blocked.
+        box.size = new Vector3(12f, 1f, 12f);
+        var area = deck.GetComponent<TeleportationArea>();
+        area.enabled = false;
 
+        var defaultLayer = LayerMask.NameToLayer("Default");
+        if (defaultLayer < 0) defaultLayer = 0;
         var groundMask = (LayerMask)(1 << groundLayer);
-        var teleportLayers = area.interactionLayers;
-        var foundTeleportRay = false;
+        // Include Default so walls/props stop the teleport ray; only Ground has TeleportationArea.
+        var teleportRayMask = groundMask | (1 << defaultLayer);
+        InteractionLayerMask teleportLayers = area.interactionLayers;
         foreach (var ray in origin.GetComponentsInChildren<XRRayInteractor>(true))
         {
             if (!ray.gameObject.name.Contains("Teleport"))
                 continue;
 
-            ray.raycastMask = groundMask;
+            ray.raycastMask = teleportRayMask;
             teleportLayers = ray.interactionLayers;
-            foundTeleportRay = true;
         }
 
-        if (foundTeleportRay)
-            area.interactionLayers = teleportLayers;
+        // Floor planes: walk + teleport. Walls/objects stay Default without TeleportationArea.
+        foreach (var plane in Object.FindObjectsByType<MeshCollider>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (plane == null || !plane.gameObject.name.StartsWith("Plane"))
+                continue;
+            plane.gameObject.layer = groundLayer;
+            var planeArea = plane.GetComponent<TeleportationArea>();
+            if (planeArea == null)
+                planeArea = plane.gameObject.AddComponent<TeleportationArea>();
+            planeArea.interactionLayers = teleportLayers;
+        }
 
         return groundMask;
     }
@@ -159,7 +185,10 @@ static class BridgeXrPlaySetup
             body.stepOffset = 0.08f;
             body.slopeLimit = 20f;
             body.skinWidth = SkinWidth;
-            body.includeLayers = groundMask;
+            // Ground for feet + Default for walls/props so the body cannot walk through them.
+            var defaultLayer = LayerMask.NameToLayer("Default");
+            if (defaultLayer < 0) defaultLayer = 0;
+            body.includeLayers = groundMask | (1 << defaultLayer);
         }
 
         var position = origin.transform.position;

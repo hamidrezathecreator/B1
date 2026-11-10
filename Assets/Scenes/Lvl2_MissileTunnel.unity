@@ -4171,20 +4171,26 @@ MonoBehaviour:
   door02: {fileID: 795600885}
   elevatorButton: {fileID: 1088717422}
   xrOrigin: {fileID: 0}
+  leftHandVisualPrefab: {fileID: 100100000, guid: ffd656bf2a3ba3d41b1e4a94b81b7c85, type: 3}
+  rightHandVisualPrefab: {fileID: 100100000, guid: 89e80c47615e4f043926d66492d3ca5f, type: 3}
   blackHoldSeconds: 3
   fadeInSeconds: 1.25
   doorDelaySeconds: 5
   doorOpenSeconds: 1.5
+  rideHeight: 1.6
+  rideSeconds: 4
   playerLocalPosition: {x: -0.9, y: 0.05, z: 0}
   placePlayerOnStart: 1
   door01OpenLocal: {x: 0.267, y: 0.1, z: 1.214}
   door01ClosedLocal: {x: -0.436, y: 0.1, z: 1.214}
   door02OpenLocal: {x: -2.164, y: 0.1, z: 1.207}
   door02ClosedLocal: {x: -1.445, y: 0.1, z: 1.207}
+  floor1LocalPosition: {x: -0.04, y: -0.16, z: 0.02}
+  floor1LocalSize: {x: 0.12, y: 0.12, z: 0.08}
+  buttonPressLocalOffset: {x: 0, y: 0, z: 0.015}
+  buttonPressSeconds: 0.12
   buttonShakeSeconds: 1
   buttonShakeStrength: 0.85
-  floor1LocalPosition: {x: -0.04, y: -0.16, z: 0.02}
-  floor1LocalSize: {x: 0.08, y: 0.08, z: 0.06}
 --- !u!1001 &449313247
 PrefabInstance:
   m_ObjectHideFlags: 0
