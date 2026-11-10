@@ -58,6 +58,60 @@ static class BridgeXrPlaySetup
             KeepFeetOnFloor(origin, floorY);
     }
 
+    /// <summary>
+    /// Elevator cabin: floor tracking without stacking CameraYOffset, and no world-Y lock
+    /// so the player can ride with the cabin when it starts below the tunnel.
+    /// </summary>
+    public static void PrepareElevatorPlaySpace(XROrigin origin)
+    {
+        if (origin == null)
+            return;
+
+        SuspendDeckLock(origin);
+        EnsureHeadsetCamera(origin);
+        WidenGrabReach(origin);
+
+        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+        origin.CameraYOffset = 0f;
+        if (origin.CameraFloorOffsetObject != null)
+        {
+            var offset = origin.CameraFloorOffsetObject.transform.localPosition;
+            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+        }
+
+        var body = origin.GetComponent<CharacterController>();
+        if (body != null)
+        {
+            body.enabled = true;
+            body.height = BodyHeight;
+            body.radius = 0.22f;
+            body.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+            body.stepOffset = 0.08f;
+            body.slopeLimit = 20f;
+            body.skinWidth = SkinWidth;
+            var defaultLayer = LayerMask.NameToLayer("Default");
+            if (defaultLayer < 0) defaultLayer = 0;
+            var groundLayer = LayerMask.NameToLayer("Ground");
+            var groundMask = groundLayer >= 0 ? (1 << groundLayer) : 0;
+            body.includeLayers = groundMask | (1 << defaultLayer);
+        }
+
+        foreach (var gravity in origin.GetComponentsInChildren<GravityProvider>(true))
+            gravity.enabled = false;
+
+        foreach (var jump in origin.GetComponentsInChildren<JumpProvider>(true))
+            jump.enabled = false;
+    }
+
+    public static void SuspendDeckLock(XROrigin origin)
+    {
+        if (origin == null)
+            return;
+
+        foreach (var lockHeight in origin.GetComponents<BridgeDeckLock>())
+            Object.Destroy(lockHeight);
+    }
+
     static void EnsureHeadsetCamera(XROrigin origin)
     {
         var headset = origin.Camera;

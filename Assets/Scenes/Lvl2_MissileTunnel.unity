@@ -4186,9 +4186,10 @@ MonoBehaviour:
   door02OpenLocal: {x: -2.164, y: 0.1, z: 1.207}
   door02ClosedLocal: {x: -1.445, y: 0.1, z: 1.207}
   floor1LocalPosition: {x: -0.04, y: -0.16, z: 0.02}
-  floor1LocalSize: {x: 0.12, y: 0.12, z: 0.08}
-  buttonPressLocalOffset: {x: 0, y: 0, z: 0.015}
-  buttonPressSeconds: 0.12
+  floor1LocalSize: {x: 0.18, y: 0.18, z: 0.12}
+  buttonRestLocal: {x: 0.894, y: 1.338, z: 1.0577}
+  buttonPressedLocal: {x: 0.894, y: 1.338, z: 1.0766}
+  buttonPressSeconds: 0.18
   buttonShakeSeconds: 1
   buttonShakeStrength: 0.85
 --- !u!1001 &449313247
@@ -9329,7 +9330,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: b83becabb7473ad4e9a593387fa47f0b, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 1.066
+      value: 1.0577
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: b83becabb7473ad4e9a593387fa47f0b, type: 3}
       propertyPath: m_LocalRotation.w
