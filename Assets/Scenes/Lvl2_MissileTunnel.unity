@@ -4173,6 +4173,7 @@ MonoBehaviour:
   xrOrigin: {fileID: 0}
   leftHandVisualPrefab: {fileID: 100100000, guid: ffd656bf2a3ba3d41b1e4a94b81b7c85, type: 3}
   rightHandVisualPrefab: {fileID: 100100000, guid: 89e80c47615e4f043926d66492d3ca5f, type: 3}
+  handSkinMaterial: {fileID: 2100000, guid: a1b2c3d4e5f6789012345678abcdef01, type: 2}
   blackHoldSeconds: 3
   fadeInSeconds: 1.25
   doorDelaySeconds: 5
@@ -4192,6 +4193,13 @@ MonoBehaviour:
   buttonPressSeconds: 0.18
   buttonShakeSeconds: 1
   buttonShakeStrength: 0.85
+  tabletUiBackground: {fileID: 2800000, guid: f35748c336e035941ac8b496a6b85acb, type: 3}
+  tabletOpt1Inactive: {fileID: 2800000, guid: 06ee2496f4dc8f44ea145521852b37c6, type: 3}
+  tabletOpt1Active: {fileID: 2800000, guid: 789cccd89d7f13c4e86fa877594f0573, type: 3}
+  tabletOpt2Inactive: {fileID: 2800000, guid: ab287e37850bdd849b89e866aa1f8ba0, type: 3}
+  tabletOpt2Active: {fileID: 2800000, guid: 161887123f0d66f4d9dcbe87a242f9b3, type: 3}
+  tabletOpt3Inactive: {fileID: 2800000, guid: f29e3e48d49e69241ad4f56b47fbd232, type: 3}
+  tabletOpt3Active: {fileID: 2800000, guid: dce826d434644f847918b8bdbe5af2cd, type: 3}
 --- !u!1001 &449313247
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -6248,7 +6256,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.028
+      value: 0.808
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
       propertyPath: m_LocalPosition.z
@@ -6292,7 +6300,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 880011002}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
 --- !u!4 &640935106 stripped
@@ -6300,6 +6311,116 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
   m_PrefabInstance: {fileID: 640935105}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &880011001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 880011002}
+  - component: {fileID: 880011003}
+  - component: {fileID: 880011004}
+  - component: {fileID: 880011005}
+  m_Layer: 5
+  m_Name: MilitaryTabletLcd
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!224 &880011002
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880011001}
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 640935106}
+  m_LocalEulerAnglesHint: {x: -90, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0.012}
+  m_SizeDelta: {x: 1000, y: 660}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!223 &880011003
+Canvas:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880011001}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_RenderMode: 2
+  m_Camera: {fileID: 0}
+  m_PlaneDistance: 100
+  m_PixelPerfect: 0
+  m_ReceivesEvents: 1
+  m_OverrideSorting: 0
+  m_OverridePixelPerfect: 0
+  m_SortingBucketNormalizedSize: 0
+  m_VertexColorAlwaysGammaSpace: 0
+  m_AdditionalShaderChannelsFlag: 0
+  m_UpdateRectTransformForStandalone: 0
+  m_SortingLayerID: 0
+  m_SortingOrder: 60
+  m_TargetDisplay: 0
+--- !u!114 &880011004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880011001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c4e9a2b8f1d4e6a9b0c3d5e7f8a1b2c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MilitaryTabletLcdUi
+  backgroundImage: {fileID: 0}
+  option1Image: {fileID: 0}
+  option2Image: {fileID: 0}
+  option3Image: {fileID: 0}
+  background: {fileID: 2800000, guid: f35748c336e035941ac8b496a6b85acb, type: 3}
+  option1Inactive: {fileID: 2800000, guid: 06ee2496f4dc8f44ea145521852b37c6, type: 3}
+  option1Active: {fileID: 2800000, guid: 789cccd89d7f13c4e86fa877594f0573, type: 3}
+  option2Inactive: {fileID: 2800000, guid: ab287e37850bdd849b89e866aa1f8ba0, type: 3}
+  option2Active: {fileID: 2800000, guid: 161887123f0d66f4d9dcbe87a242f9b3, type: 3}
+  option3Inactive: {fileID: 2800000, guid: f29e3e48d49e68241ad4f56b47fbd232, type: 3}
+  option3Active: {fileID: 2800000, guid: dce826d434644f847918b8bdbe5af2cd, type: 3}
+  canvasPixels: {x: 1000, y: 660}
+  worldWidthMeters: 0.19
+  allowFingerMove: 1
+--- !u!114 &880011005
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 880011001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cd44c4030f52c749bb61e0b0f122cee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.CanvasScaler
+  m_UiScaleMode: 0
+  m_ReferencePixelsPerUnit: 100
+  m_ScaleFactor: 1
+  m_ReferenceResolution: {x: 800, y: 600}
+  m_ScreenMatchMode: 0
+  m_MatchWidthOrHeight: 0
+  m_PhysicalUnit: 3
+  m_FallbackScreenDPI: 96
+  m_DefaultSpriteDPI: 96
+  m_DynamicPixelsPerUnit: 1
+  m_PresetInfoIsWorld: 1
 --- !u!1001 &645319993
 PrefabInstance:
   m_ObjectHideFlags: 0

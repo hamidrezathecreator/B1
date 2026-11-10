@@ -84,7 +84,8 @@ static class BridgeXrPlaySetup
         {
             body.enabled = true;
             body.height = BodyHeight;
-            body.radius = 0.22f;
+            // Slightly tighter so the cabin walls do not pinch the body in the middle.
+            body.radius = 0.18f;
             body.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
             body.stepOffset = 0.08f;
             body.slopeLimit = 20f;
