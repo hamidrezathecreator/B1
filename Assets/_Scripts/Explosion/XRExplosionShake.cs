@@ -48,6 +48,7 @@ public sealed class XRExplosionShake : MonoBehaviour
     private float waveElapsed;
     private float currentRisingIntensity;
     private bool shaking;
+    private float pulseDurationOverride = -1f;
 
     private void OnEnable()
     {
@@ -71,6 +72,13 @@ public sealed class XRExplosionShake : MonoBehaviour
     /// <summary>Parameterless reaction for gameplay events.</summary>
     [ContextMenu("Test Shake (Play Mode)")]
     public void Shake() => ShakeWithStrength(1f);
+
+    /// <summary>One soft headset pulse lasting the given seconds.</summary>
+    public void ShakeFor(float seconds, float value = 1f)
+    {
+        pulseDurationOverride = Mathf.Max(0.01f, seconds);
+        ShakeWithStrength(value);
+    }
 
     /// <summary>Scales the configured strength from zero to one; hits never stack.</summary>
     public void ShakeWithStrength(float value)
@@ -196,9 +204,12 @@ public sealed class XRExplosionShake : MonoBehaviour
         shaking = true;
     }
 
+    private float ActivePulseDuration => pulseDurationOverride > 0f ? pulseDurationOverride : duration;
+
     private float GetPulseIntensity()
     {
-        float fade = 1f - Mathf.Clamp01(elapsed / Mathf.Max(0.01f, duration));
+        float fade = 1f - Mathf.Clamp01(elapsed / Mathf.Max(0.01f, ActivePulseDuration));
+        if (fade <= 0f) pulseDurationOverride = -1f;
         return intensity * fade * fade;
     }
 
