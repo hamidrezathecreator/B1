@@ -1,0 +1,33 @@
+pluginManagement {
+    repositories {
+        // dl.google.com/dl/android/maven2 currently returns 404 from this network, so AGP 8.10.0
+        // cannot be resolved from google() or the Gradle Plugin Portal. This mirror hosts that plugin.
+        maven {
+            name = "huawei"
+            url = "https://repo.huaweicloud.com/repository/maven"
+        }
+        **ARTIFACTORYREPOSITORY**
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+include ':launcher', ':unityLibrary'
+**INCLUDES**
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        maven {
+            name = "huawei"
+            url = "https://repo.huaweicloud.com/repository/maven"
+        }
+        **ARTIFACTORYREPOSITORY**
+        google()
+        mavenCentral()
+        flatDir {
+            dirs "${project(':unityLibrary').projectDir}/libs"
+        }
+    }
+}

@@ -119,6 +119,14 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
             pokeFilter = button.AddComponent<XRPokeFilter>();
         pokeFilter.pokeInteractable = interactable;
         pokeFilter.pokeCollider = col;
+        // Soft approach so finger poke works from most angles while holding the tablet.
+        var pokeData = pokeFilter.pokeConfiguration != null ? pokeFilter.pokeConfiguration.Value : null;
+        if (pokeData != null)
+        {
+            pokeData.pokeDirection = PokeAxis.NegativeZ;
+            pokeData.interactionDepthOffset = 0.01f;
+            pokeData.enablePokeAngleThreshold = false;
+        }
 
         var captured = index;
         interactable.selectEntered.RemoveAllListeners();

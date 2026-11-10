@@ -198,11 +198,9 @@ static class BridgeXrPlaySetup
         var area = deck.GetComponent<TeleportationArea>();
         area.enabled = false;
 
-        var defaultLayer = LayerMask.NameToLayer("Default");
-        if (defaultLayer < 0) defaultLayer = 0;
         var groundMask = (LayerMask)(1 << groundLayer);
-        // Include Default so walls/props stop the teleport ray; only Ground has TeleportationArea.
-        var teleportRayMask = groundMask | (1 << defaultLayer);
+        // Ground-only: hitting Default walls/props before a pad makes the reticle red.
+        var teleportRayMask = groundMask;
         InteractionLayerMask teleportLayers = area.interactionLayers;
         foreach (var ray in origin.GetComponentsInChildren<XRRayInteractor>(true))
         {

@@ -72,6 +72,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     CanvasGroup fadeOverlay;
     GameObject exitBarrier;
     GameObject elevatorFloorTeleport;
+    GameObject elevatorLobbyTeleport;
     Transform floor1Poke;
     Vector3 floor1PokeRestLocal;
     Vector3 elevatorButtonRestLocal;
@@ -108,10 +109,13 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         EnsureWorldColliders();
         BuildExitBarrier();
         BuildElevatorFloorTeleport();
+        BuildElevatorLobbyTeleport();
+        EnsureStaticTable();
         // Move + teleport work inside the cabin; outside floors stay off until doors open.
         // Walkable Deck is a thick world box at spawn — disable it so it cannot pierce the cabin.
         SetWalkableDeckCollision(false);
         SetOutsideTeleportEnabled(false);
+        ApplyGroundOnlyTeleportRays();
         SetupHandVisuals();
         WireFloor1Button();
         MakeMilitaryTabletGrabbable();
@@ -294,10 +298,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (xrOrigin == null) return;
 
-        // Hide plastic controller meshes — replace with hand models at the controller pose.
-        HideControllerMeshes();
-
-        // Soften non-teleport rays so hands read clearly.
+        // Soften non-teleport rays so hands/finger tip read clearly.
         foreach (var line in xrOrigin.GetComponentsInChildren<XRInteractorLineVisual>(true))
         {
             if (line.gameObject.name.Contains("Teleport"))
@@ -305,29 +306,28 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             line.enabled = false;
         }
 
-        AttachHandPrefab("Left Controller", leftHandVisualPrefab, isLeft: true);
-        AttachHandPrefab("Right Controller", rightHandVisualPrefab, isLeft: false);
+        // Simple URP palm+fingers — Quest skinned prefabs often render invisible in player builds.
+        AttachHandPrefab("Left Controller", isLeft: true);
+        AttachHandPrefab("Right Controller", isLeft: false);
         EnsurePokeInteractors();
     }
 
-    void HideControllerMeshes()
+    void HideControllerMeshes(Transform controller)
     {
-        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
+        if (controller == null) return;
+        foreach (var child in controller.GetComponentsInChildren<Transform>(true))
         {
             if (!child.name.Contains("Controller Visual") &&
-                !child.name.Contains("UniversalController") &&
-                !child.name.Contains("XR Controller"))
+                !child.name.Contains("UniversalController"))
                 continue;
-
-            // Keep the GameObject active (tracking/poke need it); only hide renderers.
             foreach (var renderer in child.GetComponentsInChildren<Renderer>(true))
                 renderer.enabled = false;
         }
     }
 
-    void AttachHandPrefab(string controllerName, GameObject prefab, bool isLeft)
+    void AttachHandPrefab(string controllerName, bool isLeft)
     {
-        if (prefab == null || xrOrigin == null) return;
+        if (xrOrigin == null) return;
 
         Transform controller = null;
         foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
@@ -339,52 +339,84 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         if (controller == null) return;
 
-        // Replace any previous pink/broken hand instance.
         var existing = controller.Find("ControllerHandModel");
         if (existing != null)
             Destroy(existing.gameObject);
 
-        var hand = Instantiate(prefab, controller, false);
-        hand.name = "ControllerHandModel";
-        // Align Quest hand mesh to the held controller pose.
-        hand.transform.localPosition = new Vector3(0f, -0.03f, 0.04f);
-        hand.transform.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f);
-        hand.transform.localScale = Vector3.one;
-        hand.SetActive(true);
-
-        // Strip hand-tracking drivers that hide the mesh when controllers are held.
-        foreach (var behaviour in hand.GetComponentsInChildren<Behaviour>(true))
-        {
-            if (behaviour == null) continue;
-            var typeName = behaviour.GetType().Name;
-            if (typeName.Contains("XRHandSkeleton") || typeName.Contains("XRHandMesh") ||
-                typeName.Contains("XRHandTracking") || typeName.Contains("MetaAim") ||
-                typeName.Contains("HandExpression") || typeName.Contains("HandProcessor"))
-            {
-                behaviour.enabled = false;
-                Destroy(behaviour);
-            }
-        }
-
-        var skin = ResolveHandSkinMaterial();
-        foreach (var renderer in hand.GetComponentsInChildren<Renderer>(true))
-        {
-            renderer.gameObject.SetActive(true);
-            renderer.enabled = true;
-            // Quest pink = Shader Graph not in player build. Force URP Lit skin.
-            if (skin != null)
-            {
-                var mats = new Material[Mathf.Max(1, renderer.sharedMaterials.Length)];
-                for (var i = 0; i < mats.Length; i++)
-                    mats[i] = skin;
-                renderer.sharedMaterials = mats;
-            }
-        }
+        var hand = BuildSimpleControllerHand(controller, isLeft);
+        HideControllerMeshes(controller);
 
         var driver = hand.GetComponent<ControllerHandFingerDriver>();
         if (driver == null)
             driver = hand.AddComponent<ControllerHandFingerDriver>();
         driver.Bind(isLeft);
+    }
+
+    GameObject BuildSimpleControllerHand(Transform controller, bool isLeft)
+    {
+        var skin = ResolveHandSkinMaterial();
+        var hand = new GameObject("ControllerHandModel");
+        hand.transform.SetParent(controller, false);
+        hand.transform.localPosition = new Vector3(0f, -0.02f, 0.02f);
+        hand.transform.localRotation = Quaternion.identity;
+        hand.transform.localScale = Vector3.one;
+
+        // Palm
+        var palm = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        palm.name = "Palm";
+        palm.transform.SetParent(hand.transform, false);
+        palm.transform.localPosition = new Vector3(0f, 0f, 0.03f);
+        palm.transform.localScale = new Vector3(0.07f, 0.025f, 0.09f);
+        ApplySkin(palm, skin);
+        Object.Destroy(palm.GetComponent<Collider>());
+
+        // Index finger (trigger) + other fingers (grip)
+        CreateFinger(hand.transform, "index_finger", new Vector3(isLeft ? 0.02f : -0.02f, 0f, 0.08f), skin);
+        CreateFinger(hand.transform, "middle_finger", new Vector3(isLeft ? 0.005f : -0.005f, 0f, 0.085f), skin);
+        CreateFinger(hand.transform, "ring_finger", new Vector3(isLeft ? -0.012f : 0.012f, 0f, 0.08f), skin);
+        CreateFinger(hand.transform, "pinky_finger", new Vector3(isLeft ? -0.028f : 0.028f, 0f, 0.07f), skin);
+        CreateFinger(hand.transform, "thumb_finger", new Vector3(isLeft ? 0.035f : -0.035f, 0.01f, 0.04f), skin, length: 0.045f);
+
+        return hand;
+    }
+
+    static void CreateFinger(Transform parent, string name, Vector3 localPos, Material skin, float length = 0.055f)
+    {
+        var finger = new GameObject(name);
+        finger.transform.SetParent(parent, false);
+        finger.transform.localPosition = localPos;
+        finger.transform.localRotation = Quaternion.identity;
+
+        var seg = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        seg.name = name + "_seg";
+        seg.transform.SetParent(finger.transform, false);
+        seg.transform.localPosition = new Vector3(0f, 0f, length * 0.5f);
+        seg.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        seg.transform.localScale = new Vector3(0.012f, length * 0.5f, 0.012f);
+        ApplySkin(seg, skin);
+        Object.Destroy(seg.GetComponent<Collider>());
+    }
+
+    static void ApplySkin(GameObject go, Material skin)
+    {
+        var renderer = go.GetComponent<Renderer>();
+        if (renderer == null) return;
+        if (skin != null)
+            renderer.sharedMaterial = skin;
+        else
+        {
+            // Last resort — unlit color so Quest never shows pink error shader.
+            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null) shader = Shader.Find("Unlit/Color");
+            if (shader != null)
+            {
+                var mat = new Material(shader);
+                mat.color = new Color(0.91f, 0.74f, 0.62f, 1f);
+                if (mat.HasProperty("_BaseColor"))
+                    mat.SetColor("_BaseColor", new Color(0.91f, 0.74f, 0.62f, 1f));
+                renderer.sharedMaterial = mat;
+            }
+        }
     }
 
     Material ResolveHandSkinMaterial()
@@ -396,11 +428,14 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         if (lit == null)
             lit = Shader.Find("Universal Render Pipeline/Simple Lit");
         if (lit == null)
+            lit = Shader.Find("Universal Render Pipeline/Unlit");
+        if (lit == null)
             return null;
 
         var mat = new Material(lit);
         mat.name = "RuntimeHandSkin";
-        mat.SetColor("_BaseColor", new Color(0.91f, 0.74f, 0.62f, 1f));
+        if (mat.HasProperty("_BaseColor"))
+            mat.SetColor("_BaseColor", new Color(0.91f, 0.74f, 0.62f, 1f));
         mat.color = new Color(0.91f, 0.74f, 0.62f, 1f);
         return mat;
     }
@@ -409,17 +444,84 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (xrOrigin == null) return;
 
-        foreach (var poke in xrOrigin.GetComponentsInChildren<XRPokeInteractor>(true))
+        var pokes = xrOrigin.GetComponentsInChildren<XRPokeInteractor>(true);
+        if (pokes == null || pokes.Length == 0)
         {
+            EnsurePokeOnController("Left Controller");
+            EnsurePokeOnController("Right Controller");
+            pokes = xrOrigin.GetComponentsInChildren<XRPokeInteractor>(true);
+        }
+
+        var skin = ResolveHandSkinMaterial();
+        foreach (var poke in pokes)
+        {
+            if (poke == null) continue;
             poke.gameObject.SetActive(true);
             poke.enabled = true;
             poke.interactionLayers = -1;
 
-            // Remove old pink default-material tip spheres from previous builds.
+            // Keep poke point near index tip of the controller hand model when present.
+            var controllerRoot = poke.transform;
+            while (controllerRoot.parent != null &&
+                   controllerRoot.name != "Left Controller" &&
+                   controllerRoot.name != "Right Controller")
+                controllerRoot = controllerRoot.parent;
+
+            var hand = controllerRoot.Find("ControllerHandModel");
+            if (hand != null)
+            {
+                var index = FindNamedChild(hand, "index_finger");
+                if (index != null)
+                    poke.transform.position = index.TransformPoint(new Vector3(0f, 0f, 0.055f));
+            }
+
             var oldTip = poke.transform.Find("PokeTipVisual");
             if (oldTip != null)
                 Destroy(oldTip.gameObject);
+
+            // Visible fingertip so the user can aim at tablet options.
+            var tip = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            tip.name = "PokeTipVisual";
+            tip.transform.SetParent(poke.transform, false);
+            tip.transform.localPosition = Vector3.zero;
+            tip.transform.localRotation = Quaternion.identity;
+            tip.transform.localScale = Vector3.one * 0.018f;
+            ApplySkin(tip, skin);
+            var tipCollider = tip.GetComponent<Collider>();
+            if (tipCollider != null) Destroy(tipCollider);
         }
+    }
+
+    void EnsurePokeOnController(string controllerName)
+    {
+        Transform controller = null;
+        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
+        {
+            if (child.name != controllerName) continue;
+            controller = child;
+            break;
+        }
+        if (controller == null) return;
+        if (controller.GetComponentInChildren<XRPokeInteractor>(true) != null) return;
+
+        var pokeGo = new GameObject("Poke Interactor");
+        pokeGo.transform.SetParent(controller, false);
+        pokeGo.transform.localPosition = new Vector3(0f, -0.01f, 0.09f);
+        pokeGo.transform.localRotation = Quaternion.identity;
+        var poke = pokeGo.AddComponent<XRPokeInteractor>();
+        poke.interactionLayers = -1;
+    }
+
+    static Transform FindNamedChild(Transform root, string name)
+    {
+        if (root == null) return null;
+        if (root.name == name) return root;
+        for (var i = 0; i < root.childCount; i++)
+        {
+            var found = FindNamedChild(root.GetChild(i), name);
+            if (found != null) return found;
+        }
+        return null;
     }
 
     void EnsureWorldColliders()
@@ -497,66 +599,86 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var groundLayer = LayerMask.NameToLayer("Ground");
         if (groundLayer < 0) groundLayer = 0;
 
-        // Must cover full cabin including the button side (x≈0.9) and door side.
-        const float minX = -2.35f;
-        const float maxX = 1.15f;
-        const float minZ = -1.15f;
-        const float maxZ = 1.22f;
+        // Inset slightly from walls so destination validation does not go red.
+        const float minX = -2.20f;
+        const float maxX = 1.00f;
+        const float minZ = -1.00f;
+        const float maxZ = 1.10f;
 
         elevatorFloorTeleport = new GameObject("ElevatorFloorTeleport");
         elevatorFloorTeleport.layer = groundLayer;
         elevatorFloorTeleport.transform.SetParent(elevatorRoot, false);
         elevatorFloorTeleport.transform.localPosition = new Vector3(
             (minX + maxX) * 0.5f,
-            0.03f,
+            0.04f,
             (minZ + maxZ) * 0.5f);
         elevatorFloorTeleport.transform.localRotation = Quaternion.identity;
 
         var box = elevatorFloorTeleport.AddComponent<BoxCollider>();
-        box.size = new Vector3(maxX - minX, 0.1f, maxZ - minZ);
+        box.size = new Vector3(maxX - minX, 0.12f, maxZ - minZ);
         box.center = Vector3.zero;
 
         var area = elevatorFloorTeleport.AddComponent<TeleportationArea>();
         area.enabled = true;
-        ConfigureElevatorTeleport(area, cabinMode: true);
+        area.interactionLayers = -1;
+        ApplyGroundOnlyTeleportRays();
     }
 
-    void ConfigureElevatorTeleport(TeleportationArea area, bool cabinMode)
+    void BuildElevatorLobbyTeleport()
+    {
+        if (elevatorRoot == null) return;
+        if (elevatorLobbyTeleport != null) return;
+
+        var groundLayer = LayerMask.NameToLayer("Ground");
+        if (groundLayer < 0) groundLayer = 0;
+
+        // Pad just outside the doors so the concrete apron is walkable + teleportable.
+        elevatorLobbyTeleport = new GameObject("ElevatorLobbyTeleport");
+        elevatorLobbyTeleport.layer = groundLayer;
+        elevatorLobbyTeleport.transform.SetParent(elevatorRoot, false);
+        elevatorLobbyTeleport.transform.localPosition = new Vector3(-0.95f, 0.04f, 2.35f);
+        elevatorLobbyTeleport.transform.localRotation = Quaternion.identity;
+
+        var box = elevatorLobbyTeleport.AddComponent<BoxCollider>();
+        box.size = new Vector3(3.6f, 0.12f, 2.8f);
+        box.center = Vector3.zero;
+
+        var area = elevatorLobbyTeleport.AddComponent<TeleportationArea>();
+        // Enabled after doors open — collider stays so feet have ground when the cabin arrives.
+        area.enabled = false;
+        area.interactionLayers = -1;
+    }
+
+    void ApplyGroundOnlyTeleportRays()
     {
         if (xrOrigin == null) return;
 
         var groundLayer = LayerMask.NameToLayer("Ground");
         if (groundLayer < 0) groundLayer = 0;
-        var defaultLayer = LayerMask.NameToLayer("Default");
-        if (defaultLayer < 0) defaultLayer = 0;
+        // Ground-only: Default walls/props were turning the reticle red before any valid pad.
+        LayerMask teleportRayMask = 1 << groundLayer;
 
-        // Inside cabin: Ground-only so Default walls do not turn the reticle red.
-        // After doors open: Ground + Default so walls block teleporting through them.
-        LayerMask teleportRayMask = cabinMode
-            ? (LayerMask)(1 << groundLayer)
-            : (LayerMask)((1 << groundLayer) | (1 << defaultLayer));
-
-        InteractionLayerMask teleportLayers = -1;
-        var foundTeleportRay = false;
         foreach (var ray in xrOrigin.GetComponentsInChildren<XRRayInteractor>(true))
         {
             if (!ray.gameObject.name.Contains("Teleport"))
                 continue;
-
             ray.raycastMask = teleportRayMask;
-            teleportLayers = ray.interactionLayers;
-            foundTeleportRay = true;
-        }
-
-        if (area != null)
-        {
-            area.enabled = true;
-            // Match the teleport interactor layers; fallback to everything.
-            area.interactionLayers = foundTeleportRay ? teleportLayers : (InteractionLayerMask)(-1);
         }
 
         foreach (var provider in xrOrigin.GetComponentsInChildren<TeleportationProvider>(true))
             provider.enabled = true;
+
+        if (elevatorFloorTeleport != null)
+        {
+            var area = elevatorFloorTeleport.GetComponent<TeleportationArea>();
+            if (area != null) area.interactionLayers = -1;
+        }
+
+        if (elevatorLobbyTeleport != null)
+        {
+            var area = elevatorLobbyTeleport.GetComponent<TeleportationArea>();
+            if (area != null) area.interactionLayers = -1;
+        }
     }
 
     void SetWalkableDeckCollision(bool enabled)
@@ -576,9 +698,12 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             var area = deck.GetComponent<TeleportationArea>();
             if (area != null) area.enabled = enabled;
             SetWalkableDeckCollision(enabled);
-            // Keep the collider so feet still have a floor under the tunnel later.
+            // Replant footing, then force Ground-only rays again (EnsurePlaySpace adds Default).
             if (enabled)
+            {
                 BridgeXrPlaySetup.EnsurePlaySpace(xrOrigin);
+                ApplyGroundOnlyTeleportRays();
+            }
         }
 
         foreach (var plane in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
@@ -586,31 +711,74 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             if (plane == null || !plane.name.StartsWith("Plane"))
                 continue;
             var area = plane.GetComponent<TeleportationArea>();
-            if (area != null) area.enabled = enabled;
+            if (area != null)
+            {
+                area.enabled = enabled;
+                area.interactionLayers = -1;
+            }
             else if (enabled)
                 EnsureFloorCollider(plane.gameObject, teleportEnabled: true);
         }
 
-        // Leaving the cabin: restore wall-blocking teleport rays (Ground + Default).
-        if (enabled)
+        if (elevatorLobbyTeleport != null)
         {
-            var cabinFloor = elevatorFloorTeleport != null
-                ? elevatorFloorTeleport.GetComponent<TeleportationArea>()
-                : null;
-            ConfigureElevatorTeleport(cabinFloor, cabinMode: false);
+            var lobbyArea = elevatorLobbyTeleport.GetComponent<TeleportationArea>();
+            if (lobbyArea != null)
+            {
+                lobbyArea.enabled = enabled;
+                lobbyArea.interactionLayers = -1;
+            }
         }
+
+        if (elevatorFloorTeleport != null)
+        {
+            var cabinArea = elevatorFloorTeleport.GetComponent<TeleportationArea>();
+            if (cabinArea != null)
+            {
+                cabinArea.enabled = true;
+                cabinArea.interactionLayers = -1;
+            }
+        }
+
+        ApplyGroundOnlyTeleportRays();
     }
 
     void SyncTeleportLayers(TeleportationArea area)
     {
-        if (xrOrigin == null || area == null) return;
-        foreach (var ray in xrOrigin.GetComponentsInChildren<XRRayInteractor>(true))
+        if (area == null) return;
+        area.interactionLayers = -1;
+        ApplyGroundOnlyTeleportRays();
+    }
+
+    void EnsureStaticTable()
+    {
+        var table = GameObject.Find("SM_Table");
+        if (table == null) return;
+
+        // Table must never be grabbable / movable.
+        foreach (var grab in table.GetComponentsInChildren<XRGrabInteractable>(true))
+            Destroy(grab);
+        foreach (var body in table.GetComponentsInChildren<Rigidbody>(true))
+            Destroy(body);
+
+        // Non-readable FBX mesh colliders often fail — use a solid box instead.
+        foreach (var meshCol in table.GetComponentsInChildren<MeshCollider>(true))
+            meshCol.enabled = false;
+
+        if (!TryFitBox(table, out var center, out var size))
         {
-            if (!ray.gameObject.name.Contains("Teleport"))
-                continue;
-            area.interactionLayers = ray.interactionLayers;
-            return;
+            center = Vector3.zero;
+            size = new Vector3(1.2f, 0.8f, 0.7f);
         }
+
+        // Slightly thicker top so the tablet rests reliably.
+        size.y = Mathf.Max(size.y, 0.75f);
+
+        var box = table.GetComponent<BoxCollider>();
+        if (box == null) box = table.AddComponent<BoxCollider>();
+        box.isTrigger = false;
+        box.center = center;
+        box.size = size;
     }
 
     void WireFloor1Button()
@@ -759,6 +927,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             size = new Vector3(0.22f, 0.02f, 0.3f);
         }
 
+        EnsureStaticTable();
         var table = GameObject.Find("SM_Table");
         PlaceTabletOnTable(tablet, table);
 
@@ -838,22 +1007,6 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             return;
         }
 
-        // Make sure the table can hold the tablet when gravity turns on after grab.
-        if (table.GetComponentInChildren<Collider>() == null)
-        {
-            var tableRenderer = table.GetComponentInChildren<Renderer>();
-            if (tableRenderer != null)
-            {
-                var tableBox = table.AddComponent<BoxCollider>();
-                tableBox.center = table.transform.InverseTransformPoint(tableRenderer.bounds.center);
-                var lossy = table.transform.lossyScale;
-                tableBox.size = new Vector3(
-                    SafeDiv(tableRenderer.bounds.size.x, Mathf.Abs(lossy.x)),
-                    SafeDiv(tableRenderer.bounds.size.y, Mathf.Abs(lossy.y)),
-                    SafeDiv(tableRenderer.bounds.size.z, Mathf.Abs(lossy.z)));
-            }
-        }
-
         var bounds = new Bounds(table.transform.position, Vector3.one * 0.5f);
         var found = false;
         foreach (var renderer in table.GetComponentsInChildren<Renderer>())
@@ -869,12 +1022,12 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             }
         }
 
-        // Keep the authored pose when already resting on the table; only lift if it sank.
+        // Rest on the tabletop; table collider (EnsureStaticTable) holds it after drop.
         tablet.transform.SetParent(null, true);
         var pos = tablet.transform.position;
-        var tableTopY = bounds.max.y + 0.02f;
-        if (pos.y < tableTopY - 0.05f)
-            pos.y = tableTopY;
+        var tableTopY = bounds.max.y + 0.025f;
+        if (pos.y < tableTopY + 0.05f)
+            pos = new Vector3(bounds.center.x, tableTopY, bounds.center.z);
         tablet.transform.position = pos;
         tablet.transform.rotation = Quaternion.Euler(0f, 180f, 90f);
     }
@@ -1093,7 +1246,8 @@ public sealed class ControllerHandFingerDriver : MonoBehaviour
                 n.Contains("index_") || n.Contains("middle_") || n.Contains("ring_") ||
                 n.Contains("pinky_") || n.Contains("thumb_");
             if (!isFinger) return;
-            // Skip tip leaves with no useful curl.
+            // Skip tip leaves / mesh segments with no useful curl.
+            if (n.Contains("_seg")) return;
             if (n.Contains("tip") && t.childCount == 0) return;
 
             fingerBones.Add(t);
