@@ -2,14 +2,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Filtering;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 /// <summary>
-/// Poke Option_1/2/3 and swap inactive→active textures (011→01, 022→02, 033→03).
-/// Each option image is a mostly transparent full-canvas sprite, so a hit counts
-/// only on the opaque bar. Layout stays as authored in the scene.
+/// Finger-touch Option_1/2/3 and swap inactive→active textures (011→01, 022→02, 033→03).
+/// Each option image covers the whole canvas, so its collider is shrunk to the opaque bar
+/// only; otherwise the three colliders overlap and the wrong option (or none) toggles.
+/// A touch counts when a <see cref="TabletFingerTip"/> enters that bar's collider.
+/// Layout stays as authored in the scene.
 /// </summary>
 public sealed class MilitaryTabletLcdUi : MonoBehaviour
 {
@@ -28,13 +29,21 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     [SerializeField] Texture2D option3Inactive;
     [SerializeField] Texture2D option3Active;
 
-    static readonly List<MilitaryTabletLcdUi> Active = new List<MilitaryTabletLcdUi>();
+    [Header("Touch")]
+    [Tooltip("Collider depth in meters, centred on the screen surface.")]
+    [SerializeField] float touchDepth = 0.06f;
+    [Tooltip("Alpha above this counts as part of an option bar.")]
+    [Range(0.05f, 0.95f)] [SerializeField] float opaqueThreshold = 0.35f;
+    [Tooltip("Ignore a second touch on the same option for this long, seconds.")]
+    [SerializeField] float retouchDelay = 0.4f;
 
     RawImage[] optionImages;
     Texture2D[] inactiveTextures;
     Texture2D[] activeTextures;
+    BoxCollider[] optionColliders;
     bool[] optionActive;
     bool[] fingerInside;
+    int[] triggerCount;
     float[] lastToggleTime;
     bool wired;
 
@@ -54,32 +63,11 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
 
     public void EnsureUiHierarchy() { }
 
-    /// <summary>Finger-tip poke. Hits the opaque pixels of each option, not the empty canvas.</summary>
-    public static void PokeAll(Vector3 worldPoint)
-    {
-        for (var i = 0; i < Active.Count; i++)
-        {
-            if (Active[i] != null)
-                Active[i].Poke(worldPoint);
-        }
-    }
-
-    void OnEnable()
-    {
-        if (!Active.Contains(this))
-            Active.Add(this);
-    }
-
-    void OnDisable()
-    {
-        Active.Remove(this);
-    }
-
     void Start()
     {
         ResolveOptionImages();
         ShowInactiveDefaults();
-        WireClicks();
+        WireTouchTargets();
     }
 
     void ResolveOptionImages()
@@ -91,9 +79,13 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         optionImages = new[] { option1Image, option2Image, option3Image };
         inactiveTextures = new[] { option1Inactive, option2Inactive, option3Inactive };
         activeTextures = new[] { option1Active, option2Active, option3Active };
+        optionColliders = new BoxCollider[3];
         optionActive = new bool[3];
         fingerInside = new bool[3];
+        triggerCount = new int[3];
         lastToggleTime = new float[3];
+        for (var i = 0; i < 3; i++)
+            lastToggleTime[i] = -999f;
     }
 
     RawImage FindRaw(string name)
@@ -113,86 +105,121 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         }
     }
 
-    void WireClicks()
+    void WireTouchTargets()
     {
         if (wired) return;
         wired = true;
 
         for (var i = 0; i < 3; i++)
         {
-            if (optionImages[i] == null) continue;
-            WirePokeButton(optionImages[i].gameObject);
+            var image = optionImages[i];
+            if (image == null) continue;
+
+            var go = image.gameObject;
+            // Old poke setup on these objects fought the tablet grab and never fired.
+            var oldPoke = go.GetComponent<XRPokeFilter>();
+            if (oldPoke != null) Destroy(oldPoke);
+            var oldInteractable = go.GetComponent<XRSimpleInteractable>();
+            if (oldInteractable != null) Destroy(oldInteractable);
+
+            var col = go.GetComponent<BoxCollider>();
+            if (col == null) col = go.AddComponent<BoxCollider>();
+            col.isTrigger = true;
+            FitColliderToOpaqueBar(image, col, i);
+            optionColliders[i] = col;
+
+            var touch = go.GetComponent<TabletOptionTouch>();
+            if (touch == null) touch = go.AddComponent<TabletOptionTouch>();
+            touch.Bind(this, i);
         }
     }
 
-    void WirePokeButton(GameObject button)
+    void FitColliderToOpaqueBar(RawImage image, BoxCollider col, int index)
     {
-        var rt = button.GetComponent<RectTransform>();
-        var col = button.GetComponent<BoxCollider>();
-        if (col == null) col = button.AddComponent<BoxCollider>();
-        // Trigger so the tablet body stays grabbable by either hand.
-        // Clicks are tested from the right index tip, not from this collider.
-        col.isTrigger = true;
-
+        var rt = image.rectTransform;
         var rect = rt.rect;
-        var zScale = Mathf.Max(0.00001f, Mathf.Abs(rt.lossyScale.z));
-        col.center = new Vector3(rect.center.x, rect.center.y, 0f);
-        col.size = new Vector3(
-            Mathf.Max(1f, rect.width),
-            Mathf.Max(1f, rect.height),
-            0.08f / zScale);
+        var uv = OpaqueUvRect(inactiveTextures[index] != null ? inactiveTextures[index] : image.texture as Texture2D, index);
 
-        var interactable = button.GetComponent<XRSimpleInteractable>();
-        if (interactable != null)
-            Destroy(interactable);
-        var pokeFilter = button.GetComponent<XRPokeFilter>();
-        if (pokeFilter != null)
-            Destroy(pokeFilter);
+        var xMin = rect.xMin + uv.xMin * rect.width;
+        var xMax = rect.xMin + uv.xMax * rect.width;
+        var yMin = rect.yMin + uv.yMin * rect.height;
+        var yMax = rect.yMin + uv.yMax * rect.height;
+
+        var zScale = Mathf.Max(0.000001f, Mathf.Abs(rt.lossyScale.z));
+        col.center = new Vector3((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f, 0f);
+        col.size = new Vector3(
+            Mathf.Max(1f, xMax - xMin),
+            Mathf.Max(1f, yMax - yMin),
+            touchDepth / zScale);
     }
 
-    void Poke(Vector3 worldPoint)
+    /// <summary>UV bounds of the opaque pixels. Falls back to thirds when the texture is not readable.</summary>
+    Rect OpaqueUvRect(Texture2D tex, int index)
     {
-        if (optionImages == null) return;
-        for (var i = 0; i < optionImages.Length; i++)
+        if (tex != null && tex.isReadable)
         {
-            var inside = HitsOpaque(i, worldPoint);
+            var pixels = tex.GetPixels32();
+            var w = tex.width;
+            var h = tex.height;
+            var limit = (byte)Mathf.RoundToInt(opaqueThreshold * 255f);
+            int minX = w, minY = h, maxX = -1, maxY = -1;
+            for (var y = 0; y < h; y += 2)
+            {
+                var row = y * w;
+                for (var x = 0; x < w; x += 2)
+                {
+                    if (pixels[row + x].a <= limit) continue;
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+
+            if (maxX >= minX && maxY >= minY)
+                return Rect.MinMaxRect(minX / (float)w, minY / (float)h, (maxX + 1f) / w, (maxY + 1f) / h);
+        }
+
+        // Option_1 is the top bar, Option_3 the bottom.
+        var band = 1f / 3f;
+        var top = 1f - index * band;
+        return Rect.MinMaxRect(0.04f, top - band, 0.96f, top);
+    }
+
+    internal void FingerEnter(int index)
+    {
+        if (triggerCount == null || index < 0 || index >= triggerCount.Length) return;
+        triggerCount[index]++;
+    }
+
+    internal void FingerExit(int index)
+    {
+        if (triggerCount == null || index < 0 || index >= triggerCount.Length) return;
+        triggerCount[index] = Mathf.Max(0, triggerCount[index] - 1);
+    }
+
+    void Update()
+    {
+        if (optionColliders == null) return;
+
+        for (var i = 0; i < optionColliders.Length; i++)
+        {
+            var col = optionColliders[i];
+            if (col == null) continue;
+
+            // Trigger callbacks, plus a direct overlap test in case physics missed the
+            // contact (fast poke, or the tablet moved this frame while being held).
+            var inside = triggerCount[i] > 0 || TabletFingerTip.AnyInside(col);
             if (inside && !fingerInside[i])
-                OnOptionClicked(i);
+                OnOptionTouched(i);
             fingerInside[i] = inside;
         }
     }
 
-    bool HitsOpaque(int index, Vector3 worldPoint)
+    void OnOptionTouched(int index)
     {
-        var image = optionImages[index];
-        if (image == null) return false;
-        var rt = image.rectTransform;
-        var local = rt.InverseTransformPoint(worldPoint);
-        var rect = rt.rect;
-        if (local.x < rect.xMin || local.x > rect.xMax || local.y < rect.yMin || local.y > rect.yMax)
-            return false;
-
-        var zScale = Mathf.Max(0.00001f, Mathf.Abs(rt.lossyScale.z));
-        if (Mathf.Abs(local.z) * zScale > 0.06f)
-            return false;
-
-        var tex = image.texture as Texture2D;
-        if (tex == null || !tex.isReadable)
-            return true;
-
-        var u = Mathf.InverseLerp(rect.xMin, rect.xMax, local.x);
-        var v = Mathf.InverseLerp(rect.yMin, rect.yMax, local.y);
-        return tex.GetPixelBilinear(u, v).a > 0.35f;
-    }
-
-    void OnOptionClicked(int index)
-    {
-        if (optionImages == null || index < 0 || index >= optionImages.Length)
-            return;
-        if (optionImages[index] == null)
-            return;
-        if (Time.unscaledTime - lastToggleTime[index] < 0.35f)
-            return;
+        if (optionImages[index] == null) return;
+        if (Time.unscaledTime - lastToggleTime[index] < retouchDelay) return;
 
         lastToggleTime[index] = Time.unscaledTime;
         optionActive[index] = !optionActive[index];
@@ -202,5 +229,92 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
 
         var allChecked = optionActive[0] && optionActive[1] && optionActive[2];
         ChecklistChanged?.Invoke(allChecked);
+    }
+}
+
+/// <summary>Trigger relay on each option bar; forwards finger contacts to the tablet UI.</summary>
+public sealed class TabletOptionTouch : MonoBehaviour
+{
+    MilitaryTabletLcdUi owner;
+    int index;
+
+    public void Bind(MilitaryTabletLcdUi ui, int optionIndex)
+    {
+        owner = ui;
+        index = optionIndex;
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (owner != null && other.GetComponent<TabletFingerTip>() != null)
+            owner.FingerEnter(index);
+    }
+
+    void OnTriggerExit(Collider other)
+    {
+        if (owner != null && other.GetComponent<TabletFingerTip>() != null)
+            owner.FingerExit(index);
+    }
+}
+
+/// <summary>
+/// Small trigger sphere that follows a fingertip. Kinematic rigidbody so it reports
+/// trigger contacts with the tablet bars even though the tablet is kinematic too.
+/// </summary>
+public sealed class TabletFingerTip : MonoBehaviour
+{
+    static readonly List<TabletFingerTip> Active = new List<TabletFingerTip>();
+
+    SphereCollider sphere;
+
+    public static TabletFingerTip Create(string name, float radius = 0.012f)
+    {
+        var go = new GameObject(name);
+        var tip = go.AddComponent<TabletFingerTip>();
+        tip.sphere = go.AddComponent<SphereCollider>();
+        tip.sphere.isTrigger = true;
+        tip.sphere.radius = radius;
+        var body = go.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.useGravity = false;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        return tip;
+    }
+
+    public void MoveTo(Vector3 worldPosition)
+    {
+        if (!gameObject.activeSelf) gameObject.SetActive(true);
+        transform.position = worldPosition;
+    }
+
+    public void Park()
+    {
+        if (gameObject.activeSelf) gameObject.SetActive(false);
+    }
+
+    /// <summary>True when any active fingertip sphere overlaps the collider.</summary>
+    public static bool AnyInside(Collider target)
+    {
+        for (var i = 0; i < Active.Count; i++)
+        {
+            var tip = Active[i];
+            if (tip == null || tip.sphere == null) continue;
+            var center = tip.transform.position;
+            var closest = target.ClosestPoint(center);
+            var reach = tip.sphere.radius * Mathf.Max(tip.transform.lossyScale.x, 0.0001f);
+            if ((closest - center).sqrMagnitude <= reach * reach)
+                return true;
+        }
+        return false;
+    }
+
+    void OnEnable()
+    {
+        if (!Active.Contains(this)) Active.Add(this);
+    }
+
+    void OnDisable()
+    {
+        Active.Remove(this);
     }
 }

@@ -29,6 +29,10 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Header("Hand visuals")]
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
+    [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
+    [SerializeField] Vector3 handOnControllerPosition = new Vector3(-0.01f, -0.03f, -0.07f);
+    [Tooltip("Extra wrist rotation on the controller, degrees.")]
+    [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
     [SerializeField] TMP_FontAsset handHintFont;
     [SerializeField] string elevatorHintMessage = "روی دکمه آسانسور کلیک کن";
 
@@ -79,6 +83,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Tooltip("Path start, elevator local space (just outside the doors).")]
     [SerializeField] Vector3 pathStartLocal = new Vector3(-0.95f, 0f, 1.6f);
     [Min(0f)] [SerializeField] float pathStopBeforeTable = 0.45f;
+    [Tooltip("How much of the forward distance to the table is walked straight before the bend.")]
+    [Range(0.1f, 0.9f)] [SerializeField] float pathStraightFraction = 0.5f;
 
     [Header("After all three tablet options are checked")]
     [SerializeField] string nextSceneName = "Missiles";
@@ -89,6 +95,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     XRPokeInteractor leftPoke;
     XRPokeInteractor rightPoke;
     Transform rightIndexTip;
+    TabletFingerTip rightFingerTip;
     Coroutine nextSceneRoutine;
     bool loadingNextScene;
     readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
@@ -383,12 +390,25 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             // which is why the brown opaque hand showed and this mesh did not.
             if (skin != null)
                 renderer.sharedMaterial = skin;
+            if (renderer is SkinnedMeshRenderer skinned)
+                skinned.updateWhenOffscreen = true;
         }
 
         var pose = hand.GetComponent<ProjectHandPose>();
         if (pose == null)
             pose = hand.AddComponent<ProjectHandPose>();
-        pose.Bind(FindNamedTransform(controllerName), isLeft);
+        var offset = handOnControllerPosition;
+        var euler = handOnControllerEuler;
+        if (isLeft)
+        {
+            offset.x = -offset.x;
+            euler.y = -euler.y;
+            euler.z = -euler.z;
+        }
+        var trackingSpace = xrOrigin.CameraFloorOffsetObject != null
+            ? xrOrigin.CameraFloorOffsetObject.transform
+            : xrOrigin.transform;
+        pose.Bind(FindNamedTransform(controllerName), trackingSpace, isLeft, offset, euler);
         if (!isLeft)
             rightIndexTip = FindIndexTip(hand);
     }
@@ -447,11 +467,19 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             hasRight |= TryIndexTip(subsystem.rightHand, out rightTip);
         }
 
+        // XR Hands joint poses are in tracking space, not world space.
+        var space = HandTrackingSpace();
+        if (space != null)
+        {
+            if (hasLeft) leftTip = space.TransformPoint(leftTip);
+            if (hasRight) rightTip = space.TransformPoint(rightTip);
+        }
+
         if (hasLeft && leftPoke != null)
             leftPoke.transform.position = leftTip;
 
-        // Right fingertip clicks the tablet. Tracked joint wins; otherwise the
-        // visible index bone on the controller hand (builds often have no hand tracking).
+        // Right fingertip touches the tablet. Tracked joint wins; then the visible index
+        // bone on the controller hand; then the controller poke point.
         var clickPoint = Vector3.zero;
         var hasClick = false;
         if (hasRight)
@@ -459,18 +487,38 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             clickPoint = rightTip;
             hasClick = true;
         }
-        else if (rightIndexTip != null)
+        else if (rightIndexTip != null && rightIndexTip.gameObject.activeInHierarchy)
         {
             clickPoint = rightIndexTip.position;
             hasClick = true;
         }
+        else if (rightPoke != null)
+        {
+            clickPoint = rightPoke.transform.position;
+            hasClick = true;
+        }
+
+        if (rightFingerTip == null)
+            rightFingerTip = TabletFingerTip.Create("RightFingerTipTouch");
 
         if (hasClick)
         {
-            if (rightPoke != null)
+            if (rightPoke != null && (hasRight || rightIndexTip != null))
                 rightPoke.transform.position = clickPoint;
-            MilitaryTabletLcdUi.PokeAll(clickPoint);
+            rightFingerTip.MoveTo(clickPoint);
         }
+        else
+        {
+            rightFingerTip.Park();
+        }
+    }
+
+    Transform HandTrackingSpace()
+    {
+        if (xrOrigin == null) return null;
+        return xrOrigin.CameraFloorOffsetObject != null
+            ? xrOrigin.CameraFloorOffsetObject.transform
+            : xrOrigin.transform;
     }
 
     static bool TryIndexTip(XRHand hand, out Vector3 tip)
@@ -1241,26 +1289,38 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         if (!hasCustomRoute)
         {
-            // Two legs, not the diagonal: straight out of the doors, then sideways to the table.
+            // Straight out of the doors for part of the way, then a soft bend toward the table.
+            // The bend starts early so the path stays in the open floor, not along the wall.
             var forward = elevatorRoot.forward;
             forward.y = 0f;
             if (forward.sqrMagnitude < 0.0001f) forward = Vector3.forward;
             forward.Normalize();
-            var right = Vector3.Cross(Vector3.up, forward);
 
             var toTable = bounds.center - start;
             toTable.y = 0f;
-            var forwardDist = Vector3.Dot(toTable, forward);
-            var sideDist = Vector3.Dot(toTable, right);
-            var corner = start + forward * Mathf.Max(1.8f, forwardDist);
+            var forwardDist = Mathf.Max(0f, Vector3.Dot(toTable, forward));
+            var straight = Mathf.Clamp(forwardDist * pathStraightFraction, 1.2f, Mathf.Max(1.2f, forwardDist - 1f));
+            var corner = start + forward * straight;
             corner.y = start.y;
 
-            var sideSign = Mathf.Abs(sideDist) < 0.05f ? 1f : Mathf.Sign(sideDist);
-            var end = corner + right * (sideDist + sideSign * 1.15f);
+            var edge = bounds.ClosestPoint(new Vector3(corner.x, bounds.center.y, corner.z));
+            var back = new Vector3(corner.x - edge.x, 0f, corner.z - edge.z);
+            if (back.sqrMagnitude < 0.0001f) back = -forward;
+            var end = edge + back.normalized * pathStopBeforeTable;
             end.y = start.y;
 
             points.Add(corner);
-            points.Add(end);
+            // Quadratic bend: control point pulls the curve forward, like a drawn turn.
+            var control = corner + forward * Mathf.Min(1.2f, Vector3.Distance(corner, end) * 0.35f);
+            control.y = start.y;
+            const int bendSteps = 8;
+            for (var i = 1; i <= bendSteps; i++)
+            {
+                var t = i / (float)bendSteps;
+                var a = Vector3.Lerp(corner, control, t);
+                var b = Vector3.Lerp(control, end, t);
+                points.Add(Vector3.Lerp(a, b, t));
+            }
         }
         else
         {
@@ -1374,19 +1434,31 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 public sealed class ProjectHandPose : MonoBehaviour
 {
     Transform controller;
-    bool leftHand;
+    Transform trackingSpace;
+    Vector3 offsetPosition;
+    Quaternion offsetRotation;
     XRHandSkeletonDriver skeleton;
     XRHandTrackingEvents tracking;
+    Transform wrist;
     Renderer[] renderers;
     bool onController;
+    bool bound;
 
-    public void Bind(Transform controllerAnchor, bool isLeft)
+    public void Bind(Transform controllerAnchor, Transform handTrackingSpace, bool isLeft,
+        Vector3 localOffset, Vector3 localEuler)
     {
         controller = controllerAnchor;
-        leftHand = isLeft;
+        trackingSpace = handTrackingSpace;
+        offsetPosition = localOffset;
+        // XR Hands wrist: +Z toward the fingers, +Y out of the back of the hand.
+        // Holding a controller the back of the right hand faces +X, the left hand faces -X.
+        offsetRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(localEuler);
         skeleton = GetComponent<XRHandSkeletonDriver>();
         tracking = GetComponent<XRHandTrackingEvents>();
+        wrist = skeleton != null ? skeleton.rootTransform : null;
         renderers = GetComponentsInChildren<Renderer>(true);
+        onController = false;
+        bound = true;
     }
 
     void LateUpdate()
@@ -1402,12 +1474,18 @@ public sealed class ProjectHandPose : MonoBehaviour
             }
         }
 
+        if (!bound) return;
+
         var tracked = tracking != null && tracking.handIsTracked;
         if (tracked)
         {
-            if (onController)
+            // Skeleton writes wrist poses in tracking space, so live under the camera offset.
+            if (onController || transform.parent != trackingSpace)
             {
-                transform.SetParent(null, false);
+                transform.SetParent(trackingSpace, false);
+                transform.localPosition = Vector3.zero;
+                transform.localRotation = Quaternion.identity;
+                transform.localScale = Vector3.one;
                 onController = false;
             }
             if (skeleton != null && !skeleton.enabled)
@@ -1425,8 +1503,16 @@ public sealed class ProjectHandPose : MonoBehaviour
             onController = true;
         }
 
-        transform.localPosition = new Vector3(0f, -0.02f, 0.04f);
-        transform.localRotation = Quaternion.Euler(-90f, leftHand ? 0f : 180f, 0f);
+        // The sample prefab parks the wrist 0.5 m ahead and 0.2 m to the side,
+        // which pushed the mesh far away from the controller. Zero it here.
+        if (wrist != null && wrist != transform)
+        {
+            wrist.localPosition = Vector3.zero;
+            wrist.localRotation = Quaternion.identity;
+        }
+
+        transform.localPosition = offsetPosition;
+        transform.localRotation = offsetRotation;
         transform.localScale = Vector3.one;
     }
 }
