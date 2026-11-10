@@ -4298,7 +4298,8 @@ MonoBehaviour:
   xrOrigin: {fileID: 0}
   leftHandVisualPrefab: {fileID: 100100000, guid: b3ed8a0a703ebd34a9e44ed3d9f1fcf6, type: 3}
   rightHandVisualPrefab: {fileID: 100100000, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
-  handSkinMaterial: {fileID: 2100000, guid: a1b2c3d4e5f6789012345678abcdef01, type: 2}
+  handHintFont: {fileID: 11400000, guid: 3fbde2e562e333d488bc46986fc6f4f1, type: 2}
+  elevatorHintMessage: "روی دکمه آسانسور کلیک کن"
   blackHoldSeconds: 3
   fadeInSeconds: 1.25
   doorDelaySeconds: 5

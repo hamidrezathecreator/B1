@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using TMPro;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.Hands;
@@ -28,6 +29,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Header("Hand visuals")]
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
+    [SerializeField] TMP_FontAsset handHintFont;
+    [SerializeField] string elevatorHintMessage = "روی دکمه آسانسور کلیک کن";
 
     [Header("Timing")]
     [Min(0f)] [SerializeField] float blackHoldSeconds = 3f;
@@ -71,7 +74,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
     [Header("Floor path to table (shown when doors open)")]
     [SerializeField] bool showPathToTable = true;
-    [Tooltip("Optional empty objects to route the path around obstacles (in order). Empty = straight line.")]
+    [Tooltip("Optional empty objects to route the path (in order). Empty = straight out of the doors, then sideways to the table.")]
     [SerializeField] Transform[] pathWaypoints;
     [Tooltip("Path start, elevator local space (just outside the doors).")]
     [SerializeField] Vector3 pathStartLocal = new Vector3(-0.95f, 0f, 1.6f);
@@ -85,9 +88,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     CanvasGroup fadeOverlay;
     XRPokeInteractor leftPoke;
     XRPokeInteractor rightPoke;
+    Transform rightIndexTip;
     Coroutine nextSceneRoutine;
     bool loadingNextScene;
     readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
+    HandHintBanner handHint;
     GameObject exitBarrier;
     GameObject elevatorFloorTeleport;
     GameObject elevatorLobbyTeleport;
@@ -112,8 +117,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         if (elevatorRoot != null)
         {
             elevatorRestPosition = elevatorRoot.position;
-            // Start the cabin below the tunnel floor so the ride brings you "into" it.
-            elevatorRoot.position = elevatorRestPosition + Vector3.down * rideHeight;
+            // Start above the tunnel floor so the ride brings the cabin down.
+            elevatorRoot.position = elevatorRestPosition + Vector3.up * rideHeight;
         }
 
         // Place AFTER the cabin drops, then parent so player + cabin share the ride.
@@ -331,18 +336,102 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
 
         HideControllerMeshes(xrOrigin.transform);
-        SpawnTrackingHand(leftHandVisualPrefab, "Left Hand Tracking");
-        SpawnTrackingHand(rightHandVisualPrefab, "Right Hand Tracking");
+        SpawnTrackingHand(leftHandVisualPrefab, "Left Hand Tracking", "Left Controller", true);
+        SpawnTrackingHand(rightHandVisualPrefab, "Right Hand Tracking", "Right Controller", false);
         leftPoke = EnsurePokeOnController("Left Controller");
         rightPoke = EnsurePokeOnController("Right Controller");
+        ShowElevatorHint();
     }
 
-    void SpawnTrackingHand(GameObject prefab, string handName)
+    void ShowElevatorHint()
     {
-        if (prefab == null || GameObject.Find(handName) != null) return;
-        var hand = Instantiate(prefab);
+        if (handHint != null || xrOrigin == null || xrOrigin.Camera == null) return;
+        var hand = FindNamedTransform("Right Controller");
+        if (hand == null) return;
+        handHint = HandHintBanner.Create(xrOrigin.Camera, handHintFont, elevatorHintMessage);
+        handHint.SetHand(hand);
+    }
+
+    Transform FindNamedTransform(string targetName)
+    {
+        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
+        {
+            if (child.name == targetName) return child;
+        }
+        return null;
+    }
+
+    void SpawnTrackingHand(GameObject prefab, string handName, string controllerName, bool isLeft)
+    {
+        if (prefab == null) return;
+        var existing = GameObject.Find(handName);
+        var hand = existing != null ? existing : Instantiate(prefab);
         hand.name = handName;
         hand.SetActive(true);
+
+        // Turns the mesh off when hand tracking is lost, so a controller build shows nothing.
+        var meshController = hand.GetComponent<XRHandMeshController>();
+        if (meshController != null)
+            meshController.enabled = false;
+
+        var skin = OpaqueHandMaterial();
+        foreach (var renderer in hand.GetComponentsInChildren<Renderer>(true))
+        {
+            renderer.gameObject.SetActive(true);
+            renderer.enabled = true;
+            // Sample material is transparent Lit. That pass is often stripped from the Quest build,
+            // which is why the brown opaque hand showed and this mesh did not.
+            if (skin != null)
+                renderer.sharedMaterial = skin;
+        }
+
+        var pose = hand.GetComponent<ProjectHandPose>();
+        if (pose == null)
+            pose = hand.AddComponent<ProjectHandPose>();
+        pose.Bind(FindNamedTransform(controllerName), isLeft);
+        if (!isLeft)
+            rightIndexTip = FindIndexTip(hand);
+    }
+
+    static Transform FindIndexTip(GameObject hand)
+    {
+        var driver = hand.GetComponent<XRHandSkeletonDriver>();
+        if (driver != null && driver.jointTransformReferences != null)
+        {
+            var refs = driver.jointTransformReferences;
+            for (var i = 0; i < refs.Count; i++)
+            {
+                if (refs[i].xrHandJointID == XRHandJointID.IndexTip && refs[i].jointTransform != null)
+                    return refs[i].jointTransform;
+            }
+        }
+
+        foreach (var t in hand.GetComponentsInChildren<Transform>(true))
+        {
+            var n = t.name.ToLowerInvariant();
+            if (n.Contains("index") && (n.Contains("tip") || n.Contains("end")))
+                return t;
+        }
+
+        return null;
+    }
+
+    static Material OpaqueHandMaterial()
+    {
+        var shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+        if (shader == null)
+            return null;
+
+        var mat = new Material(shader) { name = "ProjectHandOpaque" };
+        var color = new Color(0.72f, 0.78f, 0.84f, 1f);
+        if (mat.HasProperty("_BaseColor"))
+            mat.SetColor("_BaseColor", color);
+        mat.color = color;
+        if (mat.HasProperty("_Smoothness"))
+            mat.SetFloat("_Smoothness", 0.35f);
+        return mat;
     }
 
     void LateUpdate()
@@ -360,11 +449,28 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         if (hasLeft && leftPoke != null)
             leftPoke.transform.position = leftTip;
-        if (hasRight && rightPoke != null)
-            rightPoke.transform.position = rightTip;
 
-        if (hasLeft) MilitaryTabletLcdUi.PokeAll(leftTip);
-        if (hasRight) MilitaryTabletLcdUi.PokeAll(rightTip);
+        // Right fingertip clicks the tablet. Tracked joint wins; otherwise the
+        // visible index bone on the controller hand (builds often have no hand tracking).
+        var clickPoint = Vector3.zero;
+        var hasClick = false;
+        if (hasRight)
+        {
+            clickPoint = rightTip;
+            hasClick = true;
+        }
+        else if (rightIndexTip != null)
+        {
+            clickPoint = rightIndexTip.position;
+            hasClick = true;
+        }
+
+        if (hasClick)
+        {
+            if (rightPoke != null)
+                rightPoke.transform.position = clickPoint;
+            MilitaryTabletLcdUi.PokeAll(clickPoint);
+        }
     }
 
     static bool TryIndexTip(XRHand hand, out Vector3 tip)
@@ -531,12 +637,12 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         // Full cabin interior. A smaller inset left the edges hitting other Ground
         // meshes (Plane tiles), so those spots rejected the teleport ray.
-        const float minX = -2.35f;
-        const float maxX = 1.15f;
-        const float minZ = -1.15f;
-        const float maxZ = 1.22f;
-        const float topY = 0.09f;
-        const float thickness = 0.06f;
+        const float minX = -2.55f;
+        const float maxX = 1.35f;
+        const float minZ = -1.40f;
+        const float maxZ = 1.45f;
+        const float topY = 0.04f;
+        const float thickness = 0.03f;
 
         elevatorFloorTeleport = new GameObject("ElevatorFloorTeleport");
         elevatorFloorTeleport.layer = groundLayer;
@@ -565,37 +671,38 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     /// </summary>
     void KeepCabinFloorAboveOtherGround()
     {
-        if (elevatorFloorTeleport == null) return;
-        var pad = elevatorFloorTeleport.GetComponent<Collider>();
-        if (pad == null) return;
-
         var groundLayer = LayerMask.NameToLayer("Ground");
         if (groundLayer < 0) return;
+
+        ClearGroundExceptPad(elevatorFloorTeleport, groundLayer);
+        ClearGroundExceptPad(elevatorLobbyTeleport, groundLayer);
+    }
+
+    void ClearGroundExceptPad(GameObject padObject, int groundLayer)
+    {
+        if (padObject == null) return;
+        var pad = padObject.GetComponent<Collider>();
+        if (pad == null) return;
 
         var bounds = pad.bounds;
         var hits = Physics.OverlapBox(
             bounds.center,
             bounds.extents,
-            elevatorFloorTeleport.transform.rotation,
+            padObject.transform.rotation,
             1 << groundLayer,
             QueryTriggerInteraction.Ignore);
 
         foreach (var col in hits)
         {
             if (col == null || col == pad) continue;
+            if (elevatorFloorTeleport != null && col.transform.IsChildOf(elevatorFloorTeleport.transform))
+                continue;
             if (elevatorLobbyTeleport != null && col.transform.IsChildOf(elevatorLobbyTeleport.transform))
                 continue;
-            if (col.transform.IsChildOf(elevatorFloorTeleport.transform))
-                continue;
 
-            var other = col.bounds;
-            var inside =
-                other.min.x >= bounds.min.x - 0.05f && other.max.x <= bounds.max.x + 0.05f &&
-                other.min.z >= bounds.min.z - 0.05f && other.max.z <= bounds.max.z + 0.05f;
-            if (!inside) continue;
-
-            // Default is invisible to the Ground-only teleport ray.
             col.gameObject.layer = 0;
+            var otherArea = col.GetComponent<TeleportationArea>();
+            if (otherArea != null) otherArea.enabled = false;
         }
     }
 
@@ -607,21 +714,24 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var groundLayer = LayerMask.NameToLayer("Ground");
         if (groundLayer < 0) groundLayer = 0;
 
-        // Pad just outside the doors so the concrete apron is walkable + teleportable.
+        // Apron in front of the doors, between the racks. Sits above the floor
+        // planes so the teleport ray hits this pad instead of a hole in the mesh.
         elevatorLobbyTeleport = new GameObject("ElevatorLobbyTeleport");
         elevatorLobbyTeleport.layer = groundLayer;
         elevatorLobbyTeleport.transform.SetParent(elevatorRoot, false);
-        elevatorLobbyTeleport.transform.localPosition = new Vector3(-0.95f, 0.04f, 2.35f);
+        elevatorLobbyTeleport.transform.localPosition = new Vector3(-0.9f, 0.025f, 8.2f);
         elevatorLobbyTeleport.transform.localRotation = Quaternion.identity;
 
         var box = elevatorLobbyTeleport.AddComponent<BoxCollider>();
-        box.size = new Vector3(3.6f, 0.12f, 2.8f);
+        box.size = new Vector3(12f, 0.03f, 13.4f);
         box.center = Vector3.zero;
 
         var area = elevatorLobbyTeleport.AddComponent<TeleportationArea>();
         // Enabled after doors open — collider stays so feet have ground when the cabin arrives.
         area.enabled = false;
         area.interactionLayers = -1;
+        area.filterSelectionByHitNormal = false;
+        KeepCabinFloorAboveOtherGround();
     }
 
     void ApplyGroundOnlyTeleportRays()
@@ -639,6 +749,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
                 continue;
             ray.hitDetectionType = XRRayInteractor.HitDetectionType.Raycast;
             ray.raycastMask = teleportRayMask;
+            ray.interactionLayers = -1;
             ray.raycastTriggerInteraction = QueryTriggerInteraction.Ignore;
         }
 
@@ -846,6 +957,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (floorPressed) return;
         floorPressed = true;
+        if (handHint != null)
+        {
+            handHint.Hide();
+            handHint = null;
+        }
         StartCoroutine(AnimateButtonPress());
         PulseHeadsetShake();
         StartCoroutine(RideThenOpenDoors());
@@ -887,7 +1003,13 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         var tablet = GameObject.Find("SM_Military_tablet");
         if (tablet == null) return;
-        if (tablet.GetComponent<XRGrabInteractable>() != null) return;
+        var alreadyGrab = tablet.GetComponent<XRGrabInteractable>();
+        if (alreadyGrab != null)
+        {
+            alreadyGrab.interactionLayers = -1;
+            alreadyGrab.selectMode = InteractableSelectMode.Multiple;
+            return;
+        }
 
         foreach (var child in tablet.GetComponentsInChildren<Transform>(true))
         {
@@ -925,6 +1047,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         var grab = tablet.AddComponent<XRGrabInteractable>();
         grab.interactionLayers = -1;
+        grab.selectMode = InteractableSelectMode.Multiple;
         grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
         grab.useDynamicAttach = true;
         grab.trackPosition = true;
@@ -1051,7 +1174,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
     IEnumerator RideThenOpenDoors()
     {
-        // Cabin rises into the tunnel so the player clearly feels the elevator ride.
+        // Cabin descends from above onto the tunnel floor.
         if (elevatorRoot != null && rideSeconds > 0f)
         {
             var start = elevatorRoot.position;
@@ -1105,18 +1228,50 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
 
         var points = new List<Vector3> { start };
+        var hasCustomRoute = false;
         if (pathWaypoints != null)
+        {
             foreach (var w in pathWaypoints)
-                if (w != null) points.Add(w.position);
+            {
+                if (w == null) continue;
+                points.Add(w.position);
+                hasCustomRoute = true;
+            }
+        }
 
-        // End at the table edge facing the last path point, a little before it.
-        var from = points[points.Count - 1];
-        var edge = bounds.ClosestPoint(new Vector3(from.x, bounds.center.y, from.z));
-        var back = new Vector3(from.x - edge.x, 0f, from.z - edge.z);
-        if (back.sqrMagnitude < 0.0001f) back = new Vector3(start.x - bounds.center.x, 0f, start.z - bounds.center.z);
-        var end = edge + back.normalized * pathStopBeforeTable;
-        end.y = start.y;
-        points.Add(end);
+        if (!hasCustomRoute)
+        {
+            // Two legs, not the diagonal: straight out of the doors, then sideways to the table.
+            var forward = elevatorRoot.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f) forward = Vector3.forward;
+            forward.Normalize();
+            var right = Vector3.Cross(Vector3.up, forward);
+
+            var toTable = bounds.center - start;
+            toTable.y = 0f;
+            var forwardDist = Vector3.Dot(toTable, forward);
+            var sideDist = Vector3.Dot(toTable, right);
+            var corner = start + forward * Mathf.Max(1.8f, forwardDist);
+            corner.y = start.y;
+
+            var sideSign = Mathf.Abs(sideDist) < 0.05f ? 1f : Mathf.Sign(sideDist);
+            var end = corner + right * (sideDist + sideSign * 1.15f);
+            end.y = start.y;
+
+            points.Add(corner);
+            points.Add(end);
+        }
+        else
+        {
+            var from = points[points.Count - 1];
+            var edge = bounds.ClosestPoint(new Vector3(from.x, bounds.center.y, from.z));
+            var back = new Vector3(from.x - edge.x, 0f, from.z - edge.z);
+            if (back.sqrMagnitude < 0.0001f) back = new Vector3(start.x - bounds.center.x, 0f, start.z - bounds.center.z);
+            var end = edge + back.normalized * pathStopBeforeTable;
+            end.y = start.y;
+            points.Add(end);
+        }
 
         FloorPathGuide.Create(points, xrOrigin != null ? xrOrigin.transform : null,
             table.GetComponentsInChildren<Collider>());
@@ -1209,5 +1364,69 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         MilitaryTabletLcdUi.ChecklistChanged -= OnTabletChecklistChanged;
         if (fadeOverlay != null)
             Destroy(fadeOverlay.gameObject);
+    }
+}
+
+/// <summary>
+/// Keeps the project hand mesh visible. Tracked hands follow XR Hands.
+/// Without tracking the same mesh stays on the controller.
+/// </summary>
+public sealed class ProjectHandPose : MonoBehaviour
+{
+    Transform controller;
+    bool leftHand;
+    XRHandSkeletonDriver skeleton;
+    XRHandTrackingEvents tracking;
+    Renderer[] renderers;
+    bool onController;
+
+    public void Bind(Transform controllerAnchor, bool isLeft)
+    {
+        controller = controllerAnchor;
+        leftHand = isLeft;
+        skeleton = GetComponent<XRHandSkeletonDriver>();
+        tracking = GetComponent<XRHandTrackingEvents>();
+        renderers = GetComponentsInChildren<Renderer>(true);
+    }
+
+    void LateUpdate()
+    {
+        if (renderers != null)
+        {
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] == null) continue;
+                renderers[i].enabled = true;
+                if (!renderers[i].gameObject.activeSelf)
+                    renderers[i].gameObject.SetActive(true);
+            }
+        }
+
+        var tracked = tracking != null && tracking.handIsTracked;
+        if (tracked)
+        {
+            if (onController)
+            {
+                transform.SetParent(null, false);
+                onController = false;
+            }
+            if (skeleton != null && !skeleton.enabled)
+                skeleton.enabled = true;
+            return;
+        }
+
+        if (skeleton != null && skeleton.enabled)
+            skeleton.enabled = false;
+        if (controller == null) return;
+
+        if (!onController)
+        {
+            transform.SetParent(controller, false);
+            onController = true;
+        }
+
+        transform.localPosition = new Vector3(0f, -0.02f, 0.04f);
+        transform.localRotation = Quaternion.Euler(-90f, leftHand ? 0f : 180f, 0f);
+        transform.localScale = Vector3.one;
     }
 }

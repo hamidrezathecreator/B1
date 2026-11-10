@@ -130,7 +130,9 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         var rt = button.GetComponent<RectTransform>();
         var col = button.GetComponent<BoxCollider>();
         if (col == null) col = button.AddComponent<BoxCollider>();
-        col.isTrigger = false;
+        // Trigger so the tablet body stays grabbable by either hand.
+        // Clicks are tested from the right index tip, not from this collider.
+        col.isTrigger = true;
 
         var rect = rt.rect;
         var zScale = Mathf.Max(0.00001f, Mathf.Abs(rt.lossyScale.z));
@@ -138,29 +140,14 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         col.size = new Vector3(
             Mathf.Max(1f, rect.width),
             Mathf.Max(1f, rect.height),
-            0.04f / zScale);
+            0.08f / zScale);
 
         var interactable = button.GetComponent<XRSimpleInteractable>();
-        if (interactable == null)
-            interactable = button.AddComponent<XRSimpleInteractable>();
-        interactable.selectMode = InteractableSelectMode.Multiple;
-        interactable.interactionLayers = -1;
-
+        if (interactable != null)
+            Destroy(interactable);
         var pokeFilter = button.GetComponent<XRPokeFilter>();
-        if (pokeFilter == null)
-            pokeFilter = button.AddComponent<XRPokeFilter>();
-        pokeFilter.pokeInteractable = interactable;
-        pokeFilter.pokeCollider = col;
-        var pokeData = pokeFilter.pokeConfiguration != null ? pokeFilter.pokeConfiguration.Value : null;
-        if (pokeData != null)
-        {
-            pokeData.pokeDirection = PokeAxis.NegativeZ;
-            pokeData.interactionDepthOffset = 0.02f;
-            pokeData.enablePokeAngleThreshold = false;
-        }
-
-        interactable.selectEntered.RemoveAllListeners();
-        interactable.hoverEntered.RemoveAllListeners();
+        if (pokeFilter != null)
+            Destroy(pokeFilter);
     }
 
     void Poke(Vector3 worldPoint)
