@@ -17,8 +17,10 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 /// </summary>
 static class BridgeXrPlaySetup
 {
-    const float BodyHeight = 1.7f;
-    const float EyeHeight = 1.55f;
+    const float BodyHeight = 1.75f;
+    const float EyeHeight = 1.65f;
+    // Between the old too-high Device offset and the last Floor height that felt too short.
+    const float ExtraCameraLift = 0.12f;
     const float SkinWidth = 0.02f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -65,16 +67,20 @@ static class BridgeXrPlaySetup
 
     static void MatchEyeHeight(XROrigin origin)
     {
-        // Floor keeps Quest eye height at real standing height next to the NPCs.
-        // Device mode was stacking Camera Y Offset on top of tracking and looking over their heads.
+        // Floor keeps Quest tracking from stacking a full Device offset again.
+        // ExtraCameraLift nudges the view a little above the last too-low height.
         origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
         origin.CameraYOffset = EyeHeight;
+        ApplyCameraLift(origin);
+    }
 
-        if (origin.CameraFloorOffsetObject != null)
-        {
-            var offset = origin.CameraFloorOffsetObject.transform.localPosition;
-            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
-        }
+    static void ApplyCameraLift(XROrigin origin)
+    {
+        if (origin.CameraFloorOffsetObject == null)
+            return;
+
+        var offset = origin.CameraFloorOffsetObject.transform.localPosition;
+        origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, ExtraCameraLift, offset.z);
     }
 
     static float FindFloorHeight(XROrigin origin)
@@ -185,6 +191,8 @@ static class BridgeXrPlaySetup
     {
         var lockHeight = origin.gameObject.AddComponent<BridgeDeckLock>();
         lockHeight.floorY = floorY + SkinWidth;
+        lockHeight.cameraLift = ExtraCameraLift;
+        lockHeight.origin = origin;
     }
 
     static void WidenGrabReach(XROrigin origin)
@@ -290,13 +298,23 @@ static class BridgeXrPlaySetup
 sealed class BridgeDeckLock : MonoBehaviour
 {
     public float floorY;
+    public float cameraLift;
+    public XROrigin origin;
 
     void LateUpdate()
     {
         var position = transform.position;
-        if (Mathf.Abs(position.y - floorY) <= 0.0001f)
+        if (Mathf.Abs(position.y - floorY) > 0.0001f)
+            transform.position = new Vector3(position.x, floorY, position.z);
+
+        if (origin == null || origin.CameraFloorOffsetObject == null)
             return;
 
-        transform.position = new Vector3(position.x, floorY, position.z);
+        var offset = origin.CameraFloorOffsetObject.transform;
+        var local = offset.localPosition;
+        if (Mathf.Abs(local.y - cameraLift) <= 0.0001f)
+            return;
+
+        offset.localPosition = new Vector3(local.x, cameraLift, local.z);
     }
 }
