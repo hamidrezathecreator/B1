@@ -92,13 +92,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Min(0f)] [SerializeField] float fadeOutSeconds = 0.8f;
 
     CanvasGroup fadeOverlay;
-    XRPokeInteractor leftPoke;
-    XRPokeInteractor rightPoke;
-    Transform rightIndexTip;
-    TabletFingerTip rightFingerTip;
     Coroutine nextSceneRoutine;
     bool loadingNextScene;
-    readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
     HandHintBanner handHint;
     GameObject exitBarrier;
     GameObject elevatorFloorTeleport;
@@ -329,24 +324,10 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (xrOrigin == null) return;
 
-        foreach (var line in xrOrigin.GetComponentsInChildren<XRInteractorLineVisual>(true))
-        {
-            if (line.gameObject.name.Contains("Teleport"))
-                continue;
-            line.enabled = false;
-        }
-
-        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
-        {
-            if (child.name == "ControllerHandModel")
-                Destroy(child.gameObject);
-        }
-
-        HideControllerMeshes(xrOrigin.transform);
-        SpawnTrackingHand(leftHandVisualPrefab, "Left Hand Tracking", "Left Controller", true);
-        SpawnTrackingHand(rightHandVisualPrefab, "Right Hand Tracking", "Right Controller", false);
-        leftPoke = EnsurePokeOnController("Left Controller");
-        rightPoke = EnsurePokeOnController("Right Controller");
+        var rig = GetComponent<XrHandsRig>();
+        if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
+        rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
+        rig.Setup(xrOrigin);
         ShowElevatorHint();
     }
 
@@ -359,177 +340,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         handHint.SetHand(hand);
     }
 
-    Transform FindNamedTransform(string targetName)
-    {
-        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
-        {
-            if (child.name == targetName) return child;
-        }
-        return null;
-    }
-
-    void SpawnTrackingHand(GameObject prefab, string handName, string controllerName, bool isLeft)
-    {
-        if (prefab == null) return;
-        var existing = GameObject.Find(handName);
-        var hand = existing != null ? existing : Instantiate(prefab);
-        hand.name = handName;
-        hand.SetActive(true);
-
-        // Turns the mesh off when hand tracking is lost, so a controller build shows nothing.
-        var meshController = hand.GetComponent<XRHandMeshController>();
-        if (meshController != null)
-            meshController.enabled = false;
-
-        var skin = OpaqueHandMaterial();
-        foreach (var renderer in hand.GetComponentsInChildren<Renderer>(true))
-        {
-            renderer.gameObject.SetActive(true);
-            renderer.enabled = true;
-            // Sample material is transparent Lit. That pass is often stripped from the Quest build,
-            // which is why the brown opaque hand showed and this mesh did not.
-            if (skin != null)
-                renderer.sharedMaterial = skin;
-            if (renderer is SkinnedMeshRenderer skinned)
-                skinned.updateWhenOffscreen = true;
-        }
-
-        var pose = hand.GetComponent<ProjectHandPose>();
-        if (pose == null)
-            pose = hand.AddComponent<ProjectHandPose>();
-        var offset = handOnControllerPosition;
-        var euler = handOnControllerEuler;
-        if (isLeft)
-        {
-            offset.x = -offset.x;
-            euler.y = -euler.y;
-            euler.z = -euler.z;
-        }
-        var trackingSpace = xrOrigin.CameraFloorOffsetObject != null
-            ? xrOrigin.CameraFloorOffsetObject.transform
-            : xrOrigin.transform;
-        pose.Bind(FindNamedTransform(controllerName), trackingSpace, isLeft, offset, euler);
-        if (!isLeft)
-            rightIndexTip = FindIndexTip(hand);
-    }
-
-    static Transform FindIndexTip(GameObject hand)
-    {
-        var driver = hand.GetComponent<XRHandSkeletonDriver>();
-        if (driver != null && driver.jointTransformReferences != null)
-        {
-            var refs = driver.jointTransformReferences;
-            for (var i = 0; i < refs.Count; i++)
-            {
-                if (refs[i].xrHandJointID == XRHandJointID.IndexTip && refs[i].jointTransform != null)
-                    return refs[i].jointTransform;
-            }
-        }
-
-        foreach (var t in hand.GetComponentsInChildren<Transform>(true))
-        {
-            var n = t.name.ToLowerInvariant();
-            if (n.Contains("index") && (n.Contains("tip") || n.Contains("end")))
-                return t;
-        }
-
-        return null;
-    }
-
-    static Material OpaqueHandMaterial()
-    {
-        var shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null)
-            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
-        if (shader == null)
-            return null;
-
-        var mat = new Material(shader) { name = "ProjectHandOpaque" };
-        var color = new Color(0.72f, 0.78f, 0.84f, 1f);
-        if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", color);
-        mat.color = color;
-        if (mat.HasProperty("_Smoothness"))
-            mat.SetFloat("_Smoothness", 0.35f);
-        return mat;
-    }
-
-    void LateUpdate()
-    {
-        SubsystemManager.GetSubsystems(handSubsystems);
-        Vector3 leftTip = default, rightTip = default;
-        var hasLeft = false;
-        var hasRight = false;
-        foreach (var subsystem in handSubsystems)
-        {
-            if (subsystem == null || !subsystem.running) continue;
-            hasLeft |= TryIndexTip(subsystem.leftHand, out leftTip);
-            hasRight |= TryIndexTip(subsystem.rightHand, out rightTip);
-        }
-
-        // XR Hands joint poses are in tracking space, not world space.
-        var space = HandTrackingSpace();
-        if (space != null)
-        {
-            if (hasLeft) leftTip = space.TransformPoint(leftTip);
-            if (hasRight) rightTip = space.TransformPoint(rightTip);
-        }
-
-        if (hasLeft && leftPoke != null)
-            leftPoke.transform.position = leftTip;
-
-        // Right fingertip touches the tablet. Tracked joint wins; then the visible index
-        // bone on the controller hand; then the controller poke point.
-        var clickPoint = Vector3.zero;
-        var hasClick = false;
-        if (hasRight)
-        {
-            clickPoint = rightTip;
-            hasClick = true;
-        }
-        else if (rightIndexTip != null && rightIndexTip.gameObject.activeInHierarchy)
-        {
-            clickPoint = rightIndexTip.position;
-            hasClick = true;
-        }
-        else if (rightPoke != null)
-        {
-            clickPoint = rightPoke.transform.position;
-            hasClick = true;
-        }
-
-        if (rightFingerTip == null)
-            rightFingerTip = TabletFingerTip.Create("RightFingerTipTouch");
-
-        if (hasClick)
-        {
-            if (rightPoke != null && (hasRight || rightIndexTip != null))
-                rightPoke.transform.position = clickPoint;
-            rightFingerTip.MoveTo(clickPoint);
-        }
-        else
-        {
-            rightFingerTip.Park();
-        }
-    }
-
-    Transform HandTrackingSpace()
-    {
-        if (xrOrigin == null) return null;
-        return xrOrigin.CameraFloorOffsetObject != null
-            ? xrOrigin.CameraFloorOffsetObject.transform
-            : xrOrigin.transform;
-    }
-
-    static bool TryIndexTip(XRHand hand, out Vector3 tip)
-    {
-        tip = default;
-        if (!hand.isTracked) return false;
-        var joint = hand.GetJoint(XRHandJointID.IndexTip);
-        if (!joint.TryGetPose(out var pose)) return false;
-        tip = pose.position;
-        return true;
-    }
+    Transform FindNamedTransform(string targetName) => XrHandsRig.FindNamed(xrOrigin, targetName);
 
     void OnTabletChecklistChanged(bool allChecked)
     {
@@ -566,46 +377,6 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
 
         SceneManager.LoadScene(nextSceneName);
-    }
-
-    void HideControllerMeshes(Transform controller)
-    {
-        if (controller == null) return;
-        foreach (var child in controller.GetComponentsInChildren<Transform>(true))
-        {
-            if (!child.name.Contains("Controller Visual") &&
-                !child.name.Contains("UniversalController"))
-                continue;
-            foreach (var renderer in child.GetComponentsInChildren<Renderer>(true))
-                renderer.enabled = false;
-        }
-    }
-
-    XRPokeInteractor EnsurePokeOnController(string controllerName)
-    {
-        Transform controller = null;
-        foreach (var child in xrOrigin.GetComponentsInChildren<Transform>(true))
-        {
-            if (child.name != controllerName) continue;
-            controller = child;
-            break;
-        }
-        if (controller == null) return null;
-
-        var poke = controller.GetComponentInChildren<XRPokeInteractor>(true);
-        if (poke == null)
-        {
-            var pokeGo = new GameObject("Poke Interactor");
-            pokeGo.transform.SetParent(controller, false);
-            pokeGo.transform.localPosition = new Vector3(0f, -0.01f, 0.09f);
-            pokeGo.transform.localRotation = Quaternion.identity;
-            poke = pokeGo.AddComponent<XRPokeInteractor>();
-        }
-
-        poke.gameObject.SetActive(true);
-        poke.enabled = true;
-        poke.interactionLayers = -1;
-        return poke;
     }
 
     void EnsureWorldColliders()
@@ -1424,95 +1195,5 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         MilitaryTabletLcdUi.ChecklistChanged -= OnTabletChecklistChanged;
         if (fadeOverlay != null)
             Destroy(fadeOverlay.gameObject);
-    }
-}
-
-/// <summary>
-/// Keeps the project hand mesh visible. Tracked hands follow XR Hands.
-/// Without tracking the same mesh stays on the controller.
-/// </summary>
-public sealed class ProjectHandPose : MonoBehaviour
-{
-    Transform controller;
-    Transform trackingSpace;
-    Vector3 offsetPosition;
-    Quaternion offsetRotation;
-    XRHandSkeletonDriver skeleton;
-    XRHandTrackingEvents tracking;
-    Transform wrist;
-    Renderer[] renderers;
-    bool onController;
-    bool bound;
-
-    public void Bind(Transform controllerAnchor, Transform handTrackingSpace, bool isLeft,
-        Vector3 localOffset, Vector3 localEuler)
-    {
-        controller = controllerAnchor;
-        trackingSpace = handTrackingSpace;
-        offsetPosition = localOffset;
-        // XR Hands wrist: +Z toward the fingers, +Y out of the back of the hand.
-        // Holding a controller the back of the right hand faces +X, the left hand faces -X.
-        offsetRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(localEuler);
-        skeleton = GetComponent<XRHandSkeletonDriver>();
-        tracking = GetComponent<XRHandTrackingEvents>();
-        wrist = skeleton != null ? skeleton.rootTransform : null;
-        renderers = GetComponentsInChildren<Renderer>(true);
-        onController = false;
-        bound = true;
-    }
-
-    void LateUpdate()
-    {
-        if (renderers != null)
-        {
-            for (var i = 0; i < renderers.Length; i++)
-            {
-                if (renderers[i] == null) continue;
-                renderers[i].enabled = true;
-                if (!renderers[i].gameObject.activeSelf)
-                    renderers[i].gameObject.SetActive(true);
-            }
-        }
-
-        if (!bound) return;
-
-        var tracked = tracking != null && tracking.handIsTracked;
-        if (tracked)
-        {
-            // Skeleton writes wrist poses in tracking space, so live under the camera offset.
-            if (onController || transform.parent != trackingSpace)
-            {
-                transform.SetParent(trackingSpace, false);
-                transform.localPosition = Vector3.zero;
-                transform.localRotation = Quaternion.identity;
-                transform.localScale = Vector3.one;
-                onController = false;
-            }
-            if (skeleton != null && !skeleton.enabled)
-                skeleton.enabled = true;
-            return;
-        }
-
-        if (skeleton != null && skeleton.enabled)
-            skeleton.enabled = false;
-        if (controller == null) return;
-
-        if (!onController)
-        {
-            transform.SetParent(controller, false);
-            onController = true;
-        }
-
-        // The sample prefab parks the wrist 0.5 m ahead and 0.2 m to the side,
-        // which pushed the mesh far away from the controller. Zero it here.
-        if (wrist != null && wrist != transform)
-        {
-            wrist.localPosition = Vector3.zero;
-            wrist.localRotation = Quaternion.identity;
-        }
-
-        transform.localPosition = offsetPosition;
-        transform.localRotation = offsetRotation;
-        transform.localScale = Vector3.one;
     }
 }

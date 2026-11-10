@@ -978,6 +978,7 @@ GameObject:
   - component: {fileID: 701709890}
   - component: {fileID: 701709889}
   - component: {fileID: 701709888}
+  - component: {fileID: 1987650010}
   m_Layer: 0
   m_Name: ShootMissile.002
   m_TagString: Untagged
@@ -1057,6 +1058,31 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1425413716}
   m_LocalEulerAnglesHint: {x: -29.476, y: 1.338, z: -1.437}
+--- !u!114 &1987650010
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 701709887}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b3e5d1a9c2f4e8b6a0d4c2e8f1b3a5d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MissileLaunchButton
+  restLocalPosition: {x: 0.000764, y: 0.014691, z: 0.00113}
+  pressedLocalPosition: {x: 0.00076, y: 0.014605, z: 0.000978}
+  pressSeconds: 0.12
+  holdPressedSeconds: 0.15
+  releaseSeconds: 0.2
+  movingObject: {fileID: 0}
+  pointA: {fileID: 0}
+  pointB: {fileID: 0}
+  travelSeconds: 3
+  accelerate: 1
+  faceTravelDirection: 0
+  hideAtPointB: 1
+  launchOnlyOnce: 1
 --- !u!1 &768013967
 GameObject:
   m_ObjectHideFlags: 0
@@ -1068,6 +1094,7 @@ GameObject:
   - component: {fileID: 768013970}
   - component: {fileID: 768013969}
   - component: {fileID: 768013968}
+  - component: {fileID: 1987650011}
   m_Layer: 0
   m_Name: ShootMissile.002 (1)
   m_TagString: Untagged
@@ -1147,6 +1174,31 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1425413716}
   m_LocalEulerAnglesHint: {x: -30, y: 90, z: 0}
+--- !u!114 &1987650011
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 768013967}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b3e5d1a9c2f4e8b6a0d4c2e8f1b3a5d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MissileLaunchButton
+  restLocalPosition: {x: -0.0008622, y: 0.014691, z: 0.00113}
+  pressedLocalPosition: {x: -0.0008662, y: 0.014605, z: 0.000978}
+  pressSeconds: 0.12
+  holdPressedSeconds: 0.15
+  releaseSeconds: 0.2
+  movingObject: {fileID: 0}
+  pointA: {fileID: 0}
+  pointB: {fileID: 0}
+  travelSeconds: 3
+  accelerate: 1
+  faceTravelDirection: 0
+  hideAtPointB: 1
+  launchOnlyOnce: 1
 --- !u!4 &802404249 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2750904053269136279, guid: f011986bc36690b4d934f2708930e3a1, type: 3}
@@ -2608,6 +2660,57 @@ GameObject:
   m_CorrespondingSourceObject: {fileID: 1800725127586568702, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
   m_PrefabInstance: {fileID: 7300000000000000100}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &1987650001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1987650002}
+  - component: {fileID: 1987650003}
+  m_Layer: 0
+  m_Name: XR Level Play Setup
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1987650002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1987650001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1987650003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1987650001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f2d9a7c1b3e4f6a8d0c2e4b6a8f1d3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::XrLevelPlaySetup
+  leftHandVisualPrefab: {fileID: 100100000, guid: b3ed8a0a703ebd34a9e44ed3d9f1fcf6, type: 3}
+  rightHandVisualPrefab: {fileID: 100100000, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
+  handOnControllerPosition: {x: -0.01, y: -0.03, z: -0.07}
+  handOnControllerEuler: {x: 0, y: 0, z: 0}
+  groundRoots: []
+  maxSlopeDegrees: 40
+  placePlayerOnGround: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -2634,3 +2737,4 @@ SceneRoots:
   - {fileID: 1429904690}
   - {fileID: 300120623}
   - {fileID: 665426753}
+  - {fileID: 1987650002}

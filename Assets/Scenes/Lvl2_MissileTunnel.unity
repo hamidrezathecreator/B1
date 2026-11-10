@@ -4298,8 +4298,11 @@ MonoBehaviour:
   xrOrigin: {fileID: 0}
   leftHandVisualPrefab: {fileID: 100100000, guid: b3ed8a0a703ebd34a9e44ed3d9f1fcf6, type: 3}
   rightHandVisualPrefab: {fileID: 100100000, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
+  handOnControllerPosition: {x: -0.01, y: -0.03, z: -0.07}
+  handOnControllerEuler: {x: 0, y: 0, z: 0}
   handHintFont: {fileID: 11400000, guid: 3fbde2e562e333d488bc46986fc6f4f1, type: 2}
-  elevatorHintMessage: "روی دکمه آسانسور کلیک کن"
+  elevatorHintMessage: "\u0631\u0648\u06CC \u062F\u06A9\u0645\u0647 \u0622\u0633\u0627\u0646\u0633\u0648\u0631
+    \u06A9\u0644\u06CC\u06A9 \u06A9\u0646"
   blackHoldSeconds: 3
   fadeInSeconds: 1.25
   doorDelaySeconds: 5
@@ -4326,6 +4329,14 @@ MonoBehaviour:
   tabletOpt2Active: {fileID: 2800000, guid: 161887123f0d66f4d9dcbe87a242f9b3, type: 3}
   tabletOpt3Inactive: {fileID: 2800000, guid: f29e3e48d49e69241ad4f56b47fbd232, type: 3}
   tabletOpt3Active: {fileID: 2800000, guid: dce826d434644f847918b8bdbe5af2cd, type: 3}
+  showPathToTable: 1
+  pathWaypoints: []
+  pathStartLocal: {x: -0.95, y: 0, z: 1.6}
+  pathStopBeforeTable: 0.45
+  pathStraightFraction: 0.5
+  nextSceneName: Missiles
+  delayAfterClicks: 5
+  fadeOutSeconds: 0.8
 --- !u!1001 &449313247
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -8142,8 +8153,11 @@ MonoBehaviour:
   option1Active: {fileID: 2800000, guid: 789cccd89d7f13c4e86fa877594f0573, type: 3}
   option2Inactive: {fileID: 2800000, guid: ab287e37850bdd849b89e866aa1f8ba0, type: 3}
   option2Active: {fileID: 2800000, guid: 161887123f0d66f4d9dcbe87a242f9b3, type: 3}
-  option3Inactive: {fileID: 2800000, guid: f29e3e48d49e68241ad4f56b47fbd232, type: 3}
+  option3Inactive: {fileID: 2800000, guid: f29e3e48d49e69241ad4f56b47fbd232, type: 3}
   option3Active: {fileID: 2800000, guid: dce826d434644f847918b8bdbe5af2cd, type: 3}
+  touchDepth: 0.06
+  opaqueThreshold: 0.35
+  retouchDelay: 0.4
 --- !u!114 &880011005
 MonoBehaviour:
   m_ObjectHideFlags: 0
