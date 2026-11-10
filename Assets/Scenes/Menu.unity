@@ -9975,7 +9975,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ad7a61a3c9f435a80269d8f5970d11b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SceneTransitionManager
-  sceneToLoad: B1
+  sceneToLoad: Lvl_1
   delayBeforeLoad: 0
   fade: 1
   fadeOutSeconds: 5
@@ -24584,7 +24584,7 @@ MonoBehaviour:
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
           m_IntArgument: 0
           m_FloatArgument: 0
-          m_StringArgument: B1
+          m_StringArgument: Lvl_1
           m_BoolArgument: 0
         m_CallState: 2
 --- !u!222 &2053898311
