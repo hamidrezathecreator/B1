@@ -519,10 +519,54 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             if (elevatorLobbyTeleport != null && col.transform.IsChildOf(elevatorLobbyTeleport.transform))
                 continue;
 
+            // Only small surfaces lying inside the pad. The big tunnel floor planes reach far past
+            // it; clearing them switched off teleport on the whole plane. Where they overlap, the
+            // pad sits higher, so the ray meets the pad first anyway.
+            var other = col.bounds;
+            const float margin = 0.1f;
+            var inside =
+                other.min.x >= bounds.min.x - margin && other.max.x <= bounds.max.x + margin &&
+                other.min.z >= bounds.min.z - margin && other.max.z <= bounds.max.z + margin;
+            if (!inside) continue;
+
             col.gameObject.layer = 0;
             var otherArea = col.GetComponent<TeleportationArea>();
             if (otherArea != null) otherArea.enabled = false;
         }
+    }
+
+    /// <summary>
+    /// Tunnel floor planes must stay walkable and teleportable once the doors are open,
+    /// including any an earlier pass took off the Ground layer.
+    /// </summary>
+    void RestoreTunnelFloors(int groundLayer)
+    {
+        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (t == null || !t.name.StartsWith("Plane")) continue;
+            var col = t.GetComponent<Collider>();
+            if (col == null) continue;
+            if (elevatorLobbyTeleport != null && IsInsidePad(col, elevatorLobbyTeleport)) continue;
+            if (elevatorFloorTeleport != null && IsInsidePad(col, elevatorFloorTeleport)) continue;
+
+            t.gameObject.layer = groundLayer;
+            col.enabled = true;
+            var area = t.GetComponent<TeleportationArea>();
+            if (area == null) area = t.gameObject.AddComponent<TeleportationArea>();
+            area.enabled = true;
+            area.interactionLayers = -1;
+        }
+    }
+
+    static bool IsInsidePad(Collider col, GameObject padObject)
+    {
+        var pad = padObject.GetComponent<Collider>();
+        if (pad == null) return false;
+        var b = pad.bounds;
+        var o = col.bounds;
+        const float margin = 0.1f;
+        return o.min.x >= b.min.x - margin && o.max.x <= b.max.x + margin &&
+               o.min.z >= b.min.z - margin && o.max.z <= b.max.z + margin;
     }
 
     void BuildElevatorLobbyTeleport()
@@ -679,8 +723,13 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             size = new Vector3(1.2f, 0.8f, 0.7f);
         }
 
-        // Slightly thicker top so the tablet rests reliably.
-        size.y = Mathf.Max(size.y, 0.75f);
+        // At least 0.75 m tall so nothing falls through, grown downward only so the top of the
+        // box stays on the real table surface.
+        if (size.y < 0.75f)
+        {
+            center.y -= (0.75f - size.y) * 0.5f;
+            size.y = 0.75f;
+        }
 
         var box = table.GetComponent<BoxCollider>();
         if (box == null) box = table.AddComponent<BoxCollider>();
@@ -865,10 +914,16 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         body.interpolation = RigidbodyInterpolation.Interpolate;
         body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
 
+        // Bottom of the tablet exactly on the table top (its pivot is in the middle, so half of it
+        // used to sit inside the table).
+        Physics.SyncTransforms();
+        SitOnTableTop(tablet, box, table);
+
         var grab = tablet.AddComponent<XRGrabInteractable>();
         grab.interactionLayers = -1;
         grab.selectMode = InteractableSelectMode.Multiple;
-        grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
+        // Velocity tracking moves the tablet through physics, so the hand cannot push it into the table.
+        grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
         grab.useDynamicAttach = true;
         grab.trackPosition = true;
         grab.trackRotation = true;
@@ -884,11 +939,62 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         });
         grab.selectExited.AddListener(_ =>
         {
+            if (grab.isSelected) return;
             body.isKinematic = false;
             body.useGravity = true;
+            StartCoroutine(LiftOutOfTable(tablet, box, body));
         });
 
         AttachTabletLcdUi(tablet);
+    }
+
+    /// <summary>Puts the tablet's collider bottom on the table's top surface.</summary>
+    static void SitOnTableTop(GameObject tablet, BoxCollider tabletBox, GameObject table)
+    {
+        if (tablet == null || tabletBox == null || table == null) return;
+        if (!TryTableTop(table, out var top, out var area)) return;
+
+        var b = tabletBox.bounds;
+        var over = b.center.x >= area.min.x && b.center.x <= area.max.x &&
+                   b.center.z >= area.min.z && b.center.z <= area.max.z;
+        if (!over) return;
+        tablet.transform.position += Vector3.up * (top + 0.003f - b.min.y);
+    }
+
+    /// <summary>
+    /// After a release the tablet may be partly inside the table (pushed there while held).
+    /// If so, lift it onto the top instead of letting physics shove it through.
+    /// </summary>
+    IEnumerator LiftOutOfTable(GameObject tablet, BoxCollider tabletBox, Rigidbody body)
+    {
+        yield return new WaitForFixedUpdate();
+        var table = GameObject.Find("SM_Table");
+        if (tablet == null || tabletBox == null || table == null) yield break;
+        if (!TryTableTop(table, out var top, out var area)) yield break;
+
+        var b = tabletBox.bounds;
+        var over = b.center.x >= area.min.x && b.center.x <= area.max.x &&
+                   b.center.z >= area.min.z && b.center.z <= area.max.z;
+        if (!over || b.min.y >= top - 0.005f || b.center.y < area.min.y) yield break;
+
+        if (!body.isKinematic)
+        {
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+        tablet.transform.position += Vector3.up * (top + 0.003f - b.min.y);
+        Physics.SyncTransforms();
+    }
+
+    static bool TryTableTop(GameObject table, out float top, out Bounds area)
+    {
+        top = 0f;
+        area = default;
+        var col = table.GetComponent<Collider>();
+        if (col == null || !col.enabled) return false;
+        area = col.bounds;
+        top = area.max.y;
+        return true;
     }
 
     void AttachTabletLcdUi(GameObject tablet)
@@ -1027,6 +1133,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         SetOutsideTeleportEnabled(true);
         KeepCabinFloorAboveOtherGround();
+        var groundLayer = LayerMask.NameToLayer("Ground");
+        RestoreTunnelFloors(groundLayer < 0 ? 0 : groundLayer);
         ApplyGroundOnlyTeleportRays();
         ShowPathToTable();
     }

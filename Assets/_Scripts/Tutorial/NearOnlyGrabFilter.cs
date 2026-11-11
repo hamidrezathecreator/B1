@@ -30,11 +30,21 @@ public sealed class NearOnlyGrabFilter : MonoBehaviour, IXRSelectFilter, IXRHove
         return filter;
     }
 
-    public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable) =>
-        IsNear(interactor.transform, interactable as XRBaseInteractable);
+    public bool Process(IXRSelectInteractor interactor, IXRSelectInteractable interactable)
+    {
+        // Select filters are re-checked every frame. Once held, keep it: a teleport moves the hand
+        // a frame before the object, and the distance check would drop it.
+        if (interactor.IsSelecting(interactable)) return true;
+        return IsNear(interactor.transform, interactable as XRBaseInteractable);
+    }
 
-    public bool Process(IXRHoverInteractor interactor, IXRHoverInteractable interactable) =>
-        IsNear(interactor.transform, interactable as XRBaseInteractable);
+    public bool Process(IXRHoverInteractor interactor, IXRHoverInteractable interactable)
+    {
+        if (interactor is IXRSelectInteractor selector && interactable is IXRSelectInteractable selectable &&
+            selector.IsSelecting(selectable))
+            return true;
+        return IsNear(interactor.transform, interactable as XRBaseInteractable);
+    }
 
     bool IsNear(Transform hand, XRBaseInteractable interactable)
     {

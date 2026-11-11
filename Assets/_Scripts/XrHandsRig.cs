@@ -131,18 +131,6 @@ public sealed class XrHandsRig : MonoBehaviour
             t.gameObject.SetActive(true);
 
         var wrist = FindBone(skinned, source.transform, "wrist") ?? skinned.rootBone ?? skinned.transform;
-        var tipBone = FindIndexTipBone(skinned, source.transform);
-
-        var baked = new Mesh { name = template.name + " (baked)" };
-        skinned.BakeMesh(baked, false);
-
-        // Without scale: BakeMesh(…, false) bakes for the renderer's position and rotation only,
-        // and the hand keeps its real size whatever scale the rig carries.
-        var meshFrame = Matrix4x4.TRS(skinned.transform.position, skinned.transform.rotation, Vector3.one);
-        var wristFrame = Matrix4x4.TRS(wrist.position, wrist.rotation, Vector3.one);
-        var meshInWrist = wristFrame.inverse * meshFrame;
-        var tipInWrist = tipBone != null ? wristFrame.inverse.MultiplyPoint3x4(tipBone.position) : (Vector3?)null;
-        Destroy(source);
 
         var offset = handOnControllerPosition;
         var euler = handOnControllerEuler;
@@ -161,30 +149,29 @@ public sealed class XrHandsRig : MonoBehaviour
         anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
         anchor.localScale = Vector3.one;
 
+        // Keep the rig (bones) under the anchor, moved so its wrist sits exactly on the anchor.
+        // The sample prefab parks the wrist away from its root; this cancels that offset.
+        var rigRoot = source.transform;
+        rigRoot.SetParent(anchor, false);
+        rigRoot.rotation = anchor.rotation * Quaternion.Inverse(wrist.rotation) * rigRoot.rotation;
+        rigRoot.position += anchor.position - wrist.position;
+
         var meshObject = new GameObject("Hand Mesh");
         meshObject.transform.SetParent(anchor, false);
-        meshObject.transform.localPosition = meshInWrist.GetColumn(3);
-        meshObject.transform.localRotation = meshInWrist.rotation;
-        meshObject.transform.localScale = Vector3.one;
-        meshObject.AddComponent<MeshFilter>().sharedMesh = baked;
-
+        meshObject.AddComponent<MeshFilter>();
         var renderer = meshObject.AddComponent<MeshRenderer>();
-        var skin = OpaqueHandMaterial();
-        var mats = new Material[Mathf.Max(1, baked.subMeshCount)];
+        var skin = BlueHandMaterial();
+        var mats = new Material[Mathf.Max(1, skinned.sharedMesh.subMeshCount)];
         for (var i = 0; i < mats.Length; i++) mats[i] = skin;
         renderer.sharedMaterials = mats;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        if (tipInWrist.HasValue)
-        {
-            var tip = new GameObject("Index Tip").transform;
-            tip.SetParent(anchor, false);
-            tip.localPosition = tipInWrist.Value;
-            indexTip = tip;
-        }
+        var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
+        rig.Bind(skinned, meshObject.transform, isLeft);
+        indexTip = rig.IndexTip;
 
         Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +
-                  " (" + baked.vertexCount + " vertices, size " + baked.bounds.size.magnitude.ToString("0.00") + " m).", this);
+                  " (" + skinned.sharedMesh.vertexCount + " vertices, " + rig.FingerBoneCount + " finger bones).", this);
     }
 
     /// <summary>The default XR hand already in the scene (e.g. Tracked Hands → Left Hand).</summary>
@@ -218,7 +205,7 @@ public sealed class XrHandsRig : MonoBehaviour
     }
 
     /// <summary>Tip of the index finger: a bone named index…tip/end, else the last bone of the index chain.</summary>
-    static Transform FindIndexTipBone(SkinnedMeshRenderer skinned, Transform root)
+    internal static Transform FindIndexTipBone(SkinnedMeshRenderer skinned, Transform root)
     {
         Transform deepestIndex = null;
         var deepest = -1;
@@ -236,7 +223,8 @@ public sealed class XrHandsRig : MonoBehaviour
         return deepestIndex;
     }
 
-    static Material OpaqueHandMaterial()
+    /// <summary>Light blue, slightly glowing, like the default XR hand. Opaque Lit so it always renders on Quest.</summary>
+    static Material BlueHandMaterial()
     {
         var shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null)
@@ -244,13 +232,18 @@ public sealed class XrHandsRig : MonoBehaviour
         if (shader == null)
             return null;
 
-        var mat = new Material(shader) { name = "ProjectHandOpaque" };
-        var color = new Color(0.72f, 0.78f, 0.84f, 1f);
+        var mat = new Material(shader) { name = "ProjectHandBlue" };
+        var color = new Color(0.38f, 0.68f, 1f, 1f);
         if (mat.HasProperty("_BaseColor"))
             mat.SetColor("_BaseColor", color);
         mat.color = color;
         if (mat.HasProperty("_Smoothness"))
-            mat.SetFloat("_Smoothness", 0.35f);
+            mat.SetFloat("_Smoothness", 0.55f);
+        if (mat.HasProperty("_EmissionColor"))
+        {
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor("_EmissionColor", new Color(0.06f, 0.16f, 0.32f, 1f));
+        }
         return mat;
     }
 

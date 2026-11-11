@@ -20,15 +20,28 @@ public sealed class TutorialMarker : MonoBehaviour
     Material solidMaterial;
     Material beamMaterial;
 
-    public static GameObject Create(Transform target)
+    public static GameObject Create(Transform target) => Create(target, false);
+
+    /// <param name="onGround">
+    /// Put the ring on the floor under the target (for things standing or hanging above the
+    /// floor, like a launch panel); the beam then rises up to the target.
+    /// </param>
+    /// <param name="radius">Ring radius in meters; 0 = sized to the target.</param>
+    /// <param name="centerOnPivot">
+    /// Center on the target's pivot instead of its mesh bounds (long cables or parts sticking
+    /// out would otherwise pull the ring away and make it huge).
+    /// </param>
+    /// <param name="showDiamond">Bobbing diamond above the target.</param>
+    public static GameObject Create(Transform target, bool onGround, float radius = 0f, bool centerOnPivot = false,
+        bool showDiamond = true)
     {
         var go = new GameObject("Tutorial Marker");
         var marker = go.AddComponent<TutorialMarker>();
-        marker.Build(target);
+        marker.Build(target, onGround, radius, centerOnPivot, showDiamond);
         return go;
     }
 
-    void Build(Transform followTarget)
+    void Build(Transform followTarget, bool onGround, float radiusOverride, bool centerOnPivot, bool showDiamond)
     {
         target = followTarget;
 
@@ -41,20 +54,52 @@ public sealed class TutorialMarker : MonoBehaviour
             else bounds.Encapsulate(r.bounds);
         }
 
-        // Base of the beacon sits at the bottom center of the target.
-        var basePoint = new Vector3(bounds.center.x, bounds.min.y + 0.005f, bounds.center.z);
+        // Base of the beacon: the bottom center of the target, or the floor under it.
+        var baseY = bounds.min.y;
+        if (onGround && TryGroundBelow(bounds, target, out var groundY))
+            baseY = groundY;
+        var centerX = centerOnPivot ? target.position.x : bounds.center.x;
+        var centerZ = centerOnPivot ? target.position.z : bounds.center.z;
+        var basePoint = new Vector3(centerX, baseY + 0.005f, centerZ);
         baseOffset = basePoint - target.position;
-        diamondHeight = bounds.size.y + 0.25f;
-        var radius = Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.25f + 0.04f;
+        diamondHeight = (bounds.max.y - baseY) + 0.25f;
+        var radius = radiusOverride > 0f
+            ? radiusOverride
+            : Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.25f + 0.04f;
+        var beamHeight = onGround ? Mathf.Clamp(bounds.max.y - baseY, BeamHeight, 4f) : BeamHeight;
 
         solidMaterial = NewSolidMaterial();
         beamMaterial = NewBeamMaterial();
 
-        ring = NewPart("Ring", RingMesh(radius, RingWidth, 48), solidMaterial).transform;
-        NewPart("Beam", BeamMesh(radius, BeamHeight, 48), beamMaterial);
-        diamond = NewPart("Diamond", DiamondMesh(), solidMaterial).transform;
+        ring = NewPart("Ring", RingMesh(radius, RingWidth * (onGround ? 2f : 1f), 48), solidMaterial).transform;
+        NewPart("Beam", BeamMesh(radius, beamHeight, 48), beamMaterial);
+        if (showDiamond)
+        {
+            diamond = NewPart("Diamond", DiamondMesh(), solidMaterial).transform;
+            if (onGround) diamond.localScale = Vector3.one * 2f;
+        }
 
         LateUpdate();
+    }
+
+    static bool TryGroundBelow(Bounds bounds, Transform target, out float groundY)
+    {
+        groundY = 0f;
+        var from = new Vector3(bounds.center.x, bounds.max.y + 0.5f, bounds.center.z);
+        var hits = Physics.RaycastAll(from, Vector3.down, bounds.size.y + 50f, ~0, QueryTriggerInteraction.Ignore);
+        var found = false;
+        foreach (var hit in hits)
+        {
+            // Skip the whole object the target belongs to (e.g. the panel and stand under a button).
+            if (hit.collider.transform.IsChildOf(target.root)) continue;
+            if (hit.normal.y < 0.7f) continue;
+            // Highest flat surface below the target's bottom is the floor it stands over.
+            if (hit.point.y > bounds.min.y + 0.05f) continue;
+            if (found && hit.point.y <= groundY) continue;
+            groundY = hit.point.y;
+            found = true;
+        }
+        return found;
     }
 
     GameObject NewPart(string partName, Mesh mesh, Material material)

@@ -33,7 +33,16 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [Range(10f, 80f)] [SerializeField] float maxSlopeDegrees = 40f;
     [SerializeField] bool placePlayerOnGround = true;
 
+    [Header("Guide")]
+    [Tooltip("Objects that get the blue \"go here\" beacon (hidden once one of their launch buttons is pressed).")]
+    [SerializeField] string[] beaconObjectNames = { "ShootMissile (1)" };
+    [Tooltip("Persian font for the hint above the right controller.")]
+    [SerializeField] TMPro.TMP_FontAsset handHintFont;
+    [Tooltip("Hint above the right controller until the first launch button is pressed. Empty = no hint.")]
+    [SerializeField] string launchHintMessage = "برو روی دکمه لانچر بزن";
+
     XROrigin origin;
+    HandHintBanner launchHint;
 
     void Start()
     {
@@ -63,6 +72,50 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
         MissileLaunchButton.AutoWireScene();
+
+        if (beaconObjectNames != null)
+        {
+            foreach (var beaconName in beaconObjectNames)
+            {
+                if (string.IsNullOrWhiteSpace(beaconName)) continue;
+                var target = GameObject.Find(beaconName);
+                if (target == null)
+                {
+                    Debug.LogWarning("XrLevelPlaySetup: no '" + beaconName + "' for the go-here beacon.", this);
+                    continue;
+                }
+                if (target.GetComponent<GoHereBeacon>() == null) target.AddComponent<GoHereBeacon>();
+            }
+        }
+
+        ShowLaunchHint();
+    }
+
+    void ShowLaunchHint()
+    {
+        if (string.IsNullOrWhiteSpace(launchHintMessage) || origin.Camera == null) return;
+        var hand = XrHandsRig.FindNamed(origin, "Right Controller");
+        if (hand == null) return;
+
+        launchHint = HandHintBanner.Create(origin.Camera, handHintFont, launchHintMessage);
+        launchHint.SetHand(hand);
+
+        // Gone as soon as any launch button is pressed.
+        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            button.onPressed.AddListener(HideLaunchHint);
+    }
+
+    void HideLaunchHint()
+    {
+        if (launchHint != null) launchHint.Hide();
+        launchHint = null;
+        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            button.onPressed.RemoveListener(HideLaunchHint);
+    }
+
+    void OnDestroy()
+    {
+        if (launchHint != null) launchHint.Hide();
     }
 
     void UseOnlyHeadsetCamera()

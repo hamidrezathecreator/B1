@@ -99,23 +99,29 @@ public sealed class MissileLaunchButton : MonoBehaviour
         var wired = 0;
         foreach (var buttonTransform in buttons)
         {
-            var isDrone = buttonTransform.name.Contains("(1)");
             var button = buttonTransform.GetComponent<MissileLaunchButton>();
             if (button != null && button.movingObject != null) continue;
+
+            var panel = buttonTransform.parent != null ? buttonTransform.parent : buttonTransform;
+            // Old two-button panels: "(1)" is the drone button. One-button panels (the ShootMissile
+            // prefab) launch whichever missile or Shahed stands closest.
+            var twoButtonDrone = buttonTransform.name.Contains("(1)");
+            var target = twoButtonDrone
+                ? Nearest(panel.position, true, used)
+                : NearestAny(panel.position, used);
+            if (target == null) continue;
+            used.Add(target);
+            var isDrone = IsLaunchable(target.transform, true);
 
             if (button == null)
             {
                 button = buttonTransform.gameObject.AddComponent<MissileLaunchButton>();
+                // Only a freshly added button gets the measured press positions; a button set up
+                // in the scene or prefab keeps its own.
+                button.restLocalPosition = twoButtonDrone ? DroneButtonRest : MissileButtonRest;
+                button.pressedLocalPosition = twoButtonDrone ? DroneButtonPressed : MissileButtonPressed;
             }
             beforeChange?.Invoke(button);
-
-            button.restLocalPosition = isDrone ? DroneButtonRest : MissileButtonRest;
-            button.pressedLocalPosition = isDrone ? DroneButtonPressed : MissileButtonPressed;
-
-            var panel = buttonTransform.parent != null ? buttonTransform.parent : buttonTransform;
-            var target = Nearest(panel.position, isDrone, used);
-            if (target == null) continue;
-            used.Add(target);
 
             if (pathRoot == null)
             {
@@ -174,6 +180,17 @@ public sealed class MissileLaunchButton : MonoBehaviour
             best = go;
         }
         return best;
+    }
+
+    static GameObject NearestAny(Vector3 from, HashSet<GameObject> used)
+    {
+        var missile = Nearest(from, false, used);
+        var drone = Nearest(from, true, used);
+        if (missile == null) return drone;
+        if (drone == null) return missile;
+        return (missile.transform.position - from).sqrMagnitude <= (drone.transform.position - from).sqrMagnitude
+            ? missile
+            : drone;
     }
 
     static bool IsLaunchable(Transform t, bool drone)

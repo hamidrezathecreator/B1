@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 2322962607575811568}
   - component: {fileID: 6875998131482311664}
   - component: {fileID: 8190827940605283485}
+  - component: {fileID: 4719265830126648001}
   m_Layer: 0
   m_Name: ShootMissile.002
   m_TagString: Untagged
@@ -18,6 +19,42 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
+--- !u!114 &4719265830126648001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6918821793905915732}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b3e5d1a9c2f4e8b6a0d4c2e8f1b3a5d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MissileLaunchButton
+  restLocalPosition: {x: 0, y: 1.4735, z: 0.1095}
+  pressedLocalPosition: {x: 0, y: 1.4651, z: 0.095}
+  pressSeconds: 0.12
+  holdPressedSeconds: 0.15
+  releaseSeconds: 0.2
+  movingObject: {fileID: 0}
+  pointA: {fileID: 0}
+  pointB: {fileID: 0}
+  travelSeconds: 3
+  accelerate: 1
+  faceTravelDirection: 0
+  hideUntilLaunch: 0
+  hideAtPointB: 1
+  launchOnlyOnce: 1
+  smokeTrail: 1
+  groundSmoke: 1
+  smokePrefab: {fileID: 0}
+  smokeSize: 1
+  onPressed:
+    m_PersistentCalls:
+      m_Calls: []
+  onArrived:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!4 &2322962607575811568
 Transform:
   m_ObjectHideFlags: 0
