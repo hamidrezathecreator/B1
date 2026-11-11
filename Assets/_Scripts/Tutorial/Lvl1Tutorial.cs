@@ -91,6 +91,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         EnsureTableColliders();
         BridgeXrPlaySetup.MakeCasesGrabbable();
         RestCasesUntilGrabbed();
+        SetupCases();
 
         explosion = string.IsNullOrWhiteSpace(explosionObjectName) ? null : GameObject.Find(explosionObjectName);
         if (explosion != null) explosion.SetActive(false);
@@ -137,6 +138,13 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ShowBanner(teleportMessage);
         HighlightButton("ThumbStick");
         lastOriginPosition = origin.transform.position;
+
+        // Show where to go right away: the blue beacon on the case to pick up.
+        if (marker == null)
+        {
+            var nearest = Nearest(cases, origin.transform.position);
+            if (nearest != null) marker = TutorialMarker.Create(nearest.transform);
+        }
     }
 
     void BeginGrabStep()
@@ -146,8 +154,14 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ShowBanner(grabMessage);
         // The universal controller's grip is the side "Bumper".
         HighlightButton("Grip", "Bumper");
+    }
 
-        BridgeXrPlaySetup.MakeCasesGrabbable();
+    /// <summary>
+    /// Only the pickup cases can be grabbed, and only by touching them with the hand.
+    /// Slot cases are placeholders and every other case stays where it is.
+    /// </summary>
+    void SetupCases()
+    {
         cases.Clear();
         slots.Clear();
         FindCases(slotCaseNames, slots);
@@ -158,24 +172,45 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             foreach (var grab in FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
                 if (grab.name.StartsWith("SM_Hard_Camera_Case") && !slots.Contains(grab)) cases.Add(grab);
         }
-
-        // Slot cases are only placeholders: they cannot be picked up.
-        foreach (var slot in slots) FreezeSlot(slot);
-
-        foreach (var grab in cases) grab.selectEntered.AddListener(OnCaseGrabbed);
-
-        var nearest = Nearest(cases, origin.transform.position);
-        if (nearest != null) marker = TutorialMarker.Create(nearest.transform);
         if (cases.Count == 0 || slots.Count == 0)
             Debug.LogWarning("Lvl1Tutorial: missing pickup or slot cases; check the case names on the tutorial.", this);
+
+        foreach (var grab in FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (!grab.name.StartsWith("SM_Hard_Camera_Case")) continue;
+            if (cases.Contains(grab))
+            {
+                NearOnlyGrabFilter.AddTo(grab);
+                grab.selectEntered.AddListener(OnCaseGrabbed);
+            }
+            else if (slots.Contains(grab))
+            {
+                FreezeSlot(grab);
+            }
+            else
+            {
+                LockInPlace(grab);
+            }
+        }
+    }
+
+    static void LockInPlace(XRGrabInteractable grab)
+    {
+        grab.enabled = false;
+        var body = grab.GetComponent<Rigidbody>();
+        if (body == null) return;
+        body.isKinematic = true;
+        body.useGravity = false;
     }
 
     void OnCaseGrabbed(SelectEnterEventArgs args)
     {
-        if (step != Step.Grab && step != Step.Carry) return;
+        if (step != Step.Teleport && step != Step.Grab && step != Step.Carry) return;
         if (args.interactorObject is XRSocketInteractor) return;
         var grabbed = args.interactableObject as XRGrabInteractable;
         if (grabbed == null || MagnetDropZone.IsClaimed(grabbed)) return;
+        // Walked over and grabbed it before teleporting: that is fine too.
+        if (step == Step.Teleport) SetWalking(true);
 
         carriedCase = grabbed;
         if (slots.Count == 0)
@@ -215,7 +250,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (path != null) Destroy(path.gameObject);
         if (target == null) return;
         marker = TutorialMarker.Create(target.transform);
-        path = BuildPath(carriedCase.transform.position, target.transform.position);
+        // Start at the player's feet: the case in hand is above whatever it was picked up from.
+        path = BuildPath(origin.transform.position, target.transform.position);
     }
 
     void OnCaseSnapped(XRGrabInteractable grab)
@@ -303,6 +339,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         }
 
         if (carriedCase != null) ignore.AddRange(carriedCase.GetComponentsInChildren<Collider>());
+
+        // Both ends on the floor the player stands on, never on a case or table top.
+        var floorY = origin.transform.position.y;
+        from.y = floorY;
+        end.y = floorY;
         return FloorPathGuide.Create(new List<Vector3> { from, end }, origin.transform, ignore.ToArray());
     }
 

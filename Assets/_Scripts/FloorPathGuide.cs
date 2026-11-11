@@ -3,7 +3,8 @@ using Unity.XR.CoreUtils;
 using UnityEngine;
 
 /// <summary>
-/// Floor guide: a flat strip on the ground with moving arrows from a start point to a goal.
+/// Floor guide: moving yellow arrows on the ground from a start point to a goal, nothing under them.
+/// The dark strip, side lines and goal ring are optional and off by default.
 /// No colliders — it never blocks walking or teleport. Hides itself when the player arrives.
 /// </summary>
 public sealed class FloorPathGuide : MonoBehaviour
@@ -12,6 +13,9 @@ public sealed class FloorPathGuide : MonoBehaviour
     [SerializeField] float arrowSpacing = 0.7f;
     [SerializeField] float arrowSpeed = 0.9f;
     [SerializeField] float arriveDistance = 1.2f;
+    [SerializeField] bool showStrip;
+    [SerializeField] bool showSideLines;
+    [SerializeField] bool showGoalRing;
     [SerializeField] Color stripColor = new Color(0.12f, 0.13f, 0.12f, 1f);
     [SerializeField] Color edgeColor = new Color(0.95f, 0.76f, 0.19f, 1f);
     [SerializeField] Color arrowColor = new Color(0.98f, 0.80f, 0.20f, 1f);
@@ -51,13 +55,15 @@ public sealed class FloorPathGuide : MonoBehaviour
         }
         goal = points[points.Count - 1];
 
-        var stripMat = MakeMaterial(stripColor);
-        var edgeMat = MakeMaterial(edgeColor);
         var arrowMat = MakeMaterial(arrowColor);
+        var stripMat = showStrip ? MakeMaterial(stripColor) : null;
+        var edgeMat = showSideLines || showGoalRing ? MakeMaterial(edgeColor) : null;
 
         for (var i = 1; i < points.Count; i++)
         {
-            BuildSegment(points[i - 1], points[i], stripWidth, 0.008f, stripMat, "Strip");
+            if (showStrip)
+                BuildSegment(points[i - 1], points[i], stripWidth, 0.008f, stripMat, "Strip");
+            if (!showSideLines) continue;
             var side = Vector3.Cross(Vector3.up, Flat(points[i] - points[i - 1]).normalized);
             var edgeOffset = side * (stripWidth * 0.5f - 0.02f);
             BuildSegment(points[i - 1] + edgeOffset, points[i] + edgeOffset, 0.035f, 0.011f, edgeMat, "EdgeR");
@@ -77,14 +83,16 @@ public sealed class FloorPathGuide : MonoBehaviour
             arrows.Add(arrow.transform);
         }
 
-        // Goal ring at the table end.
-        var ring = new GameObject("GoalMark");
-        ring.transform.SetParent(transform, false);
-        ring.transform.position = goal + Vector3.up * 0.012f;
-        ring.AddComponent<MeshFilter>().sharedMesh = BuildRingMesh(0.32f, 0.4f, 40);
-        var rr = ring.AddComponent<MeshRenderer>();
-        rr.sharedMaterial = edgeMat;
-        rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        if (showGoalRing)
+        {
+            var ring = new GameObject("GoalMark");
+            ring.transform.SetParent(transform, false);
+            ring.transform.position = goal + Vector3.up * 0.012f;
+            ring.AddComponent<MeshFilter>().sharedMesh = BuildRingMesh(0.32f, 0.4f, 40);
+            var rr = ring.AddComponent<MeshRenderer>();
+            rr.sharedMaterial = edgeMat;
+            rr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
 
         transform.localScale = new Vector3(1f, 1f, 1f);
         reveal = 0f;
@@ -221,23 +229,46 @@ public sealed class FloorPathGuide : MonoBehaviour
         return mat;
     }
 
+    /// <summary>
+    /// Floor under <paramref name="p"/>. Only the teleport floor (Ground layer) counts, so the path
+    /// never lies on a case, table or prop. Falls back to the given height, which callers pass at floor level.
+    /// </summary>
     static Vector3 SnapToFloor(Vector3 p, Collider[] ignore)
     {
-        var hits = Physics.RaycastAll(p + Vector3.up * 1.5f, Vector3.down, 6f, ~0, QueryTriggerInteraction.Ignore);
-        System.Array.Sort(hits, (x, y) => x.distance.CompareTo(y.distance));
+        var groundLayer = LayerMask.NameToLayer("Ground");
+        if (groundLayer < 0) return p;
+
+        var hits = Physics.RaycastAll(p + Vector3.up * 1.5f, Vector3.down, 6f, 1 << groundLayer, QueryTriggerInteraction.Ignore);
+        var found = false;
+        var best = p;
+        var bestGap = float.MaxValue;
         foreach (var hit in hits)
         {
-            if (hit.collider.GetComponentInParent<XROrigin>() != null) continue;
-            if (hit.collider is CharacterController) continue;
-            var skip = false;
-            if (ignore != null)
-                foreach (var c in ignore)
-                    if (c != null && hit.collider == c) { skip = true; break; }
-            if (skip) continue;
+            var col = hit.collider;
+            if (col.GetComponentInParent<XROrigin>() != null) continue;
+            if (col is CharacterController) continue;
+            if (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) continue;
+            if (IsIgnored(col, ignore)) continue;
             if (Vector3.Dot(hit.normal, Vector3.up) < 0.8f) continue; // walls / slopes
-            return hit.point;
+            // Points are given at floor height; anything well above it is not the floor.
+            if (hit.point.y > p.y + 0.3f) continue;
+
+            // Closest to the expected floor height, not the first surface the ray meets.
+            var gap = Mathf.Abs(hit.point.y - p.y);
+            if (gap >= bestGap) continue;
+            bestGap = gap;
+            best = hit.point;
+            found = true;
         }
-        return p;
+        return found ? best : p;
+    }
+
+    static bool IsIgnored(Collider col, Collider[] ignore)
+    {
+        if (ignore == null) return false;
+        foreach (var c in ignore)
+            if (c != null && col == c) return true;
+        return false;
     }
 
     static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
