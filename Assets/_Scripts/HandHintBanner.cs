@@ -65,7 +65,8 @@ public sealed class HandHintBanner : MonoBehaviour
     void Build(TMP_FontAsset font, string message)
     {
         rect = gameObject.AddComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(720f, 78f);
+        var lines = message.Split('\n').Length;
+        rect.sizeDelta = new Vector2(720f, 78f + (lines - 1) * 44f);
         BuildCurve();
         shownScale = Vector3.one * 0.00062f;
         rect.localScale = shownScale;
@@ -101,6 +102,10 @@ public sealed class HandHintBanner : MonoBehaviour
         label.Farsi = true;
         label.alignment = TextAlignmentOptions.Center;
         label.fontSize = 34f;
+        // Long tutorial lines shrink to fit instead of running off the banner.
+        label.enableAutoSizing = true;
+        label.fontSizeMin = 20f;
+        label.fontSizeMax = 34f;
         label.color = Color.white;
         label.raycastTarget = false;
         label.enableWordWrapping = false;

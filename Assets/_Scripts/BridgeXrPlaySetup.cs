@@ -30,16 +30,22 @@ static class BridgeXrPlaySetup
         if (origin == null)
             return;
 
+        MakeCasesGrabbable();
+
+        // Always plant the body/floor/teleport deck. Waiting for button A used to
+        // accidentally "fix" height only after a jump pulse; do it on load instead.
+        EnsurePlaySpace(origin);
+    }
+
+    /// <summary>Camera cases in the scene become physics objects either hand can pick up.</summary>
+    public static void MakeCasesGrabbable()
+    {
         foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (!transform.name.StartsWith("SM_Hard_Camera_Case"))
                 continue;
             MakeGrabbable(transform.gameObject);
         }
-
-        // Always plant the body/floor/teleport deck. Waiting for button A used to
-        // accidentally "fix" height only after a jump pulse; do it on load instead.
-        EnsurePlaySpace(origin);
     }
 
     /// <summary>Floor height, walk/teleport deck, and eye height for the active XR Origin.</summary>
