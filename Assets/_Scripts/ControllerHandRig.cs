@@ -212,6 +212,18 @@ public sealed class ControllerHandRig : MonoBehaviour
     bool IsTrackedByXRHands()
     {
         if (driver == null || trackingEvents == null || trackingSpace == null) return false;
+
+        // Quest can report a tracked hand while the controller is still held; the controller
+        // wins, otherwise the hand jumps between the two (e.g. when pressing the trigger).
+        InputDevices.GetDevicesWithCharacteristics(
+            InputDeviceCharacteristics.Controller |
+            (leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right), devices);
+        foreach (var device in devices)
+        {
+            if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var controllerTracked) || controllerTracked)
+                return false;
+        }
+
         SubsystemManager.GetSubsystems(handSubsystems);
         foreach (var subsystem in handSubsystems)
         {

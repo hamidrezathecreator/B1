@@ -52,8 +52,12 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [SerializeField] string[] intactBridgeNames = { "BridgMain", "BridgeMain", "Bridge Main" };
     [Tooltip("Destroyed bridge: off at the start, on when the timeline starts.")]
     [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
-    [Tooltip("Timeline time, in seconds, at which the screen fades to black and the next level loads.")]
-    [Min(0f)] [SerializeField] float fadeAtTimelineSeconds = 15f;
+    [Tooltip("Timeline time, in seconds, at which the XR Origin drops down (the bridge gives way).")]
+    [Min(0f)] [SerializeField] float fallAtTimelineSeconds = 5f;
+    [Tooltip("Seconds of falling before the eyes close.")]
+    [Min(0f)] [SerializeField] float closeEyesAfterFallSeconds = 1f;
+    [Tooltip("Longest wait for the eyes to close before loading the next level anyway.")]
+    [Min(0.1f)] [SerializeField] float maxEyeCloseSeconds = 2.5f;
     [Tooltip("Without a timeline: time to watch the explosion before the screen fades to black.")]
     [Min(0f)] [SerializeField] float delayBeforeFade = 3f;
     [Min(0f)] [SerializeField] float fadeOutSeconds = 1f;
@@ -307,7 +311,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
                 elapsed += Time.deltaTime;
                 var playing = director.state == UnityEngine.Playables.PlayState.Playing;
                 var timelineTime = playing ? (float)director.time : elapsed;
-                if (timelineTime >= fadeAtTimelineSeconds) break;
+                if (timelineTime >= fallAtTimelineSeconds) break;
                 if (!bannerHidden && elapsed >= doneMessageSeconds)
                 {
                     HideBanner();
@@ -324,12 +328,53 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         }
         HideBanner();
 
+        // The bridge gives way: the player drops.
+        StartCoroutine(FallDown());
+        if (closeEyesAfterFallSeconds > 0f) yield return new WaitForSeconds(closeEyesAfterFallSeconds);
+
+        // Eyes close, then on to the next level.
+        var blink = FindAnyObjectByType<VrBlinkEffect>();
+        if (blink == null) blink = new GameObject("Eye Blink").AddComponent<VrBlinkEffect>();
+        blink.CloseSlowly();
+        var waited = 0f;
+        while (blink != null && blink.Amount < 0.99f && waited < maxEyeCloseSeconds)
+        {
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
         if (string.IsNullOrWhiteSpace(nextSceneName) || !Application.CanStreamedLevelBeLoaded(nextSceneName))
         {
             Debug.LogWarning("Lvl1Tutorial: next scene '" + nextSceneName + "' is not in Build Settings.", this);
             yield break;
         }
-        SceneTransitionRunner.Begin(nextSceneName, true, 0f, fadeOutSeconds, 0.4f, 0.6f);
+        // Eyes are already shut; only a short fade so nothing pops while the next level loads.
+        SceneTransitionRunner.Begin(nextSceneName, true, 0f, Mathf.Min(0.3f, fadeOutSeconds), 0.4f, 0.6f);
+    }
+
+    /// <summary>
+    /// Drops the XR Origin like a fall: the height lock, body collider and locomotion are switched
+    /// off and the rig accelerates downward until the next level loads.
+    /// </summary>
+    IEnumerator FallDown()
+    {
+        if (origin == null) yield break;
+
+        BridgeXrPlaySetup.SuspendDeckLock(origin);
+        var body = origin.GetComponent<CharacterController>();
+        if (body != null) body.enabled = false;
+        SetWalking(false);
+        SetTeleport(false);
+        foreach (var gravity in origin.GetComponentsInChildren<UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity.GravityProvider>(true))
+            gravity.enabled = false;
+
+        var speed = 0f;
+        while (origin != null)
+        {
+            speed = Mathf.Min(speed + 9.81f * Time.deltaTime, 30f);
+            origin.transform.position += Vector3.down * speed * Time.deltaTime;
+            yield return null;
+        }
     }
 
     void SetBridgeDestroyed(bool destroyed)

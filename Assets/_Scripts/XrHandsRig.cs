@@ -341,7 +341,12 @@ public sealed class XrHandsRig : MonoBehaviour
         return true;
     }
 
-    /// <summary>Wrist pose on the controller; right-hand values, the left hand is mirrored.</summary>
+    /// <summary>
+    /// Wrist pose on the controller; right-hand values, the left hand is mirrored.
+    /// Placed on the controller's grip pose (the handle in the fist). The "Left/Right Controller"
+    /// objects follow the aim pose (tip of the controller, tilted along the laser), which put the
+    /// hand off the handle.
+    /// </summary>
     void ApplyAnchorOffset(Transform anchor, bool isLeft)
     {
         if (anchor == null) return;
@@ -353,9 +358,55 @@ public sealed class XrHandsRig : MonoBehaviour
             euler.y = -euler.y;
             euler.z = -euler.z;
         }
+        var handRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+
+        var space = TrackingSpace(origin);
+        if (space != null && TryGetGripPose(isLeft, out var gripPosition, out var gripRotation))
+        {
+            var worldGrip = space.rotation * gripRotation;
+            anchor.SetPositionAndRotation(
+                space.TransformPoint(gripPosition) + worldGrip * offset,
+                worldGrip * handRotation);
+            return;
+        }
+
         anchor.localPosition = offset;
-        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+        anchor.localRotation = handRotation;
     }
+
+    readonly List<UnityEngine.XR.InputDevice> gripDevices = new List<UnityEngine.XR.InputDevice>();
+
+    /// <summary>Grip pose of the controller in tracking space (OpenXR devicePose).</summary>
+    bool TryGetGripPose(bool isLeft, out Vector3 position, out Quaternion rotation)
+    {
+        position = default;
+        rotation = Quaternion.identity;
+        UnityEngine.XR.InputDevices.GetDevicesWithCharacteristics(
+            UnityEngine.XR.InputDeviceCharacteristics.Controller |
+            (isLeft ? UnityEngine.XR.InputDeviceCharacteristics.Left : UnityEngine.XR.InputDeviceCharacteristics.Right),
+            gripDevices);
+        foreach (var device in gripDevices)
+        {
+            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) && !isTracked)
+                continue;
+            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out position) &&
+                device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.deviceRotation, out rotation))
+                return true;
+        }
+        return false;
+    }
+
+    void OnBeforeRender()
+    {
+        // Same frame as the headset pose, so the hand does not lag behind the controller.
+        if (!ready) return;
+        ApplyAnchorOffset(leftAnchor, true);
+        ApplyAnchorOffset(rightAnchor, false);
+    }
+
+    void OnEnable() => Application.onBeforeRender += OnBeforeRender;
+
+    void OnDisable() => Application.onBeforeRender -= OnBeforeRender;
 
     void LateUpdate()
     {
