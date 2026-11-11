@@ -4298,7 +4298,7 @@ MonoBehaviour:
   xrOrigin: {fileID: 0}
   leftHandVisualPrefab: {fileID: 100100000, guid: b3ed8a0a703ebd34a9e44ed3d9f1fcf6, type: 3}
   rightHandVisualPrefab: {fileID: 100100000, guid: 3f7511fbc40ae7a4b89c3298a3de199d, type: 3}
-  handOnControllerPosition: {x: -0.01, y: -0.03, z: -0.07}
+  handOnControllerPosition: {x: 0.025, y: -0.015, z: -0.06}
   handOnControllerEuler: {x: 0, y: 0, z: 0}
   handHintFont: {fileID: 11400000, guid: 3fbde2e562e333d488bc46986fc6f4f1, type: 2}
   elevatorHintMessage: "\u0631\u0648\u06CC \u062F\u06A9\u0645\u0647 \u0622\u0633\u0627\u0646\u0633\u0648\u0631

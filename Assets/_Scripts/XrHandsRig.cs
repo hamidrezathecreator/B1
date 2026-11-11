@@ -19,7 +19,7 @@ public sealed class XrHandsRig : MonoBehaviour
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
-    [SerializeField] Vector3 handOnControllerPosition = new Vector3(-0.01f, -0.03f, -0.07f);
+    [SerializeField] Vector3 handOnControllerPosition = new Vector3(0.025f, -0.015f, -0.06f);
     [Tooltip("Extra wrist rotation on the controller, degrees.")]
     [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
 
@@ -29,7 +29,16 @@ public sealed class XrHandsRig : MonoBehaviour
     XRPokeInteractor rightPoke;
     Transform rightIndexTip;
     TabletFingerTip rightFingerTip;
+    Transform leftAnchor;
+    Transform rightAnchor;
     bool ready;
+
+    /// <summary>Updates the wrist offset only (live tuning in Play mode).</summary>
+    public void SetWristOffset(Vector3 wristPosition, Vector3 wristEuler)
+    {
+        handOnControllerPosition = wristPosition;
+        handOnControllerEuler = wristEuler;
+    }
 
     public void Configure(GameObject leftPrefab, GameObject rightPrefab, Vector3 wristPosition, Vector3 wristEuler)
     {
@@ -135,6 +144,16 @@ public sealed class XrHandsRig : MonoBehaviour
         // Tracking scripts on hand prefabs would move or hide the bones; the rest pose is what we want.
         foreach (var behaviour in source.GetComponentsInChildren<MonoBehaviour>(true))
             behaviour.enabled = false;
+        // The hand is only a picture. Hand prefabs (e.g. the scene's Tracked Hands) carry colliders
+        // and rigidbodies for their own interactors, which bumped and shoved the tablet and cases.
+        // Switched off rather than removed: other (disabled) components may require them.
+        foreach (var col in source.GetComponentsInChildren<Collider>(true))
+            col.enabled = false;
+        foreach (var body in source.GetComponentsInChildren<Rigidbody>(true))
+        {
+            body.isKinematic = true;
+            body.detectCollisions = false;
+        }
         source.SetActive(true);
 
         var skinned = source.GetComponentInChildren<SkinnedMeshRenderer>(true);
@@ -146,6 +165,9 @@ public sealed class XrHandsRig : MonoBehaviour
         }
         for (var t = skinned.transform; t != null && t != source.transform; t = t.parent)
             t.gameObject.SetActive(true);
+        // Only our baked hand mesh is drawn; poke spheres, rays etc. from the hand prefab are not.
+        foreach (var r in source.GetComponentsInChildren<Renderer>(true))
+            r.forceRenderingOff = true;
 
         var wrist = FindBone(skinned, source.transform, "wrist") ?? skinned.rootBone ?? skinned.transform;
 
@@ -161,6 +183,7 @@ public sealed class XrHandsRig : MonoBehaviour
         // Wrist anchor: XR hand convention, +Z toward the fingers, +Y out of the back of the hand.
         // Holding a controller the back of the right hand faces +X, the left hand faces -X.
         var anchor = new GameObject(HandObjectName).transform;
+        if (isLeft) leftAnchor = anchor; else rightAnchor = anchor;
         anchor.SetParent(controller, false);
         anchor.localPosition = offset;
         anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
@@ -318,9 +341,29 @@ public sealed class XrHandsRig : MonoBehaviour
         return true;
     }
 
+    /// <summary>Wrist pose on the controller; right-hand values, the left hand is mirrored.</summary>
+    void ApplyAnchorOffset(Transform anchor, bool isLeft)
+    {
+        if (anchor == null) return;
+        var offset = handOnControllerPosition;
+        var euler = handOnControllerEuler;
+        if (isLeft)
+        {
+            offset.x = -offset.x;
+            euler.y = -euler.y;
+            euler.z = -euler.z;
+        }
+        anchor.localPosition = offset;
+        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+    }
+
     void LateUpdate()
     {
         if (!ready) return;
+
+        // Live: changing the wrist offset in the inspector moves the hands right away.
+        ApplyAnchorOffset(leftAnchor, true);
+        ApplyAnchorOffset(rightAnchor, false);
 
         SubsystemManager.GetSubsystems(handSubsystems);
         Vector3 leftTip = default, rightTip = default;

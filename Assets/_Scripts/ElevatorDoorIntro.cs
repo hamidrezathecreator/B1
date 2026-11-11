@@ -30,7 +30,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
-    [SerializeField] Vector3 handOnControllerPosition = new Vector3(-0.01f, -0.03f, -0.07f);
+    [SerializeField] Vector3 handOnControllerPosition = new Vector3(0.025f, -0.015f, -0.06f);
     [Tooltip("Extra wrist rotation on the controller, degrees.")]
     [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
     [SerializeField] TMP_FontAsset handHintFont;
@@ -904,7 +904,19 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         if (box == null) box = tablet.AddComponent<BoxCollider>();
         box.isTrigger = false;
         box.center = center;
+        // A flat tablet collider is paper thin and slipped through the floor; give it some depth.
+        var scale = tablet.transform.lossyScale;
+        size.x = Mathf.Max(size.x, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.x)));
+        size.y = Mathf.Max(size.y, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.y)));
+        size.z = Mathf.Max(size.z, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
         box.size = size;
+
+        // Held in front of the chest the tablet hit the player's own body capsule and jittered or dropped.
+        if (xrOrigin != null)
+        {
+            foreach (var own in xrOrigin.GetComponentsInChildren<Collider>(true))
+                Physics.IgnoreCollision(box, own, true);
+        }
 
         var body = tablet.GetComponent<Rigidbody>();
         if (body == null) body = tablet.AddComponent<Rigidbody>();
@@ -947,6 +959,40 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         });
 
         AttachTabletLcdUi(tablet);
+        StartCoroutine(KeepTabletReachable(tablet, box, body, grab));
+    }
+
+    /// <summary>
+    /// If the tablet ever ends up under the floor or far away, put it back on the table so it
+    /// can always be picked up again.
+    /// </summary>
+    IEnumerator KeepTabletReachable(GameObject tablet, BoxCollider box, Rigidbody body, XRGrabInteractable grab)
+    {
+        var wait = new WaitForSeconds(0.5f);
+        while (tablet != null)
+        {
+            yield return wait;
+            if (tablet == null || grab == null || grab.isSelected) continue;
+
+            var table = GameObject.Find("SM_Table");
+            if (table == null || !TryTableTop(table, out var top, out var area)) continue;
+
+            var y = box.bounds.center.y;
+            var lost = y < top - 1.2f || Vector3.Distance(tablet.transform.position, area.center) > 25f;
+            if (!lost) continue;
+
+            if (!body.isKinematic)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            body.isKinematic = true;
+            body.useGravity = false;
+            tablet.transform.SetPositionAndRotation(
+                new Vector3(area.center.x, top + 0.05f, area.center.z), Quaternion.Euler(0f, 180f, 90f));
+            Physics.SyncTransforms();
+            SitOnTableTop(tablet, box, table);
+        }
     }
 
     /// <summary>Puts the tablet's collider bottom on the table's top surface.</summary>
@@ -1299,6 +1345,14 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
 
         fadeOverlay.alpha = target;
+    }
+
+    void OnValidate()
+    {
+        // Play mode: tune the hand position on the controller live from the inspector.
+        if (!Application.isPlaying) return;
+        var rig = GetComponent<XrHandsRig>();
+        if (rig != null) rig.SetWristOffset(handOnControllerPosition, handOnControllerEuler);
     }
 
     void OnDestroy()

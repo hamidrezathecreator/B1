@@ -22,7 +22,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
-    [SerializeField] Vector3 handOnControllerPosition = new Vector3(-0.01f, -0.03f, -0.07f);
+    [SerializeField] Vector3 handOnControllerPosition = new Vector3(0.025f, -0.015f, -0.06f);
     [Tooltip("Extra wrist rotation on the controller, degrees.")]
     [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
 
@@ -111,6 +111,14 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         launchHint = null;
         foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             button.onPressed.RemoveListener(HideLaunchHint);
+    }
+
+    void OnValidate()
+    {
+        // Play mode: tune the hand position on the controller live from the inspector.
+        if (!Application.isPlaying) return;
+        var rig = GetComponent<XrHandsRig>();
+        if (rig != null) rig.SetWristOffset(handOnControllerPosition, handOnControllerEuler);
     }
 
     void OnDestroy()
