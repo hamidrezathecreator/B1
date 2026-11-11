@@ -58,6 +58,7 @@ Material:
     - _Contrast: 1
     - _Depth_Fade_Length: 0.02
     m_Colors:
+    - White: {r: 1, g: 1, b: 1, a: 1}
     - _Flash_Color: {r: 1, g: 1, b: 1, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
