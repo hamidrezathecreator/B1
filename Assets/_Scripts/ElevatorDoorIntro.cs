@@ -87,7 +87,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Range(0.1f, 0.9f)] [SerializeField] float pathStraightFraction = 0.5f;
 
     [Header("After all three tablet options are checked")]
-    [SerializeField] string nextSceneName = "Missiles";
+    [SerializeField] string nextSceneName = "LVL3_MissileLaunch";
     [Min(0f)] [SerializeField] float delayAfterClicks = 5f;
     [Min(0f)] [SerializeField] float fadeOutSeconds = 0.8f;
 

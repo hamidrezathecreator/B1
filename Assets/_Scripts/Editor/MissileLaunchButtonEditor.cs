@@ -1,13 +1,65 @@
+using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 
 [CustomEditor(typeof(MissileLaunchButton))]
 public sealed class MissileLaunchButtonEditor : Editor
 {
+    const string PendingKey = "B1.MissileLaunchButton.PendingTest";
+    const float PlayModeDelay = 1.5f;
+
+    [MenuItem("B1/Wire Launch Buttons")]
+    static void WireLaunchButtons()
+    {
+        var count = MissileLaunchButton.AutoWireScene(
+            (pointName, position, parent) =>
+            {
+                var go = new GameObject(pointName);
+                Undo.RegisterCreatedObjectUndo(go, "Wire Launch Buttons");
+                go.transform.SetParent(parent, false);
+                go.transform.position = position;
+                return go.transform;
+            },
+            obj => Undo.RecordObject(obj, "Wire Launch Buttons"));
+
+        EditorSceneManager.MarkAllScenesDirty();
+        Debug.Log("Wire Launch Buttons: " + count + " button(s) wired. Move the 'Point B' objects under 'Launch Paths' to change where each one flies.");
+    }
+
+    [MenuItem("B1/Test All Launch Buttons")]
+    static void TestAll()
+    {
+        if (Application.isPlaying)
+        {
+            foreach (var b in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                b.TestLaunch();
+            return;
+        }
+        StartPlayAndTest("*");
+    }
+
     public override void OnInspectorGUI()
     {
-        DrawDefaultInspector();
         var button = (MissileLaunchButton)target;
+
+        var big = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, fixedHeight = 34 };
+        var old = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(1f, 0.6f, 0.2f);
+        var label = Application.isPlaying ? "▶  Test Launch" : "▶  Test Launch (enters Play Mode)";
+        if (GUILayout.Button(label, big))
+        {
+            if (Application.isPlaying) button.TestLaunch();
+            else StartPlayAndTest(PathOf(button.transform));
+        }
+        GUI.backgroundColor = old;
+        if (!Application.isPlaying)
+            EditorGUILayout.HelpBox("Opens Play Mode, then presses this button after " + PlayModeDelay +
+                                    " s. In Play Mode each click resets the object to Point A and launches again.",
+                MessageType.None);
+
+        EditorGUILayout.Space();
+        DrawDefaultInspector();
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Button position", EditorStyles.boldLabel);
@@ -37,9 +89,64 @@ public sealed class MissileLaunchButtonEditor : Editor
             if (GUILayout.Button(button.PointB == null ? "Create Point B" : "Select Point B"))
                 SelectOrCreate(button, false);
         }
+    }
 
-        if (Application.isPlaying && GUILayout.Button("Press (Play Mode)"))
-            button.Press();
+    static void StartPlayAndTest(string buttonPath)
+    {
+        SessionState.SetString(PendingKey, buttonPath);
+        EditorApplication.EnterPlaymode();
+    }
+
+    [InitializeOnLoadMethod]
+    static void HookPlayMode()
+    {
+        EditorApplication.playModeStateChanged -= OnPlayModeChanged;
+        EditorApplication.playModeStateChanged += OnPlayModeChanged;
+    }
+
+    static void OnPlayModeChanged(PlayModeStateChange change)
+    {
+        if (change != PlayModeStateChange.EnteredPlayMode) return;
+        var pending = SessionState.GetString(PendingKey, "");
+        if (string.IsNullOrEmpty(pending)) return;
+        SessionState.EraseString(PendingKey);
+
+        // Give the level setup (hands, ground, auto wiring) a moment before pressing.
+        var fireAt = EditorApplication.timeSinceStartup + PlayModeDelay;
+        void Tick()
+        {
+            if (!Application.isPlaying)
+            {
+                EditorApplication.update -= Tick;
+                return;
+            }
+            if (EditorApplication.timeSinceStartup < fireAt) return;
+            EditorApplication.update -= Tick;
+
+            foreach (var b in FindTargets(pending))
+                b.TestLaunch();
+        }
+        EditorApplication.update += Tick;
+    }
+
+    static IEnumerable<MissileLaunchButton> FindTargets(string path)
+    {
+        foreach (var b in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (path == "*" || PathOf(b.transform) == path)
+                yield return b;
+        }
+    }
+
+    static string PathOf(Transform t)
+    {
+        var path = t.name + "#" + t.GetSiblingIndex();
+        while (t.parent != null)
+        {
+            t = t.parent;
+            path = t.name + "#" + t.GetSiblingIndex() + "/" + path;
+        }
+        return path;
     }
 
     static void Record(MissileLaunchButton button, string label, System.Action action)

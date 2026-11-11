@@ -4334,7 +4334,7 @@ MonoBehaviour:
   pathStartLocal: {x: -0.95, y: 0, z: 1.6}
   pathStopBeforeTable: 0.45
   pathStraightFraction: 0.5
-  nextSceneName: Missiles
+  nextSceneName: LVL3_MissileLaunch
   delayAfterClicks: 5
   fadeOutSeconds: 0.8
 --- !u!1001 &449313247

@@ -60,6 +60,9 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
         rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
         rig.Setup(origin);
+
+        // Launch panels: any button still without a target gets the nearest missile / Shahed.
+        MissileLaunchButton.AutoWireScene();
     }
 
     void UseOnlyHeadsetCamera()
