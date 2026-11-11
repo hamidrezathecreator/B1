@@ -12,6 +12,11 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
+      name: Damage
+    second: {fileID: 2100000, guid: 40c0807dc23a07f488ef4c35962c783d, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
       name: Jersey.001
     second: {fileID: 2100000, guid: 5aac80bd83c61d445806a89f9e742484, type: 2}
   - first:
