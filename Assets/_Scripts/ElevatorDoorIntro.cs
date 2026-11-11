@@ -194,7 +194,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         if (xrOrigin.CameraFloorOffsetObject != null)
         {
             var offset = xrOrigin.CameraFloorOffsetObject.transform.localPosition;
-            xrOrigin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+            xrOrigin.CameraFloorOffsetObject.transform.localPosition =
+                new Vector3(offset.x, BridgeXrPlaySetup.ExtraCameraLift, offset.z);
         }
     }
 

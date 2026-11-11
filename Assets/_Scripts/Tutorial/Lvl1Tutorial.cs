@@ -48,6 +48,10 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [Min(0f)] [SerializeField] float delayBeforeExplosion = 2f;
     [Tooltip("Timeline (PlayableDirector) started from the beginning when the case snaps into place.")]
     [SerializeField] string directorObjectName = "Director";
+    [Tooltip("Intact bridge: on at the start, off when the timeline starts. First name found is used.")]
+    [SerializeField] string[] intactBridgeNames = { "BridgMain", "BridgeMain", "Bridge Main" };
+    [Tooltip("Destroyed bridge: off at the start, on when the timeline starts.")]
+    [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
     [Tooltip("Timeline time, in seconds, at which the screen fades to black and the next level loads.")]
     [Min(0f)] [SerializeField] float fadeAtTimelineSeconds = 15f;
     [Tooltip("Without a timeline: time to watch the explosion before the screen fades to black.")]
@@ -69,6 +73,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     readonly List<MagnetDropZone> zones = new List<MagnetDropZone>();
     ControllerButtonHighlight buttonHighlight;
     GameObject explosion;
+    GameObject intactBridge;
+    GameObject destroyedBridge;
     readonly List<XRGrabInteractable> cases = new List<XRGrabInteractable>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -100,6 +106,15 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
         explosion = string.IsNullOrWhiteSpace(explosionObjectName) ? null : GameObject.Find(explosionObjectName);
         if (explosion != null) explosion.SetActive(false);
+
+        // Start: intact bridge shown, destroyed one hidden. Swapped when the timeline starts.
+        intactBridge = FindByName(intactBridgeNames);
+        destroyedBridge = FindByName(destroyedBridgeName);
+        if (intactBridge == null)
+            Debug.LogWarning("Lvl1Tutorial: no intact bridge named " + string.Join(" / ", intactBridgeNames) + ".", this);
+        if (destroyedBridge == null)
+            Debug.LogWarning("Lvl1Tutorial: no destroyed bridge named " + destroyedBridgeName + ".", this);
+        SetBridgeDestroyed(false);
 
         // Let the first-scene setup (floor, body) finish first.
         yield return null;
@@ -277,6 +292,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ShowBanner(doneMessage);
 
         var director = FindDirector();
+        SetBridgeDestroyed(true);
         if (director != null)
         {
             director.time = 0;
@@ -314,6 +330,26 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             yield break;
         }
         SceneTransitionRunner.Begin(nextSceneName, true, 0f, fadeOutSeconds, 0.4f, 0.6f);
+    }
+
+    void SetBridgeDestroyed(bool destroyed)
+    {
+        if (intactBridge != null) intactBridge.SetActive(!destroyed);
+        if (destroyedBridge != null) destroyedBridge.SetActive(destroyed);
+    }
+
+    static GameObject FindByName(params string[] names)
+    {
+        if (names == null) return null;
+        // Includes switched-off objects: the destroyed bridge is usually off in the scene.
+        var all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var name in names)
+        {
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            foreach (var t in all)
+                if (t.name == name && t.gameObject.scene.IsValid()) return t.gameObject;
+        }
+        return null;
     }
 
     IEnumerator ExplosionAfterDelay()

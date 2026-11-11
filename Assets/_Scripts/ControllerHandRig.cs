@@ -4,10 +4,13 @@ using UnityEngine.XR;
 using UnityEngine.XR.Hands;
 
 /// <summary>
-/// Curls the fingers of a controller hand from the controller buttons: trigger bends the index,
-/// grip bends the other fingers, the thumb follows the grip halfway. The bones move in a hidden
-/// skinned rig and the result is baked into a plain MeshRenderer each time it changes, because
-/// skinned rendering showed nothing on Quest in this project.
+/// One hand, two modes:
+/// - Hand tracking (controllers put down): the rig follows the real hand through XR Hands,
+///   every finger joint moving like the player's own.
+/// - Controller in hand: the rig sits on the controller; trigger bends the index, grip the
+///   other fingers, the thumb follows the grip halfway.
+/// The bones move in a hidden skinned rig and the result is baked into a plain MeshRenderer,
+/// because skinned rendering showed nothing on Quest in this project.
 /// </summary>
 public sealed class ControllerHandRig : MonoBehaviour
 {
@@ -28,8 +31,17 @@ public sealed class ControllerHandRig : MonoBehaviour
         public float maxDegrees;
     }
 
+    struct RestPose
+    {
+        public Transform transform;
+        public Vector3 position;
+        public Quaternion rotation;
+    }
+
     readonly List<FingerBone> bones = new List<FingerBone>();
+    readonly List<RestPose> restPoses = new List<RestPose>();
     readonly List<InputDevice> devices = new List<InputDevice>();
+    readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
     SkinnedMeshRenderer skinned;
     Transform meshTransform;
     MeshFilter meshFilter;
@@ -40,15 +52,30 @@ public sealed class ControllerHandRig : MonoBehaviour
     float lastIndex = -1f;
     float lastGrip = -1f;
 
+    Transform rigRoot;
+    Transform trackingSpace;
+    Vector3 rigOnControllerPosition;
+    Quaternion rigOnControllerRotation;
+    XRHandSkeletonDriver driver;
+    XRHandTrackingEvents trackingEvents;
+    bool tracked;
+
     public Transform IndexTip { get; private set; }
     public int FingerBoneCount => bones.Count;
+    public bool IsHandTracked => tracked;
 
-    public void Bind(SkinnedMeshRenderer rigRenderer, Transform meshObject, bool isLeft)
+    /// <param name="rig">Root of the hidden rig, already placed so its wrist sits on this anchor.</param>
+    /// <param name="handTrackingSpace">XR Origin camera offset; XR Hands poses are relative to it.</param>
+    public void Bind(SkinnedMeshRenderer rigRenderer, Transform meshObject, bool isLeft, Transform rig, Transform handTrackingSpace)
     {
         skinned = rigRenderer;
         meshTransform = meshObject;
         meshFilter = meshObject.GetComponent<MeshFilter>();
         leftHand = isLeft;
+        rigRoot = rig;
+        trackingSpace = handTrackingSpace;
+        rigOnControllerPosition = rigRoot.localPosition;
+        rigOnControllerRotation = rigRoot.localRotation;
 
         // The skinned renderer only feeds the bake; the plain MeshRenderer draws the hand.
         // Kept enabled (just not drawn) so baking always has a live renderer to read.
@@ -57,6 +84,18 @@ public sealed class ControllerHandRig : MonoBehaviour
         baked = new Mesh { name = skinned.sharedMesh.name + " (baked)" };
         meshFilter.sharedMesh = baked;
 
+        driver = rigRoot.GetComponentInChildren<XRHandSkeletonDriver>(true);
+        trackingEvents = rigRoot.GetComponentInChildren<XRHandTrackingEvents>(true);
+        if (driver != null) driver.enabled = false;
+        if (trackingEvents != null) trackingEvents.enabled = false;
+
+        restPoses.Clear();
+        foreach (var t in rigRoot.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == rigRoot) continue;
+            restPoses.Add(new RestPose { transform = t, position = t.localPosition, rotation = t.localRotation });
+        }
+
         CollectFingerBones();
         Rebake();
     }
@@ -64,9 +103,6 @@ public sealed class ControllerHandRig : MonoBehaviour
     void CollectFingerBones()
     {
         bones.Clear();
-        var driver = skinned.GetComponentInParent<XRHandSkeletonDriver>(true);
-        if (driver == null) driver = skinned.transform.root.GetComponentInChildren<XRHandSkeletonDriver>(true);
-
         if (driver != null && driver.jointTransformReferences != null && driver.jointTransformReferences.Count > 0)
         {
             foreach (var reference in driver.jointTransformReferences)
@@ -96,7 +132,7 @@ public sealed class ControllerHandRig : MonoBehaviour
         }
 
         if (IndexTip == null)
-            IndexTip = XrHandsRig.FindIndexTipBone(skinned, skinned.transform.root);
+            IndexTip = XrHandsRig.FindIndexTipBone(skinned, rigRoot);
     }
 
     void Add(Transform bone, Finger finger, float degrees)
@@ -139,6 +175,21 @@ public sealed class ControllerHandRig : MonoBehaviour
     {
         if (skinned == null || meshTransform == null) return;
 
+        var nowTracked = IsTrackedByXRHands();
+        if (nowTracked != tracked)
+        {
+            if (nowTracked) EnterHandTracking();
+            else EnterController();
+        }
+
+        if (tracked)
+        {
+            // XR Hands moves every joint itself; follow it every frame.
+            meshTransform.SetPositionAndRotation(skinned.transform.position, skinned.transform.rotation);
+            Rebake();
+            return;
+        }
+
         ReadInput(out var targetIndex, out var targetGrip);
         var k = 1f - Mathf.Exp(-Smoothing * Time.deltaTime);
         index = Mathf.Lerp(index, targetIndex, k);
@@ -156,6 +207,51 @@ public sealed class ControllerHandRig : MonoBehaviour
             b.bone.localRotation = b.rest * Quaternion.Euler(amount * b.maxDegrees, 0f, 0f);
         }
         Rebake();
+    }
+
+    bool IsTrackedByXRHands()
+    {
+        if (driver == null || trackingEvents == null || trackingSpace == null) return false;
+        SubsystemManager.GetSubsystems(handSubsystems);
+        foreach (var subsystem in handSubsystems)
+        {
+            if (subsystem == null || !subsystem.running) continue;
+            var hand = leftHand ? subsystem.leftHand : subsystem.rightHand;
+            if (hand.isTracked) return true;
+        }
+        return false;
+    }
+
+    void EnterHandTracking()
+    {
+        tracked = true;
+        // XR Hands writes the wrist pose relative to the rig root, in tracking space.
+        rigRoot.SetParent(trackingSpace, false);
+        rigRoot.localPosition = Vector3.zero;
+        rigRoot.localRotation = Quaternion.identity;
+        trackingEvents.enabled = true;
+        driver.enabled = true;
+    }
+
+    void EnterController()
+    {
+        tracked = false;
+        if (driver != null) driver.enabled = false;
+        if (trackingEvents != null) trackingEvents.enabled = false;
+
+        // Back to the open rest pose on the controller.
+        foreach (var pose in restPoses)
+        {
+            if (pose.transform == null) continue;
+            pose.transform.localPosition = pose.position;
+            pose.transform.localRotation = pose.rotation;
+        }
+        rigRoot.SetParent(transform, false);
+        rigRoot.localPosition = rigOnControllerPosition;
+        rigRoot.localRotation = rigOnControllerRotation;
+
+        lastIndex = -1f;
+        lastGrip = -1f;
     }
 
     void Rebake()
@@ -183,5 +279,6 @@ public sealed class ControllerHandRig : MonoBehaviour
     void OnDestroy()
     {
         if (baked != null) Destroy(baked);
+        if (rigRoot != null && rigRoot.parent != transform) Destroy(rigRoot.gameObject);
     }
 }

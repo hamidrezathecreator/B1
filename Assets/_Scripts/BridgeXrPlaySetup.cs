@@ -20,7 +20,7 @@ static class BridgeXrPlaySetup
     const float BodyHeight = 1.75f;
     const float EyeHeight = 1.65f;
     // Between the old too-high Device offset and the last Floor height that felt too short.
-    const float ExtraCameraLift = 0.12f;
+    internal const float ExtraCameraLift = 0.25f;
     const float SkinWidth = 0.02f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -82,8 +82,16 @@ static class BridgeXrPlaySetup
         if (origin.CameraFloorOffsetObject != null)
         {
             var offset = origin.CameraFloorOffsetObject.transform.localPosition;
-            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+            // Same lift as the open levels, so the view is not down in the floor inside the cabin.
+            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, ExtraCameraLift, offset.z);
         }
+
+        // XR Origin resets the camera offset to 0 once Floor tracking kicks in. Outside, the deck
+        // lock puts the lift back every frame; in the cabin there is no deck lock, so keep just the lift.
+        var keeper = origin.GetComponent<CameraLiftKeeper>();
+        if (keeper == null) keeper = origin.gameObject.AddComponent<CameraLiftKeeper>();
+        keeper.origin = origin;
+        keeper.lift = ExtraCameraLift;
 
         var body = origin.GetComponent<CharacterController>();
         if (body != null)
@@ -377,6 +385,25 @@ static class BridgeXrPlaySetup
         center = (min + max) * 0.5f;
         size = max - min;
         return size.sqrMagnitude > 0.0001f;
+    }
+}
+
+/// <summary>
+/// Keeps only the camera lift above the floor, without pinning the body's height
+/// (so the player can still ride the elevator cabin up and down).
+/// </summary>
+sealed class CameraLiftKeeper : MonoBehaviour
+{
+    public XROrigin origin;
+    public float lift;
+
+    void LateUpdate()
+    {
+        if (origin == null || origin.CameraFloorOffsetObject == null) return;
+        var offset = origin.CameraFloorOffsetObject.transform;
+        var local = offset.localPosition;
+        if (Mathf.Abs(local.y - lift) <= 0.0001f) return;
+        offset.localPosition = new Vector3(local.x, lift, local.z);
     }
 }
 

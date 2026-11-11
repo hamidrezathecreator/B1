@@ -60,9 +60,26 @@ public sealed class XrHandsRig : MonoBehaviour
         HideControllerMeshes(origin.transform);
         BuildControllerHand(leftHandVisualPrefab, "Left Controller", true, out _);
         BuildControllerHand(rightHandVisualPrefab, "Right Controller", false, out rightIndexTip);
+        HideSceneHandVisuals();
         leftPoke = EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
         ready = true;
+    }
+
+    /// <summary>
+    /// The scene's own tracked-hand meshes (e.g. VR template Tracked Hands) would draw a second
+    /// hand on top of ours while hand tracking. Their interactors stay; only the meshes are hidden.
+    /// </summary>
+    static void HideSceneHandVisuals()
+    {
+        foreach (var skinned in FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (skinned.GetComponentInParent<ControllerHandRig>(true) != null) continue;
+            var isHand = skinned.GetComponentInParent<XRHandSkeletonDriver>(true) != null;
+            for (var t = skinned.transform; !isHand && t != null; t = t.parent)
+                if (t.name.Contains("Tracked Hands")) isHand = true;
+            if (isHand) skinned.forceRenderingOff = true;
+        }
     }
 
     public static Transform FindNamed(XROrigin xrOrigin, string targetName)
@@ -167,7 +184,7 @@ public sealed class XrHandsRig : MonoBehaviour
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
-        rig.Bind(skinned, meshObject.transform, isLeft);
+        rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, TrackingSpace(origin));
         indexTip = rig.IndexTip;
 
         Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +

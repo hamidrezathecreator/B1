@@ -12,7 +12,11 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     [Header("Random Areas")]
     [Min(0f)] [SerializeField] private float launchRadius = 1f;
+    [Tooltip("How far each piece can land from where it started (or from the Ground Point when gathering).")]
     [Min(0f)] [SerializeField] private float landingRadius = 2f;
+    [Tooltip("Off: every piece falls down near its own spot, pushed outward from the Launch Point. " +
+             "On: all pieces land together around the Ground Point.")]
+    [SerializeField] private bool gatherAtGroundPoint;
     [Min(0f)] [SerializeField] private float launchHeight = 3f;
     [Min(0f)] [SerializeField] private float launchHeightVariation = 0.75f;
     [SerializeField] private LayerMask groundLayers = ~0;
@@ -41,11 +45,7 @@ public sealed class ExplosionScatter : MonoBehaviour
     {
         StopActiveTweens();
         RestoreStartState();
-        if (launchPoint == null || groundPoint == null || pieces == null || pieces.Length == 0)
-        {
-            Debug.LogWarning("ExplosionScatter needs pieces, a Launch Point and a Ground Point.", this);
-            return;
-        }
+        if (!HasSetup()) return;
 
         partialExplosionStep = 4;
         nextPieceIndex = pieces.Length;
@@ -56,11 +56,7 @@ public sealed class ExplosionScatter : MonoBehaviour
     [ContextMenu("Test Partial Explosion")]
     public void ExplodePartly()
     {
-        if (launchPoint == null || groundPoint == null || pieces == null || pieces.Length == 0)
-        {
-            Debug.LogWarning("ExplosionScatter needs pieces, a Launch Point and a Ground Point.", this);
-            return;
-        }
+        if (!HasSetup()) return;
 
         if (partialExplosionStep >= 4) return;
 
@@ -79,9 +75,8 @@ public sealed class ExplosionScatter : MonoBehaviour
         // Rise from each piece's own position instead of converging on the launch point.
         Vector3 apex = start + new Vector3(launchOffset.x,
             launchHeight + Random.Range(-launchHeightVariation, launchHeightVariation), launchOffset.y);
-        Vector2 landingOffset = Random.insideUnitCircle * landingRadius;
-        Vector3 landing = groundPoint.position + new Vector3(landingOffset.x, 0f, landingOffset.y);
-        landing.y = FindGroundHeight(landing) + groundClearance;
+        Vector3 landing = LandingSpot(start);
+        landing.y = FindGroundHeight(landing, start.y) + groundClearance;
         Quaternion startRotation = piece.rotation;
         Quaternion endRotation = Random.rotation;
         float rise = RandomizedDuration(riseDuration);
@@ -112,12 +107,39 @@ public sealed class ExplosionScatter : MonoBehaviour
         nextPieceIndex = 0;
     }
 
-    private float FindGroundHeight(Vector3 landing)
+    private bool HasSetup()
+    {
+        if (pieces != null && pieces.Length > 0 && (!gatherAtGroundPoint || groundPoint != null)) return true;
+        Debug.LogWarning(gatherAtGroundPoint
+            ? "ExplosionScatter needs pieces and a Ground Point when gathering."
+            : "ExplosionScatter needs pieces.", this);
+        return false;
+    }
+
+    /// <summary>Where a piece comes down, before snapping to the ground.</summary>
+    private Vector3 LandingSpot(Vector3 start)
+    {
+        Vector2 random = Random.insideUnitCircle * landingRadius;
+        if (gatherAtGroundPoint)
+            return groundPoint.position + new Vector3(random.x, 0f, random.y);
+
+        // Thrown outward from the blast, landing below and around where the piece was.
+        Vector3 outward = Vector3.zero;
+        if (launchPoint != null)
+        {
+            outward = start - launchPoint.position;
+            outward.y = 0f;
+            if (outward.sqrMagnitude > 0.0001f) outward = outward.normalized * Random.Range(0.3f, 1f) * landingRadius;
+        }
+        return start + outward + new Vector3(random.x, 0f, random.y) * 0.5f;
+    }
+
+    private float FindGroundHeight(Vector3 landing, float startHeight)
     {
         Ray ray = new Ray(landing + Vector3.up * raycastHeight, Vector3.down);
         if (Physics.Raycast(ray, out RaycastHit hit, raycastHeight * 2f, groundLayers, QueryTriggerInteraction.Ignore))
             return hit.point.y;
-        return groundPoint.position.y;
+        return groundPoint != null ? groundPoint.position.y : startHeight;
     }
 
     private float RandomizedDuration(float value) => value * Random.Range(1f - durationVariation, 1f + durationVariation);
