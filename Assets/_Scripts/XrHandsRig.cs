@@ -6,11 +6,16 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 
 /// <summary>
-/// Project hand meshes on both controllers, a poke point on each controller, and a
+/// Project hand meshes in place of both controller models, a poke point on each controller, and a
 /// right fingertip touch sphere (<see cref="TabletFingerTip"/>). Shared by every level.
+/// The hand is baked once into a plain mesh on a MeshRenderer: the skinned path (bones, tracking
+/// scripts, GPU skinning) rendered nothing on Quest, while plain MeshRenderers do.
 /// </summary>
 public sealed class XrHandsRig : MonoBehaviour
 {
+    const string HandObjectName = "ProjectHand";
+
+    [Tooltip("Rigged hand model or prefab, e.g. LeftHandAndroidXR.fbx.")]
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
@@ -53,8 +58,8 @@ public sealed class XrHandsRig : MonoBehaviour
         }
 
         HideControllerMeshes(origin.transform);
-        SpawnHand(leftHandVisualPrefab, "Left Hand Tracking", "Left Controller", true);
-        SpawnHand(rightHandVisualPrefab, "Right Hand Tracking", "Right Controller", false);
+        BuildControllerHand(leftHandVisualPrefab, "Left Controller", true, out _);
+        BuildControllerHand(rightHandVisualPrefab, "Right Controller", false, out rightIndexTip);
         leftPoke = EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
         ready = true;
@@ -70,36 +75,75 @@ public sealed class XrHandsRig : MonoBehaviour
         return null;
     }
 
-    void SpawnHand(GameObject prefab, string handName, string controllerName, bool isLeft)
+    /// <summary>
+    /// Bakes the rigged hand in its rest pose into a plain mesh and attaches it to the controller,
+    /// wrist on the handle, fingers forward. Also returns the index fingertip for touching UI.
+    /// </summary>
+    void BuildControllerHand(GameObject prefab, string controllerName, bool isLeft, out Transform indexTip)
     {
-        if (prefab == null) return;
-        var existing = GameObject.Find(handName);
-        var hand = existing != null ? existing : Instantiate(prefab);
-        hand.name = handName;
-        hand.SetActive(true);
-
-        // Turns the mesh off when hand tracking is lost, so a controller build shows nothing.
-        var meshController = hand.GetComponent<XRHandMeshController>();
-        if (meshController != null)
-            meshController.enabled = false;
-
-        var skin = OpaqueHandMaterial();
-        foreach (var renderer in hand.GetComponentsInChildren<Renderer>(true))
+        indexTip = null;
+        try
         {
-            renderer.gameObject.SetActive(true);
-            renderer.enabled = true;
-            // Sample material is transparent Lit; that pass is often stripped from the Quest build.
-            if (skin != null)
-                renderer.sharedMaterial = skin;
-            if (renderer is SkinnedMeshRenderer skinned)
-                skinned.updateWhenOffscreen = true;
+            BuildControllerHandUnsafe(prefab, controllerName, isLeft, out indexTip);
+        }
+        catch (System.Exception e)
+        {
+            // A failed hand must not stop the other hand, the poke points or the level setup.
+            Debug.LogException(e, this);
+        }
+    }
+
+    void BuildControllerHandUnsafe(GameObject prefab, string controllerName, bool isLeft, out Transform indexTip)
+    {
+        indexTip = null;
+        var controller = FindNamed(origin, controllerName);
+        if (controller == null)
+        {
+            Debug.LogWarning("XrHandsRig: no '" + controllerName + "' under the XR Origin.", this);
+            return;
         }
 
-        BuildStaticHandMesh(hand, skin);
+        // No prefab assigned (or the reference went missing): use the default XR hand in the scene.
+        var template = prefab != null ? prefab : FindSceneHand(isLeft);
+        if (template == null)
+        {
+            Debug.LogWarning("XrHandsRig: no hand model for '" + controllerName + "'. Assign a hand prefab.", this);
+            return;
+        }
 
-        var pose = hand.GetComponent<ProjectHandPose>();
-        if (pose == null)
-            pose = hand.AddComponent<ProjectHandPose>();
+        var old = controller.Find(HandObjectName);
+        if (old != null) Destroy(old.gameObject);
+
+        var source = Instantiate(template);
+        // Tracking scripts on hand prefabs would move or hide the bones; the rest pose is what we want.
+        foreach (var behaviour in source.GetComponentsInChildren<MonoBehaviour>(true))
+            behaviour.enabled = false;
+        source.SetActive(true);
+
+        var skinned = source.GetComponentInChildren<SkinnedMeshRenderer>(true);
+        if (skinned == null || skinned.sharedMesh == null)
+        {
+            Debug.LogWarning("XrHandsRig: '" + template.name + "' has no skinned hand mesh.", this);
+            Destroy(source);
+            return;
+        }
+        for (var t = skinned.transform; t != null && t != source.transform; t = t.parent)
+            t.gameObject.SetActive(true);
+
+        var wrist = FindBone(skinned, source.transform, "wrist") ?? skinned.rootBone ?? skinned.transform;
+        var tipBone = FindIndexTipBone(skinned, source.transform);
+
+        var baked = new Mesh { name = template.name + " (baked)" };
+        skinned.BakeMesh(baked, false);
+
+        // Without scale: BakeMesh(…, false) bakes for the renderer's position and rotation only,
+        // and the hand keeps its real size whatever scale the rig carries.
+        var meshFrame = Matrix4x4.TRS(skinned.transform.position, skinned.transform.rotation, Vector3.one);
+        var wristFrame = Matrix4x4.TRS(wrist.position, wrist.rotation, Vector3.one);
+        var meshInWrist = wristFrame.inverse * meshFrame;
+        var tipInWrist = tipBone != null ? wristFrame.inverse.MultiplyPoint3x4(tipBone.position) : (Vector3?)null;
+        Destroy(source);
+
         var offset = handOnControllerPosition;
         var euler = handOnControllerEuler;
         if (isLeft)
@@ -108,76 +152,88 @@ public sealed class XrHandsRig : MonoBehaviour
             euler.y = -euler.y;
             euler.z = -euler.z;
         }
-        pose.Bind(FindNamed(origin, controllerName), TrackingSpace(origin), isLeft, offset, euler);
-        if (!isLeft)
-            rightIndexTip = FindIndexTip(hand);
-    }
 
-    /// <summary>
-    /// Draws the project hand mesh with a plain MeshRenderer in its rest pose, attached to
-    /// the wrist bone. The skinned path (tracking events, bones, GPU skinning) renders nothing
-    /// on Quest in this project, while plain MeshRenderers do.
-    /// </summary>
-    static void BuildStaticHandMesh(GameObject hand, Material skin)
-    {
-        var skinned = hand.GetComponentInChildren<SkinnedMeshRenderer>(true);
-        if (skinned == null || skinned.sharedMesh == null) return;
+        // Wrist anchor: XR hand convention, +Z toward the fingers, +Y out of the back of the hand.
+        // Holding a controller the back of the right hand faces +X, the left hand faces -X.
+        var anchor = new GameObject(HandObjectName).transform;
+        anchor.SetParent(controller, false);
+        anchor.localPosition = offset;
+        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+        anchor.localScale = Vector3.one;
 
-        var driver = hand.GetComponent<XRHandSkeletonDriver>();
-        var wrist = driver != null && driver.rootTransform != null ? driver.rootTransform : skinned.rootBone;
-        if (wrist == null) wrist = hand.transform;
-        if (wrist.Find("StaticHandMesh") != null) return;
+        var meshObject = new GameObject("Hand Mesh");
+        meshObject.transform.SetParent(anchor, false);
+        meshObject.transform.localPosition = meshInWrist.GetColumn(3);
+        meshObject.transform.localRotation = meshInWrist.rotation;
+        meshObject.transform.localScale = Vector3.one;
+        meshObject.AddComponent<MeshFilter>().sharedMesh = baked;
 
-        var mesh = skinned.sharedMesh;
-        var bind = Matrix4x4.identity;
-        var poses = mesh.bindposes;
-        var bones = skinned.bones;
-        var index = bones != null ? System.Array.IndexOf(bones, wrist) : -1;
-        if (index >= 0 && poses != null && index < poses.Length)
-            bind = poses[index];
-        else
-            bind = wrist.worldToLocalMatrix * skinned.transform.localToWorldMatrix;
-
-        var go = new GameObject("StaticHandMesh");
-        go.layer = hand.layer;
-        go.transform.SetParent(wrist, false);
-        go.transform.localPosition = bind.GetColumn(3);
-        go.transform.localRotation = bind.rotation;
-        go.transform.localScale = bind.lossyScale;
-
-        go.AddComponent<MeshFilter>().sharedMesh = mesh;
-        var renderer = go.AddComponent<MeshRenderer>();
-        var count = Mathf.Max(1, mesh.subMeshCount);
-        var mats = new Material[count];
-        for (var i = 0; i < count; i++)
-            mats[i] = skin != null ? skin : skinned.sharedMaterial;
+        var renderer = meshObject.AddComponent<MeshRenderer>();
+        var skin = OpaqueHandMaterial();
+        var mats = new Material[Mathf.Max(1, baked.subMeshCount)];
+        for (var i = 0; i < mats.Length; i++) mats[i] = skin;
         renderer.sharedMaterials = mats;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        skinned.enabled = false;
+        if (tipInWrist.HasValue)
+        {
+            var tip = new GameObject("Index Tip").transform;
+            tip.SetParent(anchor, false);
+            tip.localPosition = tipInWrist.Value;
+            indexTip = tip;
+        }
+
+        Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +
+                  " (" + baked.vertexCount + " vertices, size " + baked.bounds.size.magnitude.ToString("0.00") + " m).", this);
     }
 
-    static Transform FindIndexTip(GameObject hand)
+    /// <summary>The default XR hand already in the scene (e.g. Tracked Hands → Left Hand).</summary>
+    static GameObject FindSceneHand(bool isLeft)
     {
-        var driver = hand.GetComponent<XRHandSkeletonDriver>();
-        if (driver != null && driver.jointTransformReferences != null)
+        var side = isLeft ? "left" : "right";
+        foreach (var skinned in FindObjectsByType<SkinnedMeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
-            var refs = driver.jointTransformReferences;
-            for (var i = 0; i < refs.Count; i++)
+            if (skinned.sharedMesh == null) continue;
+            // Walk up to the object named after the hand side, e.g. "Left Hand".
+            for (var t = skinned.transform; t != null; t = t.parent)
             {
-                if (refs[i].xrHandJointID == XRHandJointID.IndexTip && refs[i].jointTransform != null)
-                    return refs[i].jointTransform;
+                var n = t.name.ToLowerInvariant();
+                if (n.Contains(side) && n.Contains("hand"))
+                    return t.gameObject;
             }
         }
+        return null;
+    }
 
-        foreach (var t in hand.GetComponentsInChildren<Transform>(true))
+    static Transform FindBone(SkinnedMeshRenderer skinned, Transform root, string contains)
+    {
+        if (skinned.bones != null)
+        {
+            foreach (var bone in skinned.bones)
+                if (bone != null && bone.name.ToLowerInvariant().Contains(contains)) return bone;
+        }
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            if (t.name.ToLowerInvariant().Contains(contains)) return t;
+        return null;
+    }
+
+    /// <summary>Tip of the index finger: a bone named index…tip/end, else the last bone of the index chain.</summary>
+    static Transform FindIndexTipBone(SkinnedMeshRenderer skinned, Transform root)
+    {
+        Transform deepestIndex = null;
+        var deepest = -1;
+        foreach (var t in root.GetComponentsInChildren<Transform>(true))
         {
             var n = t.name.ToLowerInvariant();
-            if (n.Contains("index") && (n.Contains("tip") || n.Contains("end")))
-                return t;
+            if (!n.Contains("index")) continue;
+            if (n.Contains("tip") || n.Contains("end")) return t;
+            var depth = 0;
+            for (var p = t; p != null; p = p.parent) depth++;
+            if (depth <= deepest) continue;
+            deepest = depth;
+            deepestIndex = t;
         }
-
-        return null;
+        return deepestIndex;
     }
 
     static Material OpaqueHandMaterial()
@@ -203,8 +259,10 @@ public sealed class XrHandsRig : MonoBehaviour
         if (root == null) return;
         foreach (var child in root.GetComponentsInChildren<Transform>(true))
         {
+            // Controller model, and the white ball the starter rig draws at the poke point.
             if (!child.name.Contains("Controller Visual") &&
-                !child.name.Contains("UniversalController"))
+                !child.name.Contains("UniversalController") &&
+                !child.name.Contains("Poke Point"))
                 continue;
             foreach (var renderer in child.GetComponentsInChildren<Renderer>(true))
                 renderer.enabled = false;
@@ -276,8 +334,8 @@ public sealed class XrHandsRig : MonoBehaviour
         if (hasLeft && leftPoke != null)
             leftPoke.transform.position = leftTip;
 
-        // Right fingertip touches UI. Tracked joint wins; then the visible index
-        // bone on the controller hand; then the controller poke point.
+        // Right fingertip touches UI. Tracked joint wins; then the index tip of the hand on the
+        // controller; then the controller poke point.
         var clickPoint = Vector3.zero;
         var hasClick = false;
         if (hasRight)
@@ -309,104 +367,5 @@ public sealed class XrHandsRig : MonoBehaviour
         {
             rightFingerTip.Park();
         }
-    }
-}
-
-/// <summary>
-/// Keeps the project hand mesh visible. Tracked hands follow XR Hands.
-/// Without tracking the same mesh stays on the controller.
-/// </summary>
-public sealed class ProjectHandPose : MonoBehaviour
-{
-    Transform controller;
-    Transform trackingSpace;
-    Vector3 offsetPosition;
-    Quaternion offsetRotation;
-    XRHandSkeletonDriver skeleton;
-    XRHandTrackingEvents tracking;
-    Transform wrist;
-    Renderer[] renderers;
-    bool onController;
-    bool bound;
-    bool hasStaticMesh;
-
-    public void Bind(Transform controllerAnchor, Transform handTrackingSpace, bool isLeft,
-        Vector3 localOffset, Vector3 localEuler)
-    {
-        controller = controllerAnchor;
-        trackingSpace = handTrackingSpace;
-        offsetPosition = localOffset;
-        // XR Hands wrist: +Z toward the fingers, +Y out of the back of the hand.
-        // Holding a controller the back of the right hand faces +X, the left hand faces -X.
-        offsetRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(localEuler);
-        skeleton = GetComponent<XRHandSkeletonDriver>();
-        tracking = GetComponent<XRHandTrackingEvents>();
-        wrist = skeleton != null ? skeleton.rootTransform : null;
-        renderers = GetComponentsInChildren<Renderer>(true);
-        hasStaticMesh = false;
-        foreach (var r in renderers)
-        {
-            if (r != null && r.gameObject.name == "StaticHandMesh")
-                hasStaticMesh = true;
-        }
-        onController = false;
-        bound = true;
-    }
-
-    void LateUpdate()
-    {
-        if (renderers != null)
-        {
-            for (var i = 0; i < renderers.Length; i++)
-            {
-                if (renderers[i] == null) continue;
-                // The static copy draws the hand; keep the skinned original off so it does not double up.
-                var show = !(renderers[i] is SkinnedMeshRenderer) || !hasStaticMesh;
-                renderers[i].enabled = show;
-                if (show && !renderers[i].gameObject.activeSelf)
-                    renderers[i].gameObject.SetActive(true);
-            }
-        }
-
-        if (!bound) return;
-
-        var tracked = tracking != null && tracking.handIsTracked;
-        if (tracked)
-        {
-            // Skeleton writes wrist poses in tracking space, so live under the camera offset.
-            if (onController || transform.parent != trackingSpace)
-            {
-                transform.SetParent(trackingSpace, false);
-                transform.localPosition = Vector3.zero;
-                transform.localRotation = Quaternion.identity;
-                transform.localScale = Vector3.one;
-                onController = false;
-            }
-            if (skeleton != null && !skeleton.enabled)
-                skeleton.enabled = true;
-            return;
-        }
-
-        if (skeleton != null && skeleton.enabled)
-            skeleton.enabled = false;
-        if (controller == null) return;
-
-        if (!onController)
-        {
-            transform.SetParent(controller, false);
-            onController = true;
-        }
-
-        // The sample prefab parks the wrist 0.5 m ahead and 0.2 m to the side,
-        // which pushed the mesh far away from the controller. Zero it here.
-        if (wrist != null && wrist != transform)
-        {
-            wrist.localPosition = Vector3.zero;
-            wrist.localRotation = Quaternion.identity;
-        }
-
-        transform.localPosition = offsetPosition;
-        transform.localRotation = offsetRotation;
-        transform.localScale = Vector3.one;
     }
 }

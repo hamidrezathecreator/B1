@@ -28,12 +28,26 @@ public sealed class FloorPathGuide : MonoBehaviour
     float reveal;
     Transform player;
     Vector3 goal;
+    bool onVisibleFloor;
+    float arrowLift = 0.014f;
 
+    /// <summary>Arrows on the teleport floor (Ground layer), at the surface closest to the given height.</summary>
     public static FloorPathGuide Create(IList<Vector3> worldPoints, Transform playerRoot, params Collider[] ignoreForFloor)
+    {
+        return Create(worldPoints, playerRoot, false, ignoreForFloor);
+    }
+
+    /// <param name="visibleFloor">
+    /// Use the highest floor-height surface of any layer instead. For scenes where a hidden teleport
+    /// pad sits slightly below the visible floor mesh, which would hide the arrows under the floor.
+    /// </param>
+    public static FloorPathGuide Create(IList<Vector3> worldPoints, Transform playerRoot, bool visibleFloor, params Collider[] ignoreForFloor)
     {
         var go = new GameObject("PathToTable");
         var guide = go.AddComponent<FloorPathGuide>();
         guide.player = playerRoot;
+        guide.onVisibleFloor = visibleFloor;
+        if (visibleFloor) guide.arrowLift = 0.025f;
         guide.Build(worldPoints, ignoreForFloor);
         return guide;
     }
@@ -42,7 +56,7 @@ public sealed class FloorPathGuide : MonoBehaviour
     {
         points.Clear();
         foreach (var p in worldPoints)
-            points.Add(SnapToFloor(p, ignore));
+            points.Add(onVisibleFloor ? SnapToVisibleFloor(p, ignore) : SnapToFloor(p, ignore));
         if (points.Count < 2) { Destroy(gameObject); return; }
 
         cumulative.Clear();
@@ -118,7 +132,7 @@ public sealed class FloorPathGuide : MonoBehaviour
             // Fade-in scale near the start, fade-out near the end.
             var edge = Mathf.Min(d, totalLength - d);
             var s = Mathf.Clamp01(edge / 0.4f);
-            arrows[i].SetPositionAndRotation(pos + Vector3.up * 0.014f, Quaternion.LookRotation(dir, Vector3.up));
+            arrows[i].SetPositionAndRotation(pos + Vector3.up * arrowLift, Quaternion.LookRotation(dir, Vector3.up));
             arrows[i].localScale = new Vector3(s, 1f, s);
         }
 
@@ -257,6 +271,36 @@ public sealed class FloorPathGuide : MonoBehaviour
             var gap = Mathf.Abs(hit.point.y - p.y);
             if (gap >= bestGap) continue;
             bestGap = gap;
+            best = hit.point;
+            found = true;
+        }
+        return found ? best : p;
+    }
+
+    /// <summary>
+    /// Top of the visible floor under <paramref name="p"/>, which callers pass at floor level.
+    /// Only flat surfaces within a hand's width of that height count, so the path never lies on a
+    /// case, table or prop; among those the highest wins, so arrows sit on the visible floor and
+    /// not under it on a hidden teleport pad. Falls back to the given height.
+    /// </summary>
+    static Vector3 SnapToVisibleFloor(Vector3 p, Collider[] ignore)
+    {
+        var hits = Physics.RaycastAll(p + Vector3.up * 1.5f, Vector3.down, 6f, ~0, QueryTriggerInteraction.Ignore);
+        var found = false;
+        var best = p;
+        foreach (var hit in hits)
+        {
+            var col = hit.collider;
+            if (col.GetComponentInParent<XROrigin>() != null) continue;
+            if (col is CharacterController) continue;
+            if (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) continue;
+            if (col.GetComponentInParent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>() != null) continue;
+            if (IsIgnored(col, ignore)) continue;
+            if (Vector3.Dot(hit.normal, Vector3.up) < 0.8f) continue; // walls / slopes
+            // Anything well above the floor height is a box or table, well below is under the floor.
+            if (hit.point.y > p.y + 0.3f || hit.point.y < p.y - 1f) continue;
+
+            if (found && hit.point.y <= best.y) continue;
             best = hit.point;
             found = true;
         }

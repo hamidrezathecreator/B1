@@ -538,7 +538,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         elevatorLobbyTeleport = new GameObject("ElevatorLobbyTeleport");
         elevatorLobbyTeleport.layer = groundLayer;
         elevatorLobbyTeleport.transform.SetParent(elevatorRoot, false);
-        elevatorLobbyTeleport.transform.localPosition = new Vector3(-0.9f, 0.025f, 8.2f);
+        // Top at 0.07: just above the visible tunnel floor planes (0.064), not hidden under them.
+        elevatorLobbyTeleport.transform.localPosition = new Vector3(-0.9f, 0.055f, 8.2f);
         elevatorLobbyTeleport.transform.localRotation = Quaternion.identity;
 
         var box = elevatorLobbyTeleport.AddComponent<BoxCollider>();
@@ -1104,7 +1105,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             points.Add(end);
         }
 
-        FloorPathGuide.Create(points, xrOrigin != null ? xrOrigin.transform : null,
+        // Visible floor: the hidden teleport pads and the tunnel floor planes are not at the same height.
+        FloorPathGuide.Create(points, xrOrigin != null ? xrOrigin.transform : null, true,
             table.GetComponentsInChildren<Collider>());
     }
 
