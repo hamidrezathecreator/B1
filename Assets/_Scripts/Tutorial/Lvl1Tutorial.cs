@@ -46,9 +46,14 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [Tooltip("Hidden at the start, switched on a moment after the first case snaps into place.")]
     [SerializeField] string explosionObjectName = "Explosion 13";
     [Min(0f)] [SerializeField] float delayBeforeExplosion = 2f;
-    [Tooltip("Time to watch the explosion before the screen fades to black.")]
+    [Tooltip("Timeline (PlayableDirector) started from the beginning when the case snaps into place.")]
+    [SerializeField] string directorObjectName = "Director";
+    [Tooltip("Timeline time, in seconds, at which the screen fades to black and the next level loads.")]
+    [Min(0f)] [SerializeField] float fadeAtTimelineSeconds = 15f;
+    [Tooltip("Without a timeline: time to watch the explosion before the screen fades to black.")]
     [Min(0f)] [SerializeField] float delayBeforeFade = 3f;
     [Min(0f)] [SerializeField] float fadeOutSeconds = 1f;
+    [Min(0f)] [SerializeField] float doneMessageSeconds = 3f;
 
     enum Step { WaitingForStart, Teleport, Grab, Carry, Done }
 
@@ -270,9 +275,37 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ClearButtonHighlight();
 
         ShowBanner(doneMessage);
-        if (delayBeforeExplosion > 0f) yield return new WaitForSeconds(delayBeforeExplosion);
-        PlayExplosion();
-        yield return new WaitForSeconds(delayBeforeFade);
+
+        var director = FindDirector();
+        if (director != null)
+        {
+            director.time = 0;
+            director.Play();
+            StartCoroutine(ExplosionAfterDelay());
+
+            // Follow the timeline clock; if it ends early or is paused, keep counting in game time.
+            var elapsed = 0f;
+            var bannerHidden = false;
+            while (true)
+            {
+                elapsed += Time.deltaTime;
+                var playing = director.state == UnityEngine.Playables.PlayState.Playing;
+                var timelineTime = playing ? (float)director.time : elapsed;
+                if (timelineTime >= fadeAtTimelineSeconds) break;
+                if (!bannerHidden && elapsed >= doneMessageSeconds)
+                {
+                    HideBanner();
+                    bannerHidden = true;
+                }
+                yield return null;
+            }
+        }
+        else
+        {
+            if (delayBeforeExplosion > 0f) yield return new WaitForSeconds(delayBeforeExplosion);
+            PlayExplosion();
+            yield return new WaitForSeconds(delayBeforeFade);
+        }
         HideBanner();
 
         if (string.IsNullOrWhiteSpace(nextSceneName) || !Application.CanStreamedLevelBeLoaded(nextSceneName))
@@ -281,6 +314,22 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             yield break;
         }
         SceneTransitionRunner.Begin(nextSceneName, true, 0f, fadeOutSeconds, 0.4f, 0.6f);
+    }
+
+    IEnumerator ExplosionAfterDelay()
+    {
+        if (delayBeforeExplosion > 0f) yield return new WaitForSeconds(delayBeforeExplosion);
+        PlayExplosion();
+    }
+
+    UnityEngine.Playables.PlayableDirector FindDirector()
+    {
+        if (string.IsNullOrWhiteSpace(directorObjectName)) return null;
+        var go = GameObject.Find(directorObjectName);
+        if (go == null) return null;
+        var director = go.GetComponent<UnityEngine.Playables.PlayableDirector>();
+        if (director == null) director = go.GetComponentInChildren<UnityEngine.Playables.PlayableDirector>(true);
+        return director;
     }
 
     static void FindCases(string[] names, List<XRGrabInteractable> into)
