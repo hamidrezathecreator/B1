@@ -28,16 +28,26 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [SerializeField] string startMessage = "روی دکمه شروع بزن";
     [SerializeField] string teleportMessage = "با این استیک میتونی توی محیط حرکت کنی\nاستیک راست رو جلو بده، نشونه بگیر و ول کن";
     [SerializeField] string grabMessage = "حالا برو جعبه رو بردار\nدستت رو ببر نزدیکش و دکمه کناری (گریپ) رو نگه دار";
-    [SerializeField] string carryMessage = "جعبه رو ببر روی میز، جای جعبه زرد\nنزدیکش که شدی ولش کن";
+    [SerializeField] string carryMessage = "به سمت میز داخل غرفه برو و جعبه رو قرار بده\nنزدیک جای زرد که شدی ولش کن";
     [SerializeField] string doneMessage = "آفرین!";
     [Tooltip("A jump larger than this in one frame counts as a teleport.")]
     [SerializeField] float teleportJumpDistance = 0.4f;
-    [Tooltip("Release the case closer than this to the yellow spot and it snaps in.")]
-    [SerializeField] float snapRadius = 0.6f;
+
+    [Header("Cases")]
+    [Tooltip("Cases the player picks up.")]
+    [SerializeField] string[] pickupCaseNames = { "SM_Hard_Camera_Case_01 (2)", "SM_Hard_Camera_Case_01" };
+    [Tooltip("Cases on the booth table that mark where a picked-up case goes (shown as yellow ghosts).")]
+    [SerializeField] string[] slotCaseNames = { "SM_Hard_Camera_Case_01 (4)", "SM_Hard_Camera_Case_01 (3)" };
+    [Tooltip("Release a case closer than this to a yellow spot and it snaps in (the nearest free spot wins).")]
+    [SerializeField] float snapRadius = 0.7f;
 
     [Header("After the case is placed")]
     [SerializeField] string nextSceneName = "Lvl2_MissileTunnel";
-    [Min(0f)] [SerializeField] float delayBeforeFade = 1.5f;
+    [Tooltip("Hidden at the start, switched on a moment after the first case snaps into place.")]
+    [SerializeField] string explosionObjectName = "Explosion 13";
+    [Min(0f)] [SerializeField] float delayBeforeExplosion = 2f;
+    [Tooltip("Time to watch the explosion before the screen fades to black.")]
+    [Min(0f)] [SerializeField] float delayBeforeFade = 3f;
     [Min(0f)] [SerializeField] float fadeOutSeconds = 1f;
 
     enum Step { WaitingForStart, Teleport, Grab, Carry, Done }
@@ -49,9 +59,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     Vector3 lastOriginPosition;
     GameObject marker;
     FloorPathGuide path;
-    MagnetDropZone dropZone;
-    XRGrabInteractable targetCase;
     XRGrabInteractable carriedCase;
+    readonly List<XRGrabInteractable> slots = new List<XRGrabInteractable>();
+    readonly List<MagnetDropZone> zones = new List<MagnetDropZone>();
+    ControllerButtonHighlight buttonHighlight;
+    GameObject explosion;
     readonly List<XRGrabInteractable> cases = new List<XRGrabInteractable>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -75,10 +87,19 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         origin = FindAnyObjectByType<XROrigin>();
         if (origin == null) yield break;
 
-        // Let the first-scene setup (floor, body, grabbable cases) finish first.
+        // Before the first physics step: tables get colliders and the cases rest instead of falling.
+        EnsureTableColliders();
+        BridgeXrPlaySetup.MakeCasesGrabbable();
+        RestCasesUntilGrabbed();
+
+        explosion = string.IsNullOrWhiteSpace(explosionObjectName) ? null : GameObject.Find(explosionObjectName);
+        if (explosion != null) explosion.SetActive(false);
+
+        // Let the first-scene setup (floor, body) finish first.
         yield return null;
         font = FindPersianFont();
 
+        PrepareTeleportFloor();
         SetWalking(false);
         SetTeleport(false);
 
@@ -91,6 +112,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
         step = Step.WaitingForStart;
         ShowBanner(startMessage);
+        HighlightButton("Trigger");
         startButton.onClick.AddListener(OnStartPressed);
 
         // The button also hides its panel; treat that as pressed too.
@@ -113,6 +135,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         step = Step.Teleport;
         SetTeleport(true);
         ShowBanner(teleportMessage);
+        HighlightButton("ThumbStick");
         lastOriginPosition = origin.transform.position;
     }
 
@@ -121,30 +144,41 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         step = Step.Grab;
         SetWalking(true);
         ShowBanner(grabMessage);
+        // The universal controller's grip is the side "Bumper".
+        HighlightButton("Grip", "Bumper");
 
         BridgeXrPlaySetup.MakeCasesGrabbable();
         cases.Clear();
-        foreach (var grab in FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        slots.Clear();
+        FindCases(slotCaseNames, slots);
+        FindCases(pickupCaseNames, cases);
+        if (cases.Count == 0)
         {
-            if (grab.name.StartsWith("SM_Hard_Camera_Case")) cases.Add(grab);
+            // Names changed in the scene: any other case can be picked up.
+            foreach (var grab in FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                if (grab.name.StartsWith("SM_Hard_Camera_Case") && !slots.Contains(grab)) cases.Add(grab);
         }
 
-        // The case standing highest (on the table) marks the drop spot; it becomes a yellow ghost.
-        targetCase = HighestCase();
-        if (targetCase != null) cases.Remove(targetCase);
+        // Slot cases are only placeholders: they cannot be picked up.
+        foreach (var slot in slots) FreezeSlot(slot);
+
         foreach (var grab in cases) grab.selectEntered.AddListener(OnCaseGrabbed);
 
-        var nearest = NearestCase();
+        var nearest = Nearest(cases, origin.transform.position);
         if (nearest != null) marker = TutorialMarker.Create(nearest.transform);
-        if (cases.Count == 0) StartCoroutine(Finish());
+        if (cases.Count == 0 || slots.Count == 0)
+            Debug.LogWarning("Lvl1Tutorial: missing pickup or slot cases; check the case names on the tutorial.", this);
     }
 
     void OnCaseGrabbed(SelectEnterEventArgs args)
     {
-        if (step != Step.Grab) return;
+        if (step != Step.Grab && step != Step.Carry) return;
         if (args.interactorObject is XRSocketInteractor) return;
-        carriedCase = args.interactableObject as XRGrabInteractable;
-        if (targetCase == null || carriedCase == null)
+        var grabbed = args.interactableObject as XRGrabInteractable;
+        if (grabbed == null || MagnetDropZone.IsClaimed(grabbed)) return;
+
+        carriedCase = grabbed;
+        if (slots.Count == 0)
         {
             StartCoroutine(Finish());
             return;
@@ -154,32 +188,40 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     void BeginCarryStep()
     {
+        var firstTime = step != Step.Carry;
         step = Step.Carry;
-        foreach (var grab in cases)
-            if (grab != null) grab.selectEntered.RemoveListener(OnCaseGrabbed);
 
-        ShowBanner(carryMessage);
-        if (marker != null) Destroy(marker);
-        marker = TutorialMarker.Create(targetCase.transform);
-
-        // Placeholder: still, see-through, no collisions, so the carried case can slide into it.
-        targetCase.enabled = false;
-        var targetBody = targetCase.GetComponent<Rigidbody>();
-        if (targetBody != null)
+        if (firstTime)
         {
-            targetBody.isKinematic = true;
-            targetBody.useGravity = false;
+            // The grab explanation is done; now point at the table in the booth.
+            ShowBanner(carryMessage);
+            ClearButtonHighlight();
+
+            foreach (var slot in slots)
+            {
+                MakeGhost(slot.gameObject);
+                var zoneObject = new GameObject("Case Drop Zone (" + slot.name + ")");
+                zoneObject.transform.SetPositionAndRotation(slot.transform.position, slot.transform.rotation);
+                var zone = zoneObject.AddComponent<MagnetDropZone>();
+                zone.Configure(cases, slot.gameObject, snapRadius);
+                zone.Snapped += OnCaseSnapped;
+                zones.Add(zone);
+            }
         }
-        foreach (var col in targetCase.GetComponentsInChildren<Collider>()) col.enabled = false;
-        MakeGhost(targetCase.gameObject);
 
-        var zoneObject = new GameObject("Case Drop Zone");
-        zoneObject.transform.SetPositionAndRotation(targetCase.transform.position, targetCase.transform.rotation);
-        dropZone = zoneObject.AddComponent<MagnetDropZone>();
-        dropZone.Configure(carriedCase, targetCase.gameObject, snapRadius);
-        dropZone.Snapped += _ => StartCoroutine(Finish());
+        // Point at the free spot nearest the case in hand.
+        var target = NearestFreeSlot(carriedCase.transform.position);
+        if (marker != null) Destroy(marker);
+        if (path != null) Destroy(path.gameObject);
+        if (target == null) return;
+        marker = TutorialMarker.Create(target.transform);
+        path = BuildPath(carriedCase.transform.position, target.transform.position);
+    }
 
-        path = BuildPath(carriedCase.transform.position, targetCase.transform.position);
+    void OnCaseSnapped(XRGrabInteractable grab)
+    {
+        if (step == Step.Done) return;
+        StartCoroutine(Finish());
     }
 
     IEnumerator Finish()
@@ -189,8 +231,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             if (grab != null) grab.selectEntered.RemoveListener(OnCaseGrabbed);
         if (marker != null) Destroy(marker);
         if (path != null) Destroy(path.gameObject);
+        ClearButtonHighlight();
 
         ShowBanner(doneMessage);
+        if (delayBeforeExplosion > 0f) yield return new WaitForSeconds(delayBeforeExplosion);
+        PlayExplosion();
         yield return new WaitForSeconds(delayBeforeFade);
         HideBanner();
 
@@ -200,6 +245,45 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             yield break;
         }
         SceneTransitionRunner.Begin(nextSceneName, true, 0f, fadeOutSeconds, 0.4f, 0.6f);
+    }
+
+    static void FindCases(string[] names, List<XRGrabInteractable> into)
+    {
+        if (names == null) return;
+        var all = FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var name in names)
+        {
+            foreach (var grab in all)
+            {
+                if (grab.name != name || into.Contains(grab)) continue;
+                into.Add(grab);
+                break;
+            }
+        }
+    }
+
+    static void FreezeSlot(XRGrabInteractable slot)
+    {
+        slot.enabled = false;
+        var body = slot.GetComponent<Rigidbody>();
+        if (body != null)
+        {
+            body.isKinematic = true;
+            body.useGravity = false;
+        }
+        // No collisions, so the carried case can slide right into the spot.
+        foreach (var col in slot.GetComponentsInChildren<Collider>()) col.enabled = false;
+    }
+
+    XRGrabInteractable NearestFreeSlot(Vector3 from)
+    {
+        var free = new List<XRGrabInteractable>();
+        for (var i = 0; i < slots.Count; i++)
+        {
+            var filled = i < zones.Count && zones[i] != null && zones[i].IsFilled;
+            if (!filled && slots[i] != null) free.Add(slots[i]);
+        }
+        return Nearest(free, from);
     }
 
     FloorPathGuide BuildPath(Vector3 from, Vector3 to)
@@ -249,21 +333,6 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         }
     }
 
-    XRGrabInteractable HighestCase()
-    {
-        XRGrabInteractable best = null;
-        var bestY = float.MinValue;
-        foreach (var grab in cases)
-        {
-            if (grab == null) continue;
-            var y = grab.transform.position.y;
-            if (y <= bestY) continue;
-            bestY = y;
-            best = grab;
-        }
-        return cases.Count > 1 ? best : null;
-    }
-
     void Update()
     {
         if (step != Step.Teleport || origin == null) return;
@@ -291,6 +360,187 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     {
         if (banner != null) banner.Hide();
         banner = null;
+    }
+
+    /// <summary>
+    /// The bridge deck had no teleport surface: only a 12 m pad at the spawn and a plane far below
+    /// the bridge. Find every surface at walking height around the player and make it a teleport floor.
+    /// </summary>
+    void PrepareTeleportFloor()
+    {
+        var groundLayer = LayerMask.NameToLayer("Ground");
+        if (groundLayer < 0) groundLayer = 0;
+        LayerMask groundMask = 1 << groundLayer;
+
+        var floorY = origin.transform.position.y;
+        var center = origin.transform.position;
+        const float radius = 70f;
+        const float step = 1.5f;
+        var floors = new HashSet<Collider>();
+
+        for (var x = -radius; x <= radius; x += step)
+        for (var z = -radius; z <= radius; z += step)
+        {
+            var top = new Vector3(center.x + x, floorY + 4f, center.z + z);
+            var hits = Physics.RaycastAll(top, Vector3.down, 8f, ~0, QueryTriggerInteraction.Ignore);
+            Collider best = null;
+            // Tight enough that table tops (about 0.75 m up) are not taken as floor.
+            var bestGap = 0.4f;
+            foreach (var hit in hits)
+            {
+                if (hit.normal.y < 0.85f) continue;
+                var gap = Mathf.Abs(hit.point.y - floorY);
+                if (gap >= bestGap) continue;
+                var col = hit.collider;
+                if (col.GetComponentInParent<XROrigin>() != null) continue;
+                if (col.GetComponentInParent<XRGrabInteractable>() != null) continue;
+                if (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) continue;
+                best = col;
+                bestGap = gap;
+            }
+            if (best != null) floors.Add(best);
+        }
+
+        foreach (var col in floors)
+        {
+            col.gameObject.layer = groundLayer;
+            if (col.GetComponentInParent<TeleportationArea>() != null) continue;
+            var area = col.gameObject.AddComponent<TeleportationArea>();
+            area.interactionLayers = -1;
+            // Imported meshes are often rotated, so their local up is not world up.
+            area.filterSelectionByHitNormal = false;
+        }
+
+        // The pad under the spawn stays teleportable too.
+        var deck = GameObject.Find("Walkable Deck");
+        if (deck != null)
+        {
+            deck.layer = groundLayer;
+            var deckArea = deck.GetComponent<TeleportationArea>();
+            if (deckArea == null) deckArea = deck.AddComponent<TeleportationArea>();
+            deckArea.enabled = true;
+            deckArea.interactionLayers = -1;
+        }
+
+        // Floor planes far below the bridge would drop the player off the deck.
+        foreach (var area in FindObjectsByType<TeleportationArea>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (!area.name.StartsWith("Plane")) continue;
+            var col = area.GetComponent<Collider>();
+            if (col != null && col.bounds.max.y < floorY - 2f)
+                area.enabled = false;
+        }
+
+        foreach (var ray in origin.GetComponentsInChildren<XRRayInteractor>(true))
+        {
+            if (!ray.gameObject.name.Contains("Teleport")) continue;
+            ray.hitDetectionType = XRRayInteractor.HitDetectionType.Raycast;
+            ray.raycastMask = groundMask;
+            ray.interactionLayers = -1;
+            ray.raycastTriggerInteraction = QueryTriggerInteraction.Ignore;
+        }
+
+        Debug.Log("Lvl1Tutorial: " + floors.Count + " floor surface(s) made teleportable.", this);
+    }
+
+    void PlayExplosion()
+    {
+        if (explosion == null) return;
+        explosion.SetActive(true);
+        foreach (var ps in explosion.GetComponentsInChildren<ParticleSystem>(true))
+        {
+            ps.Clear(true);
+            ps.Play(true);
+        }
+        foreach (var audio in explosion.GetComponentsInChildren<AudioSource>(true))
+        {
+            if (audio.clip != null && !audio.isPlaying) audio.Play();
+        }
+    }
+
+    void HighlightButton(params string[] partNames)
+    {
+        ClearButtonHighlight();
+        var controller = XrHandsRig.FindNamed(origin, "Right Controller");
+        buttonHighlight = ControllerButtonHighlight.Create(controller, partNames);
+    }
+
+    void ClearButtonHighlight()
+    {
+        if (buttonHighlight != null) Destroy(buttonHighlight.gameObject);
+        buttonHighlight = null;
+    }
+
+    /// <summary>Tables have no colliders, so the cases on them fell to the floor. Give each a solid box.</summary>
+    static void EnsureTableColliders()
+    {
+        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (!t.name.StartsWith("SM_Table")) continue;
+            if (t.parent != null && t.parent.name.StartsWith("SM_Table")) continue;
+            if (t.GetComponentInChildren<Collider>() != null) continue;
+            if (!TryLocalBounds(t, out var center, out var size)) continue;
+
+            var box = t.gameObject.AddComponent<BoxCollider>();
+            box.isTrigger = false;
+            box.center = center;
+            box.size = size;
+        }
+    }
+
+    /// <summary>
+    /// Cases stay put until picked up; after the first release they fall and land like normal objects.
+    /// </summary>
+    void RestCasesUntilGrabbed()
+    {
+        foreach (var grab in FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (!grab.name.StartsWith("SM_Hard_Camera_Case")) continue;
+            var body = grab.GetComponent<Rigidbody>();
+            if (body == null) continue;
+            body.isKinematic = true;
+            body.useGravity = false;
+            grab.selectExited.AddListener(OnCaseReleased);
+        }
+    }
+
+    void OnCaseReleased(SelectExitEventArgs args)
+    {
+        var grab = args.interactableObject as XRGrabInteractable;
+        if (grab == null || grab.isSelected || !grab.enabled) return;
+        // A magnet snap takes over this case on the same release.
+        if (MagnetDropZone.IsClaimed(grab)) return;
+        var body = grab.GetComponent<Rigidbody>();
+        if (body == null) return;
+        body.isKinematic = false;
+        body.useGravity = true;
+    }
+
+    static bool TryLocalBounds(Transform root, out Vector3 center, out Vector3 size)
+    {
+        center = Vector3.zero;
+        size = Vector3.zero;
+        var min = Vector3.positiveInfinity;
+        var max = Vector3.negativeInfinity;
+        var found = false;
+        foreach (var r in root.GetComponentsInChildren<Renderer>())
+        {
+            var local = r.localBounds;
+            for (var x = -1; x <= 1; x += 2)
+            for (var y = -1; y <= 1; y += 2)
+            for (var z = -1; z <= 1; z += 2)
+            {
+                var corner = r.transform.TransformPoint(local.center + Vector3.Scale(local.extents, new Vector3(x, y, z)));
+                var inRoot = root.InverseTransformPoint(corner);
+                min = Vector3.Min(min, inRoot);
+                max = Vector3.Max(max, inRoot);
+                found = true;
+            }
+        }
+        if (!found) return false;
+        center = (min + max) * 0.5f;
+        size = max - min;
+        return size.sqrMagnitude > 0.0001f;
     }
 
     void SetWalking(bool on)
@@ -334,12 +584,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         return null;
     }
 
-    XRGrabInteractable NearestCase()
+    static XRGrabInteractable Nearest(List<XRGrabInteractable> list, Vector3 from)
     {
         XRGrabInteractable best = null;
         var bestDistance = float.MaxValue;
-        var from = origin.transform.position;
-        foreach (var grab in cases)
+        foreach (var grab in list)
         {
             if (grab == null) continue;
             var d = (grab.transform.position - from).sqrMagnitude;
@@ -353,82 +602,9 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     void OnDestroy()
     {
         HideBanner();
+        ClearButtonHighlight();
         if (marker != null) Destroy(marker);
         if (path != null) Destroy(path.gameObject);
     }
 }
 
-/// <summary>Bobbing yellow arrow above a target, pointing down at it.</summary>
-public sealed class TutorialMarker : MonoBehaviour
-{
-    Transform target;
-    float height;
-
-    public static GameObject Create(Transform target)
-    {
-        var go = new GameObject("Tutorial Marker");
-        var marker = go.AddComponent<TutorialMarker>();
-        marker.target = target;
-
-        var bounds = new Bounds(target.position, Vector3.zero);
-        var has = false;
-        foreach (var r in target.GetComponentsInChildren<Renderer>())
-        {
-            if (!has) { bounds = r.bounds; has = true; }
-            else bounds.Encapsulate(r.bounds);
-        }
-        marker.height = (has ? bounds.max.y - target.position.y : 0.3f) + 0.25f;
-
-        var arrow = new GameObject("Arrow");
-        arrow.transform.SetParent(go.transform, false);
-        arrow.AddComponent<MeshFilter>().sharedMesh = ArrowMesh();
-        var renderer = arrow.AddComponent<MeshRenderer>();
-        renderer.sharedMaterial = ArrowMaterial();
-        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        return go;
-    }
-
-    void LateUpdate()
-    {
-        if (target == null)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        var bob = Mathf.Sin(Time.time * 3f) * 0.05f;
-        transform.position = target.position + Vector3.up * (height + bob);
-        transform.rotation = Quaternion.Euler(0f, Time.time * 90f, 0f);
-    }
-
-    static Mesh ArrowMesh()
-    {
-        // Four-sided pyramid with its tip pointing down.
-        const float w = 0.08f;
-        const float h = 0.14f;
-        var tip = new Vector3(0f, 0f, 0f);
-        var a = new Vector3(-w, h, -w);
-        var b = new Vector3(w, h, -w);
-        var c = new Vector3(w, h, w);
-        var d = new Vector3(-w, h, w);
-        var mesh = new Mesh { name = "TutorialArrow" };
-        mesh.vertices = new[] { tip, b, a, tip, c, b, tip, d, c, tip, a, d, a, b, c, a, c, d };
-        var tris = new int[18];
-        for (var i = 0; i < 18; i++) tris[i] = i;
-        mesh.triangles = tris;
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
-        return mesh;
-    }
-
-    static Material ArrowMaterial()
-    {
-        var shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null) shader = Shader.Find("Universal Render Pipeline/Lit");
-        var mat = new Material(shader) { name = "TutorialArrow" };
-        var color = new Color(1f, 0.78f, 0.15f, 1f);
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
-        mat.color = color;
-        if (mat.HasProperty("_Cull")) mat.SetFloat("_Cull", 0f);
-        return mat;
-    }
-}
