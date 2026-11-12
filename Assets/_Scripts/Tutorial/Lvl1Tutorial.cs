@@ -56,7 +56,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [Min(0f)] [SerializeField] float fallAtTimelineSeconds = 5f;
     [Tooltip("The player drops this long after this explosion appears on the Timeline. Empty name = Fall At Timeline Seconds.")]
     [SerializeField] string fallAfterExplosionName = "Explosion_Two";
-    [Min(0f)] [SerializeField] float fallAfterExplosionSeconds = 2f;
+    [Min(0f)] [SerializeField] float fallAfterExplosionSeconds = 3f;
     [Tooltip("2 = falls twice as fast.")]
     [Min(0.1f)] [SerializeField] float fallSpeedMultiplier = 2f;
     [Tooltip("Longest wait after the case snaps in before the player falls anyway.")]
@@ -843,4 +843,3 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (path != null) Destroy(path.gameObject);
     }
 }
-

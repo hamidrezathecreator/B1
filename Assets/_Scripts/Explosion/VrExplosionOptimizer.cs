@@ -26,17 +26,17 @@ public sealed class VrExplosionOptimizer : MonoBehaviour
     [Tooltip("Burst and emission rates are multiplied by this (0.35 ≈ a third of the original).")]
     [Range(0.05f, 1f)] [SerializeField] float emissionScale = 0.35f;
     [Tooltip("Particle lifetimes are multiplied by this so smoke clears sooner.")]
-    [Range(0.2f, 1f)] [SerializeField] float lifetimeScale = 0.55f;
+    [Range(0.2f, 1f)] [SerializeField] float lifetimeScale = 0.7f;
     [Tooltip("Uniform scale of the whole explosion. 1 = leave as placed. 0.6 helps a lot on Quest.")]
     [Range(0.2f, 1f)] [SerializeField] float sizeScale = 0.65f;
 
     [Header("Timing")]
     [Tooltip("Seconds at full particle speed before slowing (overrides ExplosionSlowAfterBurst).")]
-    [Min(0.1f)] [SerializeField] float fullSpeedSeconds = 1f;
-    [Min(0.05f)] [SerializeField] float slowSpeedMultiplier = 0.45f;
-    [Min(0.05f)] [SerializeField] float slowdownBlendSeconds = 0.4f;
+    [Min(0.1f)] [SerializeField] float fullSpeedSeconds = 1.5f;
+    [Min(0.05f)] [SerializeField] float slowSpeedMultiplier = 0.35f;
+    [Min(0.05f)] [SerializeField] float slowdownBlendSeconds = 0.75f;
     [Tooltip("Hard stop: stop emitting and destroy after this many seconds.")]
-    [Min(1f)] [SerializeField] float destroyAfterSeconds = 4.5f;
+    [Min(1f)] [SerializeField] float destroyAfterSeconds = 6f;
 
     bool done;
 
