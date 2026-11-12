@@ -60,6 +60,25 @@ public sealed class ExplosionScatter : MonoBehaviour
         CacheStartState();
     }
 
+    /// <summary>World bounds of all pieces where they stand now.</summary>
+    public bool TryGetPiecesBounds(out Bounds bounds)
+    {
+        bounds = default;
+        var has = false;
+        if (pieces == null) return false;
+        foreach (var piece in pieces)
+        {
+            if (piece == null) continue;
+            foreach (var r in piece.GetComponentsInChildren<Renderer>())
+            {
+                if (r is ParticleSystemRenderer) continue;
+                if (!has) { bounds = r.bounds; has = true; }
+                else bounds.Encapsulate(r.bounds);
+            }
+        }
+        return has;
+    }
+
     [ContextMenu("Test Explosion")]
     public void Explode()
     {

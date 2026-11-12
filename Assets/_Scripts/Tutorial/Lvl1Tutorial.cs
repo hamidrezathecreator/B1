@@ -54,6 +54,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
     [Tooltip("Timeline time, in seconds, at which the XR Origin drops down (the bridge gives way).")]
     [Min(0f)] [SerializeField] float fallAtTimelineSeconds = 5f;
+    [Tooltip("With a Player And Plane Fall in the scene: longest wait for its Timeline signal before falling anyway.")]
+    [Min(1f)] [SerializeField] float maxWaitForFallSignal = 30f;
     [Tooltip("Seconds of falling before the eyes close.")]
     [Min(0f)] [SerializeField] float closeEyesAfterFallSeconds = 1f;
     [Tooltip("Longest wait for the eyes to close before loading the next level anyway.")]
@@ -297,12 +299,14 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ShowBanner(doneMessage);
 
         var director = FindDirector();
+        // A Timeline fall signal (Player And Plane Fall) decides when the player drops.
+        var planeFall = FindAnyObjectByType<PlayerPlaneFall>();
         SetBridgeDestroyed(true);
         if (director != null && director.playOnAwake)
         {
             // Play On Awake: the timeline already started with the scene, so it is not restarted here.
             var sinceSnap = 0f;
-            while (sinceSnap < fallAtTimelineSeconds)
+            while (planeFall != null ? !planeFall.HasFallen && sinceSnap < maxWaitForFallSignal : sinceSnap < fallAtTimelineSeconds)
             {
                 sinceSnap += Time.deltaTime;
                 if (sinceSnap >= doneMessageSeconds) HideBanner();
@@ -326,7 +330,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
                 elapsed += Time.deltaTime;
                 var playing = director.state == UnityEngine.Playables.PlayState.Playing;
                 var timelineTime = playing ? (float)director.time : elapsed;
-                if (timelineTime >= fallAtTimelineSeconds) break;
+                if (planeFall != null)
+                {
+                    if (planeFall.HasFallen || elapsed >= maxWaitForFallSignal) break;
+                }
+                else if (timelineTime >= fallAtTimelineSeconds) break;
                 if (!bannerHidden && elapsed >= doneMessageSeconds)
                 {
                     HideBanner();
@@ -344,7 +352,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         HideBanner();
 
         // The bridge gives way: the player drops.
-        StartCoroutine(FallDown());
+        if (planeFall != null) planeFall.Fall();
+        else StartCoroutine(FallDown());
         if (closeEyesAfterFallSeconds > 0f) yield return new WaitForSeconds(closeEyesAfterFallSeconds);
 
         // Eyes close, then on to the next level.

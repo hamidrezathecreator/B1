@@ -9,8 +9,12 @@ public sealed class ExplosionCue : MonoBehaviour
 {
     const string DefaultClipPath = "Audio/RedComplete";
 
+    [Tooltip("Off: the sound is placed on the Timeline's Audio Track instead.")]
+    [SerializeField] bool playSound;
     [SerializeField] AudioClip sound;
     [Range(0f, 1f)] [SerializeField] float volume = 1f;
+
+    public bool PlaysSound { get => playSound; set => playSound = value; }
 
     public event Action<ExplosionCue> Shown;
 
@@ -24,16 +28,17 @@ public sealed class ExplosionCue : MonoBehaviour
 
     void OnEnable()
     {
-        PlaySound();
+        if (playSound) PlayAt(transform.position, sound, volume);
         Shown?.Invoke(this);
     }
 
-    void PlaySound()
+    /// <summary>Plays an explosion sound at a point. Empty clip = Red_Complete.</summary>
+    public static void PlayAt(Vector3 position, AudioClip clip = null, float volume = 1f)
     {
-        var clip = sound != null ? sound : Resources.Load<AudioClip>(DefaultClipPath);
+        if (clip == null) clip = Resources.Load<AudioClip>(DefaultClipPath);
         if (clip == null) return;
         var go = new GameObject("Explosion Sound");
-        go.transform.position = transform.position;
+        go.transform.position = position;
         var source = go.AddComponent<AudioSource>();
         source.clip = clip;
         source.volume = volume;

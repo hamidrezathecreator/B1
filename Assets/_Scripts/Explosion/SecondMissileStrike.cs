@@ -12,8 +12,9 @@ public sealed class SecondMissileStrike : MonoBehaviour
     [SerializeField] string[] targetNames = { "env intractive", "env interactive" };
     [Tooltip("Explosion that throws the objects when the Timeline switches it on.")]
     [SerializeField] string[] triggerExplosionNames = { "Explosion_Two" };
-    [Tooltip("Explosions that play the explosion sound when they appear.")]
-    [SerializeField] string[] soundExplosionNames = { "Explosion_One", "Explosion_Two" };
+    [Tooltip("Explosions that play the explosion sound from code when they appear. Empty: the sound is on the " +
+             "Timeline's \"Explosion Sounds\" Audio Track, where it can be moved.")]
+    [SerializeField] string[] soundExplosionNames = new string[0];
 
     [Header("Throw")]
     [Min(0f)] [SerializeField] float throwRadius = 3f;
@@ -35,7 +36,10 @@ public sealed class SecondMissileStrike : MonoBehaviour
         EnsureScatter();
 
         foreach (var name in soundExplosionNames)
-            ExplosionCue.AddTo(FindIncludingInactive(name));
+        {
+            var soundCue = ExplosionCue.AddTo(FindIncludingInactive(name));
+            if (soundCue != null) soundCue.PlaysSound = true;
+        }
 
         var found = false;
         foreach (var name in triggerExplosionNames)
