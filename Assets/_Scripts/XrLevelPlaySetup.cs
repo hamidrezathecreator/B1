@@ -49,6 +49,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [SerializeField] AudioClip music;
     [Range(0f, 1f)] [SerializeField] float musicVolume = 0.35f;
     [SerializeField] AudioClip missileLaunchSound;
+    [SerializeField] AudioClip missileImpactSound;
 
     XROrigin origin;
     HandHintBanner launchHint;
@@ -83,7 +84,13 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
         MissileLaunchButton.AutoWireScene();
-        LaserWeaponScope.SetupByName(missileLaunchSound, handHintFont, "LaserWeapon", "SM_LaserWeapon");
+        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            button.SetLaunchSound(missileLaunchSound);
+        foreach (var jet in FindObjectsByType<FighterJetFlight>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            jet.ConfigureMissileLaunchSound(missileLaunchSound);
+        foreach (var strike in FindObjectsByType<ExplodeAndSwap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            strike.SetImpactSound(missileImpactSound);
+        LaserWeaponScope.SetupByName(missileLaunchSound, missileImpactSound, handHintFont, "LaserWeapon", "SM_LaserWeapon");
 
         if (beaconObjectNames != null)
         {
@@ -132,10 +139,24 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
     void HideLaunchHint()
     {
-        if (launchHint != null) launchHint.Hide();
+        if (launchHint != null)
+        {
+            try
+            {
+                launchHint.Hide();
+            }
+            catch (MissingReferenceException)
+            {
+                // The hint object can already be destroyed when the scene resets or a button fires late.
+            }
+        }
+
         launchHint = null;
         foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (button == null || button.onPressed == null) continue;
             button.onPressed.RemoveListener(HideLaunchHint);
+        }
     }
 
     void OnValidate()

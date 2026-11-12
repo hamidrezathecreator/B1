@@ -60,6 +60,8 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [Min(0.1f)] [SerializeField] float missileSeconds = 1.5f;
     [SerializeField] AudioClip missileLaunchSound;
     [Range(0f, 1f)] [SerializeField] float missileLaunchVolume = 1f;
+    [SerializeField] AudioClip missileImpactSound;
+    [Range(0f, 1f)] [SerializeField] float missileImpactVolume = 1f;
 
     [Header("Kill feedback")]
     [Tooltip("Shown above the right controller after SM_Shahed149 is destroyed.")]
@@ -86,6 +88,11 @@ public sealed class LaserWeaponScope : MonoBehaviour
     /// <summary>Sets up the first object found with one of the names (once).</summary>
     public static void SetupByName(AudioClip launchSound, TMPro.TMP_FontAsset font, params string[] names)
     {
+        SetupByName(launchSound, null, font, names);
+    }
+
+    public static void SetupByName(AudioClip launchSound, AudioClip impactSound, TMPro.TMP_FontAsset font, params string[] names)
+    {
         foreach (var n in names)
         {
             var go = GameObject.Find(n);
@@ -93,6 +100,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
             var scope = go.GetComponent<LaserWeaponScope>();
             if (scope == null) scope = go.AddComponent<LaserWeaponScope>();
             if (launchSound != null) scope.missileLaunchSound = launchSound;
+            if (impactSound != null) scope.missileImpactSound = impactSound;
             if (font != null) scope.killMessageFont = font;
             return;
         }
@@ -661,6 +669,8 @@ public sealed class LaserWeaponScope : MonoBehaviour
         // Blast stays in world space so it is not dragged by the drone before it disappears.
         LaunchSmoke.CreateExplosionBurst(center, size);
         LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
+        if (missileImpactSound != null)
+            AudioSource.PlayClipAtPoint(missileImpactSound, center, missileImpactVolume);
 
         FreezeAndHideTarget();
         targetDown = true;

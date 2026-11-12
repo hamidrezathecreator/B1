@@ -70,6 +70,11 @@ public sealed class MissileLaunchButton : MonoBehaviour
     public Transform PointA { get => pointA; set => pointA = value; }
     public Transform PointB { get => pointB; set => pointB = value; }
 
+    public void SetLaunchSound(AudioClip clip)
+    {
+        if (clip != null) launchSound = clip;
+    }
+
     // Press positions measured on the ShootMissile panel buttons (panel-local).
     static readonly Vector3 MissileButtonRest = new Vector3(0.000764f, 0.014691f, 0.00113f);
     static readonly Vector3 MissileButtonPressed = new Vector3(0.00076f, 0.014605f, 0.000978f);

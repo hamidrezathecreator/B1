@@ -56,8 +56,15 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     [Min(0f)] [SerializeField] float burnSeconds = 20f;
     [Min(0.1f)] [SerializeField] float fireSize = 1f;
     [SerializeField] bool shakeHeadset = true;
+    [SerializeField] AudioClip impactSound;
+    [Range(0f, 1f)] [SerializeField] float impactVolume = 1f;
 
     bool played;
+
+    public void SetImpactSound(AudioClip clip)
+    {
+        if (clip != null) impactSound = clip;
+    }
 
     IEnumerator Start()
     {
@@ -202,6 +209,9 @@ public sealed class ExplodeAndSwap : MonoBehaviour
 
     void SpawnHitEffects(Vector3 center, Bounds bounds)
     {
+        if (impactSound != null)
+            AudioSource.PlayClipAtPoint(impactSound, center, impactVolume);
+
         if (explosionPrefab != null)
         {
             var boom = Instantiate(explosionPrefab, center, Quaternion.identity);

@@ -126,6 +126,11 @@ public sealed class FighterJetFlight : MonoBehaviour
 
     Quaternion FlightRotation => transform.rotation * Quaternion.Inverse(Quaternion.Euler(modelRotationOffset));
 
+    public void ConfigureMissileLaunchSound(AudioClip launchSound)
+    {
+        if (launchSound != null) missileLaunchSound = launchSound;
+    }
+
     /// <summary>Fires one missile at a world point; <paramref name="hit"/> runs when it arrives.</summary>
     public void FireMissileAt(Vector3 target, Action hit = null)
     {

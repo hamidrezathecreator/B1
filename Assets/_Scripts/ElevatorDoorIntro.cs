@@ -339,21 +339,64 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (xrOrigin == null) return;
 
-        var rig = GetComponent<XrHandsRig>();
-        if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
-        rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
-        // Device-pose drive under Camera Offset (not Controller). Hand-tracking / action-button
-        // modality snaps Controllers to Origin and would drop the mesh about a body-height.
-        rig.PreferHandTrackingWhenAvailable(false);
-        rig.UseControllerModels(!showHandsOnControllers);
-        rig.Setup(xrOrigin);
+        // Lvl2 uses the Hands Interaction Demo XR Origin Hands (XR Rig) prefab for hand
+        // tracking + locomotion. Do not rebuild ProjectHand meshes or strip XR Hands drivers
+        // — that broke the demo hands and parked them on the floor.
+        var old = GetComponent<XrHandsRig>();
+        if (old != null) Destroy(old);
+
+        // Tablet LCD still needs a fingertip sphere; drive it from the demo hand poke.
+        StartCoroutine(FollowDemoHandPoke());
         ShowElevatorHint();
+    }
+
+    IEnumerator FollowDemoHandPoke()
+    {
+        TabletFingerTip tip = null;
+        Transform poke = null;
+        while (xrOrigin != null)
+        {
+            if (poke == null)
+            {
+                foreach (var t in xrOrigin.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t == null) continue;
+                    if (!t.name.Contains("Poke")) continue;
+                    // Prefer the right-hand poke under "Right Hand" / "Right Controller".
+                    var underRight = false;
+                    for (var p = t; p != null; p = p.parent)
+                    {
+                        if (p.name.IndexOf("Right", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            underRight = true;
+                            break;
+                        }
+                    }
+                    if (!underRight) continue;
+                    poke = t;
+                    break;
+                }
+            }
+
+            if (poke != null)
+            {
+                if (tip == null) tip = TabletFingerTip.Create("RightFingerTipTouch");
+                tip.MoveTo(poke.position);
+            }
+            else if (tip != null)
+            {
+                tip.Park();
+            }
+
+            yield return null;
+        }
     }
 
     void ShowElevatorHint()
     {
         if (handHint != null || xrOrigin == null || xrOrigin.Camera == null) return;
-        var hand = FindNamedTransform("Right Controller");
+        var hand = FindNamedTransform("Right Hand");
+        if (hand == null) hand = FindNamedTransform("Right Controller");
         if (hand == null) return;
         handHint = HandHintBanner.Create(xrOrigin.Camera, handHintFont, elevatorHintMessage);
         handHint.SetHand(hand);
