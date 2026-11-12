@@ -129,11 +129,23 @@ public sealed class FighterJetFlight : MonoBehaviour
     /// <summary>Fires one missile at a world point; <paramref name="hit"/> runs when it arrives.</summary>
     public void FireMissileAt(Vector3 target, Action hit = null)
     {
-        StartCoroutine(MissileFlight(target, hit));
+        StartCoroutine(MissileFlight(() => target, hit));
     }
 
-    IEnumerator MissileFlight(Vector3 target, Action hit)
+    /// <summary>Fires one missile that keeps aiming at a moving object until it arrives.</summary>
+    public void FireMissileAt(Transform follow, Action hit = null)
     {
+        if (follow == null)
+        {
+            hit?.Invoke();
+            return;
+        }
+        StartCoroutine(MissileFlight(() => follow.position, hit));
+    }
+
+    IEnumerator MissileFlight(Func<Vector3> aim, Action hit)
+    {
+        var target = aim != null ? aim() : transform.position + FlightForward * 100f;
         var start = transform.position + FlightRotation * missileLaunchOffset;
         var heading = FlightForward;
         var control = start + heading * (Vector3.Distance(start, target) * missileCurve);
@@ -159,10 +171,12 @@ public sealed class FighterJetFlight : MonoBehaviour
 
         var elapsed = 0f;
         var previous = start;
-        while (elapsed < missileFlightSeconds && missile != null)
+        var flight = Mathf.Clamp(Vector3.Distance(start, target) / 120f, missileFlightSeconds, 8f);
+        while (elapsed < flight && missile != null)
         {
             elapsed += Time.deltaTime;
-            var t = Mathf.Clamp01(elapsed / missileFlightSeconds);
+            if (aim != null) target = aim();
+            var t = Mathf.Clamp01(elapsed / flight);
             // Speeds up a little after leaving the rail.
             t = Mathf.Lerp(t, t * t, 0.4f);
             var a = Vector3.Lerp(start, control, t);

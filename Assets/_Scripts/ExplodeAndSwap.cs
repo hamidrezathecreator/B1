@@ -37,7 +37,7 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     [Header("Targets (in order)")]
     [SerializeField] Target[] targets =
     {
-        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 33f },
+        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 3f },
         // Delay is after the previous hit finishes (not from the button press).
         new Target { intactName = "SM_Luncher01 (3)", destroyedName = "SM_LuncherCrash", delay = 3f },
     };
@@ -144,18 +144,34 @@ public sealed class ExplodeAndSwap : MonoBehaviour
             if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
         }
 
+        if (jet == null || !jet.isActiveAndEnabled)
+        {
+            if (!string.IsNullOrWhiteSpace(jetObjectName))
+            {
+                var jetGo = GameObject.Find(jetObjectName);
+                if (jetGo != null)
+                {
+                    jetGo.SetActive(true);
+                    jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
+                }
+            }
+            if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
+            if (jet != null && !jet.enabled) jet.enabled = true;
+            if (jet != null && !jet.IsFlying) jet.StartFlying();
+        }
+
         if (jet != null && jet.isActiveAndEnabled)
         {
-            // Keep aiming at the live target while the missile flies (Shahed is circling).
+            // Home onto the live object so a circling jet still hits it.
             var hit = false;
-            var timeout = jet.MissileFlightSeconds + 2f;
-            jet.FireMissileAt(center, () => hit = true);
+            var follow = t.intact != null ? t.intact.transform : reference.transform;
+            var timeout = 12f;
+            jet.FireMissileAt(follow, () => hit = true);
             while (!hit && timeout > 0f)
             {
                 timeout -= Time.deltaTime;
                 yield return null;
             }
-            // Re-read centre at impact in case the intact object moved (or still use last bounds).
             if (t.intact != null && t.intact.activeInHierarchy)
                 center = WorldBounds(t.intact).center;
         }

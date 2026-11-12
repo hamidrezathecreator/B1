@@ -361,13 +361,24 @@ public sealed class MissileLaunchButton : MonoBehaviour
     {
         var target = movingObject.transform;
         movingObject.SetActive(true);
+        // A static or parented drone stays visually glued to the launcher.
+        target.SetParent(null, true);
+        foreach (var t in movingObject.GetComponentsInChildren<Transform>(true))
+            t.gameObject.isStatic = false;
 
         var start = pointA != null ? pointA.position : target.position;
         var end = pointB.position;
+        // Point B on ShootMissile (1) was thousands of metres off to the side, so the
+        // drone left the map instead of climbing. A path that far means "go up".
+        var climb = Vector3.Distance(start, end) > 1500f;
+        if (climb)
+            end = start + Vector3.up * 400f;
         target.position = start;
 
         var direction = end - start;
-        if (faceTravelDirection && direction.sqrMagnitude > 0.0001f)
+        if (climb && direction.sqrMagnitude > 0.0001f)
+            target.rotation = Quaternion.LookRotation(direction.normalized, Vector3.forward);
+        else if (faceTravelDirection && direction.sqrMagnitude > 0.0001f)
             target.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
         var travelDir = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector3.up;
 

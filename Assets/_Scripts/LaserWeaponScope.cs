@@ -602,28 +602,51 @@ public sealed class LaserWeaponScope : MonoBehaviour
         var trail = LaunchSmoke.CreateTrail(0.6f);
         trail.transform.SetPositionAndRotation(start, Quaternion.LookRotation(-heading));
 
-        // Homing: speeds up each frame so it always reaches the moving target on time.
+        // Close enough to count as a hit. A 1 m test never fired on this drone, so the
+        // missile stayed beside it and they kept flying together.
+        var hitRadius = 8f;
+        if (TargetBounds(out var openBounds))
+            hitRadius = Mathf.Clamp(openBounds.extents.magnitude * 0.45f, 6f, 30f);
+
         var elapsed = 0f;
         var position = start;
-        while (missile != null && target != null && target.gameObject.activeInHierarchy)
+        var limit = missileSeconds + 3f;
+        while (missile != null && target != null && target.gameObject.activeInHierarchy && elapsed < limit)
         {
             elapsed += Time.deltaTime;
             aim = TargetBounds(out var b) ? b.center : target.position;
             var toAim = aim - position;
-            var remaining = Mathf.Max(0.05f, missileSeconds - elapsed);
-            var step = toAim.magnitude * Mathf.Clamp01(Time.deltaTime / remaining);
-            if (toAim.magnitude <= 1f || step >= toAim.magnitude) { position = aim; break; }
+            if (toAim.magnitude <= hitRadius)
+            {
+                position = aim;
+                break;
+            }
 
-            // A little of the launch heading at first, then straight in.
-            var direction = Vector3.Slerp(heading, toAim.normalized, Mathf.Clamp01(elapsed / (missileSeconds * 0.4f)));
+            // Straight at the drone. The old heading blend made the missile fly alongside it.
+            var direction = toAim.normalized;
+            var step = Mathf.Max(toAim.magnitude / Mathf.Max(0.05f, missileSeconds - elapsed), 80f) * Time.deltaTime;
+            if (step >= toAim.magnitude)
+            {
+                position = aim;
+                break;
+            }
+
             position += direction * step;
             missile.transform.SetPositionAndRotation(position, Quaternion.LookRotation(direction));
             trail.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-direction));
             yield return null;
         }
 
+        if (target != null)
+            position = TargetBounds(out var finalBounds) ? finalBounds.center : target.position;
+
         LaunchSmoke.StopAndRelease(trail);
-        if (missile != null) Destroy(missile);
+        if (missile != null)
+        {
+            missile.transform.SetParent(null, true);
+            missile.SetActive(false);
+            Destroy(missile);
+        }
         DestroyTarget(position);
     }
 

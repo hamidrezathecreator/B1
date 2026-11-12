@@ -7183,7 +7183,7 @@ MonoBehaviour:
     intactName: SM_AirDefense
     destroyed: {fileID: 0}
     destroyedName: SM_AirDefenseCrash
-    delay: 33
+    delay: 3
   - intact: {fileID: 0}
     intactName: SM_Luncher01 (3)
     destroyed: {fileID: 0}
