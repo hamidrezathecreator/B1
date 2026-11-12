@@ -102,11 +102,20 @@ public sealed class ControllerHandRig : MonoBehaviour
             wristOriginalLocalPosition = wristTransform.localPosition;
             wristOriginalLocalRotation = wristTransform.localRotation;
         }
-        if (driver != null) driver.enabled = false;
-        if (trackingEvents != null)
+        // Controller-mounted hands never switch to XR Hands — those components jump the mesh.
+        if (!preferHandTrackingWhenAvailable)
         {
-            trackingEvents.handedness = isLeft ? Handedness.Left : Handedness.Right;
-            trackingEvents.enabled = false;
+            if (driver != null) { Destroy(driver); driver = null; }
+            if (trackingEvents != null) { Destroy(trackingEvents); trackingEvents = null; }
+        }
+        else
+        {
+            if (driver != null) driver.enabled = false;
+            if (trackingEvents != null)
+            {
+                trackingEvents.handedness = isLeft ? Handedness.Left : Handedness.Right;
+                trackingEvents.enabled = false;
+            }
         }
 
         restPoses.Clear();

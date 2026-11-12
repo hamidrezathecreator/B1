@@ -7176,15 +7176,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ExplodeAndSwap
   triggerButton: {fileID: 0}
-  triggerObjectName: ShootMissile (2)
+  triggerObjectName: ShootMissile (1)
   waitForArrival: 0
   targets:
   - intact: {fileID: 0}
     intactName: SM_AirDefense
     destroyed: {fileID: 0}
     destroyedName: SM_AirDefenseCrash
+    delay: 33
+  - intact: {fileID: 0}
+    intactName: SM_Luncher01 (3)
+    destroyed: {fileID: 0}
+    destroyedName: SM_LuncherCrash
     delay: 3
-  jet: {fileID: 0}
+  jet: {fileID: 910000002}
+  jetObjectName: SM_Shahed149
   explosionPrefab: {fileID: 100100000, guid: 72745d0a1bf66ae42b3ff7abb8cb39ec, type: 3}
   explosionScale: 1
   burnAfterwards: 1

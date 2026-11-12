@@ -22,27 +22,30 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         public GameObject destroyed;
         [Tooltip("Or the destroyed model's name in the scene, if not assigned above.")]
         public string destroyedName;
-        [Tooltip("Seconds after the trigger.")]
+        [Tooltip("Seconds to wait before this shot: first target from the button press, later targets after the previous hit.")]
         [Min(0f)] public float delay;
     }
 
     [Header("Trigger")]
     [Tooltip("Launch button that starts it. Empty = the launch button under Trigger Object Name.")]
     [SerializeField] MissileLaunchButton triggerButton;
-    [SerializeField] string triggerObjectName = "ShootMissile (2)";
+    [Tooltip("After the first ShootMissile.002 shot, the player presses this panel.")]
+    [SerializeField] string triggerObjectName = "ShootMissile (1)";
     [Tooltip("Start when the launched object reaches Point B instead of when the button is pressed.")]
     [SerializeField] bool waitForArrival;
 
     [Header("Targets (in order)")]
     [SerializeField] Target[] targets =
     {
-        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 3f },
+        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 33f },
+        // Delay is after the previous hit finishes (not from the button press).
+        new Target { intactName = "SM_Luncher01 (3)", destroyedName = "SM_LuncherCrash", delay = 3f },
     };
 
     [Header("Fighter jet")]
-    [Tooltip("When a target's time comes, this jet fires a missile at it and the target blows up on the hit. " +
-             "Empty = the first Fighter Jet Flight in the scene; no jet = targets blow up on their own.")]
+    [Tooltip("SM_Shahed149's Fighter Jet Flight. Empty = find SM_Shahed149, else any jet in the scene.")]
     [SerializeField] FighterJetFlight jet;
+    [SerializeField] string jetObjectName = "SM_Shahed149";
 
     [Header("Effects")]
     [Tooltip("Explosion prefab, e.g. DAVFX Explosion 13. Empty = built-in fiery burst.")]
@@ -73,7 +76,19 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         if (triggerButton == null && !string.IsNullOrWhiteSpace(triggerObjectName))
         {
             var panel = GameObject.Find(triggerObjectName);
-            if (panel != null) triggerButton = panel.GetComponentInChildren<MissileLaunchButton>(true);
+            if (panel != null)
+            {
+                triggerButton = panel.GetComponentInChildren<MissileLaunchButton>(true);
+                // ShootMissile (1) only starts this strike — do not AutoWire it to launch the Shahed away.
+                if (triggerButton == null)
+                    triggerButton = panel.gameObject.AddComponent<MissileLaunchButton>();
+            }
+        }
+
+        if (jet == null && !string.IsNullOrWhiteSpace(jetObjectName))
+        {
+            var jetGo = GameObject.Find(jetObjectName);
+            if (jetGo != null) jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
         }
 
         if (triggerButton == null)
@@ -90,49 +105,62 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     {
         if (played) return;
         played = true;
-        foreach (var t in targets)
-            if (t != null) StartCoroutine(Run(t));
+        StartCoroutine(RunAll());
+    }
+
+    IEnumerator RunAll()
+    {
+        for (var i = 0; i < targets.Length; i++)
+        {
+            var t = targets[i];
+            if (t == null) continue;
+            yield return Run(t);
+        }
     }
 
     IEnumerator Run(Target t)
     {
         if (t.delay > 0f) yield return new WaitForSeconds(t.delay);
 
-        var reference = t.intact != null ? t.intact : t.destroyed;
-        if (reference == null)
+        var reference = t.intact != null && t.intact.activeInHierarchy ? t.intact : t.destroyed;
+        if (reference == null || (t.intact != null && !t.intact.activeInHierarchy && t.destroyed == null))
         {
             Debug.LogWarning("ExplodeAndSwap: a target has neither an intact nor a destroyed model.", this);
             yield break;
         }
+        if (t.intact != null && !t.intact.activeInHierarchy)
+            yield break;
 
-        var bounds = WorldBounds(reference);
+        var bounds = WorldBounds(t.intact != null ? t.intact : reference);
         var center = bounds.center;
 
-        if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
+        if (jet == null)
+        {
+            if (!string.IsNullOrWhiteSpace(jetObjectName))
+            {
+                var jetGo = GameObject.Find(jetObjectName);
+                if (jetGo != null) jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
+            }
+            if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
+        }
+
         if (jet != null && jet.isActiveAndEnabled)
         {
+            // Keep aiming at the live target while the missile flies (Shahed is circling).
             var hit = false;
-            var timeout = jet.MissileFlightSeconds + 1f;
+            var timeout = jet.MissileFlightSeconds + 2f;
             jet.FireMissileAt(center, () => hit = true);
-            // The jet may be switched off mid-flight; the target still blows up.
             while (!hit && timeout > 0f)
             {
                 timeout -= Time.deltaTime;
                 yield return null;
             }
+            // Re-read centre at impact in case the intact object moved (or still use last bounds).
+            if (t.intact != null && t.intact.activeInHierarchy)
+                center = WorldBounds(t.intact).center;
         }
 
-        if (explosionPrefab != null)
-        {
-            var boom = Instantiate(explosionPrefab, center, Quaternion.identity);
-            boom.transform.localScale *= explosionScale;
-            foreach (var ps in boom.GetComponentsInChildren<ParticleSystem>(true)) ps.Play(true);
-            Destroy(boom, 15f);
-        }
-        else
-        {
-            LaunchSmoke.CreateExplosionBurst(center, Mathf.Clamp(bounds.size.magnitude / 4f, 0.6f, 4f) * explosionScale);
-        }
+        SpawnHitEffects(center, bounds);
 
         if (shakeHeadset) ShakeHeadset(center);
 
@@ -146,11 +174,35 @@ public sealed class ExplodeAndSwap : MonoBehaviour
 
         if (burnAfterwards)
         {
-            var burning = t.destroyed != null ? WorldBounds(t.destroyed) : bounds;
+            var burning = t.destroyed != null && t.destroyed.activeInHierarchy
+                ? WorldBounds(t.destroyed)
+                : bounds;
             var radius = Mathf.Clamp(Mathf.Max(burning.extents.x, burning.extents.z) * 0.6f, 0.4f, 4f);
             var size = Mathf.Clamp(burning.size.magnitude / 5f, 0.6f, 3f) * fireSize;
             var basePoint = new Vector3(burning.center.x, burning.min.y + 0.1f, burning.center.z);
             LaunchSmoke.CreateFire(basePoint, radius, size, burnSeconds);
+        }
+    }
+
+    void SpawnHitEffects(Vector3 center, Bounds bounds)
+    {
+        if (explosionPrefab != null)
+        {
+            var boom = Instantiate(explosionPrefab, center, Quaternion.identity);
+            boom.transform.localScale *= explosionScale;
+            foreach (var ps in boom.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                ps.gameObject.SetActive(true);
+                ps.Clear(true);
+                ps.Play(true);
+            }
+            Destroy(boom, 15f);
+        }
+        else
+        {
+            var size = Mathf.Clamp(bounds.size.magnitude / 4f, 0.6f, 4f) * explosionScale;
+            LaunchSmoke.CreateExplosionBurst(center, size);
+            LaunchSmoke.CreateFire(center, size * 0.4f, size * 0.85f, 3f);
         }
     }
 

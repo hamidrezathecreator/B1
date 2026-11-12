@@ -152,7 +152,9 @@ public sealed class FighterJetFlight : MonoBehaviour
         if (missileSmokeTrail)
         {
             trail = LaunchSmoke.CreateTrail(missileSmokeSize);
-            trail.transform.position = start;
+            trail.transform.SetParent(missile.transform, false);
+            trail.transform.localPosition = Vector3.back * 0.4f;
+            trail.transform.localRotation = Quaternion.identity;
         }
 
         var elapsed = 0f;
@@ -171,14 +173,19 @@ public sealed class FighterJetFlight : MonoBehaviour
                 missile.transform.SetPositionAndRotation(position, Quaternion.LookRotation(direction.normalized) * offset);
             else
                 missile.transform.position = position;
-            if (trail != null)
-                trail.transform.SetPositionAndRotation(position,
-                    Quaternion.LookRotation(direction.sqrMagnitude > 0.000001f ? -direction.normalized : -heading));
             previous = position;
             yield return null;
         }
 
-        if (trail != null) LaunchSmoke.StopAndRelease(trail);
+        // Snap onto the hit point so the blast lines up with the impact.
+        if (missile != null)
+            missile.transform.position = target;
+
+        if (trail != null)
+        {
+            trail.transform.SetParent(null, true);
+            LaunchSmoke.StopAndRelease(trail);
+        }
         if (missile != null) Destroy(missile);
         hit?.Invoke();
     }

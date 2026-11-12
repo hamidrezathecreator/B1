@@ -24,6 +24,8 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [Min(0f)] [SerializeField] float cameraAhead = 0.3f;
     [Tooltip("Direction the weapon fires in its own space. Auto = its long axis, away from the screen.")]
     [SerializeField] Axis aimAxis = Axis.Auto;
+    [Tooltip("Extra yaw on the scope aim, degrees. Positive = turn right. SM_LaserWeapon needs +90.")]
+    [SerializeField] float aimYawOffset = 90f;
     [Min(1f)] [SerializeField] float farClip = 3000f;
     [Tooltip("Render texture height in pixels; the width follows the screen's shape.")]
     [Range(128, 1024)] [SerializeField] int textureHeight = 512;
@@ -188,6 +190,10 @@ public sealed class LaserWeaponScope : MonoBehaviour
         if (Mathf.Abs(Vector3.Dot(upWorld, aimWorld)) > 0.98f)
             upWorld = Vector3.Cross(aimWorld, transform.right).normalized;
         if (upWorld.sqrMagnitude < 1e-8f) upWorld = Vector3.up;
+
+        // Turn the aim around "up" so the RT matches the barrel (mesh Auto was 90° left).
+        if (Mathf.Abs(aimYawOffset) > 0.01f)
+            aimWorld = Quaternion.AngleAxis(aimYawOffset, upWorld) * aimWorld;
 
         var muzzle = transform.TransformPoint(bodyBounds.center + Vector3.Scale(aimLocal, bodyBounds.extents));
         cam.SetPositionAndRotation(muzzle + aimWorld * cameraAhead, Quaternion.LookRotation(aimWorld, upWorld));

@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.XR;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Interaction.Toolkit.Inputs;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
@@ -32,6 +34,13 @@ public sealed class XrHandsRig : MonoBehaviour
     bool ready;
     bool controllerModels;
     bool preferHandTrackingWhenAvailable;
+    Vector3 leftFrozenWorldPos;
+    Quaternion leftFrozenWorldRot = Quaternion.identity;
+    Vector3 rightFrozenWorldPos;
+    Quaternion rightFrozenWorldRot = Quaternion.identity;
+    bool leftFrozen;
+    bool rightFrozen;
+    readonly List<InputDevice> poseDevices = new List<InputDevice>();
 
     public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
     /// <summary>
@@ -162,7 +171,15 @@ public sealed class XrHandsRig : MonoBehaviour
         if (old != null) Destroy(old.gameObject);
 
         var source = Instantiate(template);
-        // Tracking scripts on hand prefabs would move or hide the bones; the rest pose is what we want.
+        // Remove XR Hands drivers entirely — enabling them (Quest action / hand-tracker button)
+        // reparents bones under the Origin and jumps the mesh about a metre.
+        foreach (var driver in source.GetComponentsInChildren<XRHandSkeletonDriver>(true))
+            Destroy(driver);
+        foreach (var events in source.GetComponentsInChildren<XRHandTrackingEvents>(true))
+            Destroy(events);
+        foreach (var meshCtrl in source.GetComponentsInChildren<XRHandMeshController>(true))
+            Destroy(meshCtrl);
+        // Any other tracking scripts on hand prefabs would move or hide the bones.
         foreach (var behaviour in source.GetComponentsInChildren<MonoBehaviour>(true))
             behaviour.enabled = false;
         // The hand is only a picture. Hand prefabs (e.g. the scene's Tracked Hands) carry colliders
@@ -228,9 +245,9 @@ public sealed class XrHandsRig : MonoBehaviour
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
-        // Tracking space for optional bare-hand mode. Controller mode keeps the mesh under the grip.
-        rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, origin.transform);
+        // Prefer must be set before Bind — Bind strips XR Hands drivers when prefer is off.
         rig.PreferHandTrackingWhenAvailable(preferHandTrackingWhenAvailable);
+        rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, origin.transform);
         indexTip = rig.IndexTip;
 
         Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +
@@ -366,20 +383,19 @@ public sealed class XrHandsRig : MonoBehaviour
     }
 
     /// <summary>
-    /// Wrist pose as a child of the controller. Always local — world grip poses break when the
-    /// XR Origin is parented (elevator cabin) or when a poke briefly wakes hand tracking.
+    /// Wrist pose as a child of the controller. When the Quest action / hand-tracker button
+    /// snaps the controller transform to the tracking origin, keep the last good world pose
+    /// so the hand mesh does not jump with it.
     /// </summary>
     void ApplyAnchorOffset(Transform anchor, bool isLeft)
     {
         if (anchor == null) return;
 
-        // Stay under Left/Right Controller; never reparent to the origin / floor offset.
-        if (origin != null)
-        {
-            var controller = FindNamed(origin, isLeft ? "Left Controller" : "Right Controller");
-            if (controller != null && anchor.parent != controller)
-                anchor.SetParent(controller, false);
-        }
+        var controller = origin != null
+            ? FindNamed(origin, isLeft ? "Left Controller" : "Right Controller")
+            : null;
+        if (controller != null && anchor.parent != controller)
+            anchor.SetParent(controller, false);
 
         var offset = handOnControllerPosition;
         var euler = handOnControllerEuler;
@@ -389,9 +405,72 @@ public sealed class XrHandsRig : MonoBehaviour
             euler.y = -euler.y;
             euler.z = -euler.z;
         }
+        var handRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+
+        if (controller != null && !ControllerPoseValid(controller, isLeft))
+        {
+            if (isLeft)
+            {
+                if (!leftFrozen)
+                {
+                    leftFrozenWorldPos = anchor.position;
+                    leftFrozenWorldRot = anchor.rotation;
+                    leftFrozen = true;
+                }
+                anchor.SetPositionAndRotation(leftFrozenWorldPos, leftFrozenWorldRot);
+            }
+            else
+            {
+                if (!rightFrozen)
+                {
+                    rightFrozenWorldPos = anchor.position;
+                    rightFrozenWorldRot = anchor.rotation;
+                    rightFrozen = true;
+                }
+                anchor.SetPositionAndRotation(rightFrozenWorldPos, rightFrozenWorldRot);
+            }
+            return;
+        }
+
+        if (isLeft) leftFrozen = false;
+        else rightFrozen = false;
+
         anchor.localPosition = offset;
-        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+        anchor.localRotation = handRotation;
         anchor.localScale = Vector3.one;
+    }
+
+    bool ControllerPoseValid(Transform controller, bool isLeft)
+    {
+        if (controller == null || origin == null) return false;
+
+        var wanted = isLeft ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right;
+        var other = isLeft ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
+        var tracked = false;
+        InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | wanted, poseDevices);
+        foreach (var device in poseDevices)
+        {
+            if ((device.characteristics & other) != 0 && (device.characteristics & wanted) == 0)
+                continue;
+            if (device.TryGetFeatureValue(CommonUsages.isTracked, out var on) && on)
+            {
+                tracked = true;
+                break;
+            }
+        }
+        if (!tracked) return false;
+
+        // Action button: OpenXR parks the controller at the tracking origin while the headset
+        // is still up in the cabin — treat that as invalid.
+        var space = origin.CameraFloorOffsetObject != null
+            ? origin.CameraFloorOffsetObject.transform
+            : origin.transform;
+        var head = origin.Camera != null ? origin.Camera.transform.position : space.position + Vector3.up * 1.5f;
+        if (Vector3.Distance(controller.position, space.position) < 0.15f &&
+            Vector3.Distance(head, space.position) > 0.5f)
+            return false;
+
+        return true;
     }
 
     /// <summary>
