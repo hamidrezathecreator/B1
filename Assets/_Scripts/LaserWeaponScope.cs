@@ -47,19 +47,23 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] bool requireHeld = true;
     [SerializeField] Color crosshairColor = Color.white;
     [SerializeField] Color lockedColor = new Color(0.2f, 1f, 0.3f, 1f);
+    [Range(0.1f, 1f)] [SerializeField] float crosshairScale = 0.6f;
 
     [Header("Missile on lock")]
     [Tooltip("Missile model, nose along +Z. Empty = a simple built-in missile.")]
     [SerializeField] GameObject missilePrefab;
-    [Min(0.01f)] [SerializeField] float missileScale = 1f;
+    [Min(0.01f)] [SerializeField] float missileScale = 0.33333334f;
+    [SerializeField] string missileLaunchOriginName = "SM_AirDefense (1)";
+    [SerializeField] Vector3 missileLaunchOffset = new Vector3(0f, 0f, 0.5f);
     [Min(0.1f)] [SerializeField] float missileSeconds = 1.5f;
-    [Tooltip("How long the fire burns at the hit before it dies out.")]
-    [Min(0f)] [SerializeField] float fireSeconds = 3f;
+    [SerializeField] AudioClip missileLaunchSound;
+    [Range(0f, 1f)] [SerializeField] float missileLaunchVolume = 1f;
 
     Camera scopeCamera;
     bool createdCamera = true;
     readonly System.Collections.Generic.List<UnityEngine.UI.Image> crosshair = new System.Collections.Generic.List<UnityEngine.UI.Image>();
     Renderer[] targetRenderers;
+    Transform missileLaunchOrigin;
     float lockTimer;
     bool missileAway;
     bool targetDown;
@@ -71,13 +75,15 @@ public sealed class LaserWeaponScope : MonoBehaviour
     Quaternion homeRotation;
 
     /// <summary>Sets up the first object found with one of the names (once).</summary>
-    public static void SetupByName(params string[] names)
+    public static void SetupByName(AudioClip launchSound, params string[] names)
     {
         foreach (var n in names)
         {
             var go = GameObject.Find(n);
             if (go == null) continue;
-            if (go.GetComponent<LaserWeaponScope>() == null) go.AddComponent<LaserWeaponScope>();
+            var scope = go.GetComponent<LaserWeaponScope>();
+            if (scope == null) scope = go.AddComponent<LaserWeaponScope>();
+            scope.missileLaunchSound = launchSound;
             return;
         }
     }
@@ -115,6 +121,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         }
         if (grabbable) MakeGrabbable(whole);
         FindTarget();
+        FindMissileLaunchOrigin();
     }
 
     /// <summary>Renders the scope with the scene's laser camera, if there is one.</summary>
@@ -217,6 +224,9 @@ public sealed class LaserWeaponScope : MonoBehaviour
         }
         if (target == null) return;
         targetRenderers = target.GetComponentsInChildren<Renderer>();
+        var targetJet = target.GetComponent<FighterJetFlight>();
+        if (missilePrefab == null && targetJet != null)
+            missilePrefab = targetJet.MissilePrefab;
 
         // Something for the scope's raycast to hit; a trigger, so it never pushes anything.
         if (target.GetComponentInChildren<Collider>() == null && TargetBounds(out var bounds))
@@ -262,7 +272,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         rect.SetParent(transform, false);
         rect.localPosition = screen.center + normal * (thickness + lift);
         rect.localRotation = Quaternion.LookRotation(-normal, up);
-        rect.localScale = Vector3.one * (height / canvasHeight);
+        rect.localScale = Vector3.one * (height / canvasHeight * crosshairScale);
         rect.sizeDelta = new Vector2(canvasHeight * width / height, canvasHeight);
         go.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
 
@@ -531,8 +541,22 @@ public sealed class LaserWeaponScope : MonoBehaviour
     System.Collections.IEnumerator MissileToTarget()
     {
         missileAway = true;
-        var start = scopeCamera.transform.position;
-        var heading = scopeCamera.transform.forward;
+        if (missileLaunchOrigin == null)
+            FindMissileLaunchOrigin();
+        if (missileLaunchOrigin == null || target == null || !target.gameObject.activeInHierarchy)
+        {
+            Debug.LogWarning(name + ": cannot launch the lock-on missile because its launcher or target is missing.", this);
+            missileAway = false;
+            yield break;
+        }
+
+        var start = missileLaunchOrigin.TransformPoint(missileLaunchOffset);
+        var aim = TargetBounds(out var targetBounds) ? targetBounds.center : target.position;
+        var heading = aim - start;
+        if (heading.sqrMagnitude < 0.0001f) heading = missileLaunchOrigin.forward;
+        heading.Normalize();
+        if (missileLaunchSound != null)
+            AudioSource.PlayClipAtPoint(missileLaunchSound, start, missileLaunchVolume);
 
         GameObject missile;
         if (missilePrefab != null)
@@ -545,7 +569,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
             missile = BuildMissile(start, heading);
         }
         var trail = LaunchSmoke.CreateTrail(0.6f);
-        trail.transform.position = start;
+        trail.transform.SetPositionAndRotation(start, Quaternion.LookRotation(-heading));
 
         // Homing: speeds up each frame so it always reaches the moving target on time.
         var elapsed = 0f;
@@ -553,7 +577,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         while (missile != null && target != null && target.gameObject.activeInHierarchy)
         {
             elapsed += Time.deltaTime;
-            var aim = TargetBounds(out var b) ? b.center : target.position;
+            aim = TargetBounds(out var b) ? b.center : target.position;
             var toAim = aim - position;
             var remaining = Mathf.Max(0.05f, missileSeconds - elapsed);
             var step = toAim.magnitude * Mathf.Clamp01(Time.deltaTime / remaining);
@@ -579,8 +603,6 @@ public sealed class LaserWeaponScope : MonoBehaviour
         var center = TargetBounds(out bounds) ? bounds.center : at;
 
         LaunchSmoke.CreateExplosionBurst(center, size);
-        // Fire spreads out from the hit, burns briefly and dies out.
-        LaunchSmoke.CreateFire(center, size * 0.6f, size * 0.8f, fireSeconds);
 
         var jet = target.GetComponent<FighterJetFlight>();
         if (jet != null) jet.StopFlying();
@@ -588,6 +610,16 @@ public sealed class LaserWeaponScope : MonoBehaviour
         targetDown = true;
         missileAway = false;
         SetCrosshairColor(crosshairColor);
+    }
+
+    void FindMissileLaunchOrigin()
+    {
+        if (missileLaunchOrigin != null || string.IsNullOrWhiteSpace(missileLaunchOriginName)) return;
+        var launcher = GameObject.Find(missileLaunchOriginName);
+        if (launcher != null)
+            missileLaunchOrigin = launcher.transform;
+        else
+            Debug.LogWarning(name + ": missile launcher '" + missileLaunchOriginName + "' was not found in the scene.", this);
     }
 
     static GameObject BuildMissile(Vector3 position, Vector3 heading)

@@ -20,6 +20,8 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         public string intactName;
         [Tooltip("Destroyed model; hidden at the start, switched on when it blows up.")]
         public GameObject destroyed;
+        [Tooltip("Or the destroyed model's name in the scene, if not assigned above.")]
+        public string destroyedName;
         [Tooltip("Seconds after the trigger.")]
         [Min(0f)] public float delay;
     }
@@ -27,15 +29,14 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     [Header("Trigger")]
     [Tooltip("Launch button that starts it. Empty = the launch button under Trigger Object Name.")]
     [SerializeField] MissileLaunchButton triggerButton;
-    [SerializeField] string triggerObjectName = "ShootMissile (1)";
+    [SerializeField] string triggerObjectName = "ShootMissile (2)";
     [Tooltip("Start when the launched object reaches Point B instead of when the button is pressed.")]
     [SerializeField] bool waitForArrival;
 
     [Header("Targets (in order)")]
     [SerializeField] Target[] targets =
     {
-        new Target { delay = 0f },
-        new Target { intactName = "SM_Luncher01 (3)", delay = 3f },
+        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 3f },
     };
 
     [Header("Fighter jet")]
@@ -62,6 +63,8 @@ public sealed class ExplodeAndSwap : MonoBehaviour
             if (t == null) continue;
             if (t.intact == null && !string.IsNullOrWhiteSpace(t.intactName))
                 t.intact = GameObject.Find(t.intactName);
+            if (t.destroyed == null && !string.IsNullOrWhiteSpace(t.destroyedName))
+                t.destroyed = GameObject.Find(t.destroyedName);
             if (t.destroyed != null) t.destroyed.SetActive(false);
         }
 
@@ -132,6 +135,10 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         }
 
         if (shakeHeadset) ShakeHeadset(center);
+
+        // Keep the wreck at the exact position and orientation of the intact target.
+        if (t.destroyed != null && t.intact != null && t.destroyed != t.intact)
+            t.destroyed.transform.SetPositionAndRotation(t.intact.transform.position, t.intact.transform.rotation);
 
         // Swap at the flash so the change is hidden by the explosion.
         if (t.destroyed != null) t.destroyed.SetActive(true);

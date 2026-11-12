@@ -48,6 +48,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [Tooltip("Looped level music. Empty = Resources/Audio/Lvl3Music.")]
     [SerializeField] AudioClip music;
     [Range(0f, 1f)] [SerializeField] float musicVolume = 0.35f;
+    [SerializeField] AudioClip missileLaunchSound;
 
     XROrigin origin;
     HandHintBanner launchHint;
@@ -82,7 +83,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
         MissileLaunchButton.AutoWireScene();
-        LaserWeaponScope.SetupByName("LaserWeapon", "SM_LaserWeapon");
+        LaserWeaponScope.SetupByName(missileLaunchSound, "LaserWeapon", "SM_LaserWeapon");
 
         if (beaconObjectNames != null)
         {

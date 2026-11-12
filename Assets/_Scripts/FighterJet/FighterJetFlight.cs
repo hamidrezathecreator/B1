@@ -40,6 +40,8 @@ public sealed class FighterJetFlight : MonoBehaviour
     [Range(0f, 1f)] [SerializeField] float missileCurve = 0.35f;
     [SerializeField] bool missileSmokeTrail = true;
     [Min(0.1f)] [SerializeField] float missileSmokeSize = 0.8f;
+    [SerializeField] AudioClip missileLaunchSound;
+    [Range(0f, 1f)] [SerializeField] float missileLaunchVolume = 1f;
 
     const int SamplesPerSegment = 24;
 
@@ -52,6 +54,7 @@ public sealed class FighterJetFlight : MonoBehaviour
 
     public bool IsFlying => flying;
     public float MissileFlightSeconds => missileFlightSeconds;
+    public GameObject MissilePrefab => missilePrefab;
 
     void Start()
     {
@@ -134,6 +137,9 @@ public sealed class FighterJetFlight : MonoBehaviour
         var start = transform.position + FlightRotation * missileLaunchOffset;
         var heading = FlightForward;
         var control = start + heading * (Vector3.Distance(start, target) * missileCurve);
+
+        if (missileLaunchSound != null)
+            AudioSource.PlayClipAtPoint(missileLaunchSound, start, missileLaunchVolume);
 
         var offset = Quaternion.Euler(missileRotationOffset);
         var missile = missilePrefab != null

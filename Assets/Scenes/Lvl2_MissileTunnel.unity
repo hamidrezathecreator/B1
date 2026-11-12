@@ -5320,13 +5320,13 @@ MonoBehaviour:
   buttonPressSeconds: 0.18
   buttonShakeSeconds: 1
   buttonShakeStrength: 0.85
-  tabletUiBackground: {fileID: 2800000, guid: f35748c336e035941ac8b496a6b85acb, type: 3}
-  tabletOpt1Inactive: {fileID: 2800000, guid: 06ee2496f4dc8f44ea145521852b37c6, type: 3}
-  tabletOpt1Active: {fileID: 2800000, guid: 789cccd89d7f13c4e86fa877594f0573, type: 3}
-  tabletOpt2Inactive: {fileID: 2800000, guid: ab287e37850bdd849b89e866aa1f8ba0, type: 3}
-  tabletOpt2Active: {fileID: 2800000, guid: 161887123f0d66f4d9dcbe87a242f9b3, type: 3}
-  tabletOpt3Inactive: {fileID: 2800000, guid: f29e3e48d49e69241ad4f56b47fbd232, type: 3}
-  tabletOpt3Active: {fileID: 2800000, guid: dce826d434644f847918b8bdbe5af2cd, type: 3}
+  tabletUiBackground: {fileID: 2800000, guid: a3bc8c04473b3684ba26e3cea7c8f556, type: 3}
+  tabletOpt1Inactive: {fileID: 2800000, guid: f44aff6c4ef0d174eac1475e26d3016f, type: 3}
+  tabletOpt1Active: {fileID: 2800000, guid: b76cfa420ed162a45bde2e4b53508f04, type: 3}
+  tabletOpt2Inactive: {fileID: 2800000, guid: f44aff6c4ef0d174eac1475e26d3016f, type: 3}
+  tabletOpt2Active: {fileID: 2800000, guid: b76cfa420ed162a45bde2e4b53508f04, type: 3}
+  tabletOpt3Inactive: {fileID: 2800000, guid: f44aff6c4ef0d174eac1475e26d3016f, type: 3}
+  tabletOpt3Active: {fileID: 2800000, guid: b76cfa420ed162a45bde2e4b53508f04, type: 3}
   showPathToTable: 1
   pathWaypoints: []
   pathStartLocal: {x: -0.95, y: 0, z: 1.6}
