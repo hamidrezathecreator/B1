@@ -4,7 +4,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Filtering;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 /// <summary>
 /// Drop on any button. Touching it with the right fingertip (or a controller poke / select)
@@ -249,21 +251,48 @@ public sealed class MissileLaunchButton : MonoBehaviour
         interactable.interactionLayers = -1;
         interactable.selectMode = InteractableSelectMode.Multiple;
         interactable.selectEntered.AddListener(_ => Press());
+        interactable.activated.AddListener(_ => Press());
+        // Controller poke (Quest fingertip) hovers this collider. Select often never fires
+        // on a thin cap, which is why Test Launch worked in the editor and VR did not.
+        interactable.hoverEntered.AddListener(OnHover);
+
+        var poke = GetComponent<XRPokeFilter>();
+        if (poke == null) poke = gameObject.AddComponent<XRPokeFilter>();
+        poke.pokeInteractable = interactable;
+        poke.pokeCollider = touchCollider;
+    }
+
+    void OnHover(HoverEnterEventArgs args)
+    {
+        if (args.interactorObject == null) return;
+        var n = args.interactorObject.transform.name;
+        if (n.IndexOf("Poke", StringComparison.OrdinalIgnoreCase) < 0 &&
+            n.IndexOf("Finger", StringComparison.OrdinalIgnoreCase) < 0)
+            return;
+        Press();
     }
 
     void EnsureTouchCollider()
     {
         touchCollider = GetComponent<BoxCollider>();
-        if (touchCollider != null) return;
+        if (touchCollider == null)
+            touchCollider = gameObject.AddComponent<BoxCollider>();
 
-        touchCollider = gameObject.AddComponent<BoxCollider>();
+        touchCollider.isTrigger = false;
         var filter = GetComponent<MeshFilter>();
         if (filter != null && filter.sharedMesh != null)
         {
             var b = filter.sharedMesh.bounds;
             touchCollider.center = b.center;
-            // A little deeper than the cap so a fingertip registers before it sinks through.
-            touchCollider.size = new Vector3(b.size.x * 1.15f, b.size.y * 1.15f, Mathf.Max(b.size.z, b.size.x) * 1.6f);
+            // Deeper than the cap so a controller poke hits before the mesh clips through.
+            touchCollider.size = new Vector3(
+                Mathf.Max(b.size.x * 1.25f, 0.06f),
+                Mathf.Max(b.size.y * 1.25f, 0.04f),
+                Mathf.Max(b.size.z * 2.2f, 0.08f));
+        }
+        else if (touchCollider.size.sqrMagnitude < 0.0001f)
+        {
+            touchCollider.size = new Vector3(0.08f, 0.04f, 0.08f);
         }
     }
 

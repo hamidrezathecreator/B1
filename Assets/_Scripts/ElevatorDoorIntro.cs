@@ -1013,7 +1013,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         grab.trackPosition = true;
         grab.trackRotation = true;
         grab.throwOnDetach = false;
-        grab.forceGravityOnDetach = true;
+        // We control gravity ourselves — XR's forceGravityOnDetach fights the table soft-drop.
+        grab.forceGravityOnDetach = false;
         grab.colliders.Clear();
         grab.colliders.Add(box);
         NearOnlyGrabFilter.AddTo(grab, 0.35f);
@@ -1030,12 +1031,24 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         grab.selectExited.AddListener(_ =>
         {
             if (grab.isSelected) return;
-            // Drop freely — lands on the tabletop slab or the floor. No teleport home.
-            body.isKinematic = false;
-            body.useGravity = true;
             body.constraints = RigidbodyConstraints.None;
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
+
+            // Released into / over the table: Instantaneous grab leaves it inside the slab and
+            // physics ejects it sideways. Soft-seat on the top instead.
+            var tableNow = GameObject.Find("SM_Table");
+            if (tableNow != null && IsAboveTable(box, tableNow))
+            {
+                SitOnTableTop(tablet, box, tableNow);
+                body.isKinematic = true;
+                body.useGravity = false;
+                return;
+            }
+
+            // Away from the table — fall onto the floor.
+            body.isKinematic = false;
+            body.useGravity = true;
         });
 
         AttachTabletLcdUi(tablet);
@@ -1049,8 +1062,22 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
         Physics.SyncTransforms();
         var b = tabletBox.bounds;
-        tablet.transform.position += Vector3.up * (top + 0.015f - b.min.y);
+        tablet.transform.position += Vector3.up * (top + 0.02f - b.min.y);
         Physics.SyncTransforms();
+    }
+
+    /// <summary>True when the tablet is over the tabletop (XZ) and near its height.</summary>
+    static bool IsAboveTable(BoxCollider tabletBox, GameObject table)
+    {
+        if (tabletBox == null || table == null) return false;
+        if (!TryTableTop(table, out var top, out var area)) return false;
+
+        var c = tabletBox.bounds.center;
+        const float margin = 0.1f;
+        if (c.x < area.min.x - margin || c.x > area.max.x + margin) return false;
+        if (c.z < area.min.z - margin || c.z > area.max.z + margin) return false;
+        // From slightly through the top (held into the slab) up to about arm height above it.
+        return c.y > top - 0.3f && c.y < top + 0.85f;
     }
 
     static bool TryTableTop(GameObject table, out float top, out Bounds area)

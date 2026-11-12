@@ -18,7 +18,6 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 static class BridgeXrPlaySetup
 {
     const float BodyHeight = 1.75f;
-    const float EyeHeight = 1.65f;
     // Between the old too-high Device offset and the last Floor height that felt too short.
     internal const float ExtraCameraLift = 0.25f;
     const float SkinWidth = 0.02f;
@@ -144,8 +143,10 @@ static class BridgeXrPlaySetup
     {
         // Floor keeps Quest tracking from stacking a full Device offset again.
         // ExtraCameraLift nudges the view a little above the last too-low height.
+        // Floor tracking already puts the headset at eye height. A second CameraYOffset
+        // (the rig default is 1.8) stacks on top and lifts the teleport ray with it.
         origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
-        origin.CameraYOffset = EyeHeight;
+        origin.CameraYOffset = 0f;
         ApplyCameraLift(origin);
     }
 
@@ -400,6 +401,8 @@ sealed class CameraLiftKeeper : MonoBehaviour
     void LateUpdate()
     {
         if (origin == null || origin.CameraFloorOffsetObject == null) return;
+        if (origin.CameraYOffset != 0f)
+            origin.CameraYOffset = 0f;
         var offset = origin.CameraFloorOffsetObject.transform;
         var local = offset.localPosition;
         if (Mathf.Abs(local.y - lift) <= 0.0001f) return;
@@ -424,6 +427,9 @@ sealed class BridgeDeckLock : MonoBehaviour
 
         if (origin == null || origin.CameraFloorOffsetObject == null)
             return;
+
+        if (origin.CameraYOffset != 0f)
+            origin.CameraYOffset = 0f;
 
         var offset = origin.CameraFloorOffsetObject.transform;
         var local = offset.localPosition;
