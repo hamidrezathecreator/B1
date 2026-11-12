@@ -16,8 +16,8 @@ public sealed class PlayerPlaneFall : MonoBehaviour
     [Tooltip("Falls together with the player. Empty = the object named below.")]
     [SerializeField] Transform plane;
     [SerializeField] string planeName = "Plane";
-    [Min(0f)] [SerializeField] float gravity = 9.81f;
-    [Min(0.1f)] [SerializeField] float maxSpeed = 30f;
+    [Min(0f)] [SerializeField] float gravity = 19.62f;
+    [Min(0.1f)] [SerializeField] float maxSpeed = 60f;
 
     public bool HasFallen { get; private set; }
 

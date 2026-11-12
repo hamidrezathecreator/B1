@@ -54,7 +54,12 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
     [Tooltip("Timeline time, in seconds, at which the XR Origin drops down (the bridge gives way).")]
     [Min(0f)] [SerializeField] float fallAtTimelineSeconds = 5f;
-    [Tooltip("With a Player And Plane Fall in the scene: longest wait for its Timeline signal before falling anyway.")]
+    [Tooltip("The player drops this long after this explosion appears on the Timeline. Empty name = Fall At Timeline Seconds.")]
+    [SerializeField] string fallAfterExplosionName = "Explosion_Two";
+    [Min(0f)] [SerializeField] float fallAfterExplosionSeconds = 2f;
+    [Tooltip("2 = falls twice as fast.")]
+    [Min(0.1f)] [SerializeField] float fallSpeedMultiplier = 2f;
+    [Tooltip("Longest wait after the case snaps in before the player falls anyway.")]
     [Min(1f)] [SerializeField] float maxWaitForFallSignal = 30f;
     [Tooltip("Seconds of falling before the eyes close.")]
     [Min(0f)] [SerializeField] float closeEyesAfterFallSeconds = 1f;
@@ -79,6 +84,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     readonly List<MagnetDropZone> zones = new List<MagnetDropZone>();
     ControllerButtonHighlight buttonHighlight;
     GameObject explosion;
+    ExplosionCue fallCue;
+    float fallExplosionShownAt = -1f;
     GameObject intactBridge;
     GameObject destroyedBridge;
     readonly List<XRGrabInteractable> cases = new List<XRGrabInteractable>();
@@ -305,8 +312,9 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (director != null && director.playOnAwake)
         {
             // Play On Awake: the timeline already started with the scene, so it is not restarted here.
+            WatchFallExplosion();
             var sinceSnap = 0f;
-            while (planeFall != null ? !planeFall.HasFallen && sinceSnap < maxWaitForFallSignal : sinceSnap < fallAtTimelineSeconds)
+            while (!FallTimeReached(sinceSnap, sinceSnap, planeFall))
             {
                 sinceSnap += Time.deltaTime;
                 if (sinceSnap >= doneMessageSeconds) HideBanner();
@@ -319,6 +327,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             ResetScatters();
             director.Stop();
             director.time = 0;
+            WatchFallExplosion();
             director.Play();
             StartCoroutine(ExplosionAfterDelay());
 
@@ -330,11 +339,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
                 elapsed += Time.deltaTime;
                 var playing = director.state == UnityEngine.Playables.PlayState.Playing;
                 var timelineTime = playing ? (float)director.time : elapsed;
-                if (planeFall != null)
-                {
-                    if (planeFall.HasFallen || elapsed >= maxWaitForFallSignal) break;
-                }
-                else if (timelineTime >= fallAtTimelineSeconds) break;
+                if (FallTimeReached(timelineTime, elapsed, planeFall)) break;
                 if (!bannerHidden && elapsed >= doneMessageSeconds)
                 {
                     HideBanner();
@@ -395,10 +400,38 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         var speed = 0f;
         while (origin != null)
         {
-            speed = Mathf.Min(speed + 9.81f * Time.deltaTime, 30f);
+            speed = Mathf.Min(speed + 9.81f * fallSpeedMultiplier * Time.deltaTime, 30f * fallSpeedMultiplier);
             origin.transform.position += Vector3.down * speed * Time.deltaTime;
             yield return null;
         }
+    }
+
+    /// <summary>Starts watching for the explosion the fall waits for (switched on by the Timeline).</summary>
+    void WatchFallExplosion()
+    {
+        fallExplosionShownAt = -1f;
+        var go = string.IsNullOrWhiteSpace(fallAfterExplosionName) ? null : FindByName(fallAfterExplosionName);
+        if (go == null)
+        {
+            fallCue = null;
+            return;
+        }
+        fallCue = ExplosionCue.AddTo(go);
+        fallCue.Shown -= OnFallExplosionShown;
+        fallCue.Shown += OnFallExplosionShown;
+        // Already on screen (Timeline started with the scene): count from now.
+        if (go.activeInHierarchy) fallExplosionShownAt = Time.time;
+    }
+
+    void OnFallExplosionShown(ExplosionCue _) => fallExplosionShownAt = Time.time;
+
+    bool FallTimeReached(float timelineTime, float elapsed, PlayerPlaneFall planeFall)
+    {
+        if (elapsed >= maxWaitForFallSignal) return true;
+        if (fallCue != null)
+            return fallExplosionShownAt >= 0f && Time.time - fallExplosionShownAt >= fallAfterExplosionSeconds;
+        if (planeFall != null) return planeFall.HasFallen;
+        return timelineTime >= fallAtTimelineSeconds;
     }
 
     void SetBridgeDestroyed(bool destroyed)
