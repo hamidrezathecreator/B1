@@ -102,11 +102,26 @@ public sealed class ControllerHandRig : MonoBehaviour
             wristOriginalLocalPosition = wristTransform.localPosition;
             wristOriginalLocalRotation = wristTransform.localRotation;
         }
-        // Controller-mounted hands never switch to XR Hands — those components jump the mesh.
+
+        // Collect joint refs while the skeleton driver still exists, then strip it.
+        CollectFingerBones();
+
+        // Controller-mounted hands never switch to XR Hands — those components jump the mesh
+        // and leave finger joints in a tracking pose under the Origin.
         if (!preferHandTrackingWhenAvailable)
         {
-            if (driver != null) { Destroy(driver); driver = null; }
-            if (trackingEvents != null) { Destroy(trackingEvents); trackingEvents = null; }
+            if (driver != null)
+            {
+                driver.enabled = false;
+                DestroyImmediate(driver);
+                driver = null;
+            }
+            if (trackingEvents != null)
+            {
+                trackingEvents.enabled = false;
+                DestroyImmediate(trackingEvents);
+                trackingEvents = null;
+            }
         }
         else
         {
@@ -118,14 +133,28 @@ public sealed class ControllerHandRig : MonoBehaviour
             }
         }
 
+        // Rest pose after drivers are gone so we never bake a tracking/Origin snap into rest.
+        if (wristTransform != null && wristOriginalParent != null)
+        {
+            wristTransform.SetParent(wristOriginalParent, false);
+            wristTransform.localPosition = wristOriginalLocalPosition;
+            wristTransform.localRotation = wristOriginalLocalRotation;
+        }
         restPoses.Clear();
         foreach (var t in rigRoot.GetComponentsInChildren<Transform>(true))
         {
             if (t == rigRoot) continue;
             restPoses.Add(new RestPose { transform = t, position = t.localPosition, rotation = t.localRotation });
         }
+        // Finger rest rotations must match the open-hand pose we just locked in.
+        for (var i = 0; i < bones.Count; i++)
+        {
+            var b = bones[i];
+            if (b.bone == null) continue;
+            b.rest = b.bone.localRotation;
+            bones[i] = b;
+        }
 
-        CollectFingerBones();
         Rebake();
     }
 
@@ -204,7 +233,12 @@ public sealed class ControllerHandRig : MonoBehaviour
     {
         if (skinned == null || meshTransform == null) return;
 
-        if (IsTrackedByXRHands())
+        // Lvl2 and controller-mounted hands: never leave the grip for XR Hands joints.
+        if (!preferHandTrackingWhenAvailable)
+        {
+            if (tracked) EnterController();
+        }
+        else if (IsTrackedByXRHands())
         {
             trackingLossTimer = 0f;
             if (!tracked) EnterHandTracking();
@@ -224,20 +258,41 @@ public sealed class ControllerHandRig : MonoBehaviour
             return;
         }
 
+        // Mesh + bone rig stay on the ProjectHand anchor. Never follow a wrist that XR Hands
+        // reparented under the Origin (that put the hand one body-height under the headset).
+        if (meshTransform.parent != transform)
+        {
+            meshTransform.SetParent(transform, false);
+            meshTransform.localPosition = Vector3.zero;
+            meshTransform.localRotation = Quaternion.identity;
+            meshTransform.localScale = Vector3.one;
+        }
+        if (rigRoot != null && rigRoot.parent != transform)
+        {
+            rigRoot.SetParent(transform, false);
+            rigRoot.localPosition = rigOnControllerPosition;
+            rigRoot.localRotation = rigOnControllerRotation;
+        }
+        if (wristTransform != null && wristOriginalParent != null && wristTransform.parent != wristOriginalParent)
+        {
+            wristTransform.SetParent(wristOriginalParent, false);
+            wristTransform.localPosition = wristOriginalLocalPosition;
+            wristTransform.localRotation = wristOriginalLocalRotation;
+        }
+
         ReadInput(out var targetIndex, out var targetGrip);
         var k = 1f - Mathf.Exp(-Smoothing * Time.deltaTime);
         index = Mathf.Lerp(index, targetIndex, k);
         grip = Mathf.Lerp(grip, targetGrip, k);
 
-        // The baked mesh follows the hidden rig's renderer transform.
+        // BakeMesh is in the skinned object's local space — MeshRenderer must share that pose.
+        // Safe only while skinned stays under this ProjectHand anchor (enforced above).
         meshTransform.SetPositionAndRotation(skinned.transform.position, skinned.transform.rotation);
-
-        if (Mathf.Abs(index - lastIndex) < 0.01f && Mathf.Abs(grip - lastGrip) < 0.01f) return;
 
         foreach (var b in bones)
         {
+            if (b.bone == null) continue;
             var amount = b.finger == Finger.Index ? index : b.finger == Finger.Thumb ? grip * 0.5f : grip;
-            // XR hand joints bend toward the palm around their local X axis.
             b.bone.localRotation = b.rest * Quaternion.Euler(amount * b.maxDegrees, 0f, 0f);
         }
         Rebake();

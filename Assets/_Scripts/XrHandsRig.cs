@@ -16,6 +16,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 public sealed class XrHandsRig : MonoBehaviour
 {
     const string HandObjectName = "ProjectHand";
+    static string HandObjectNameFor(bool isLeft) => isLeft ? "ProjectHand_L" : "ProjectHand_R";
 
     [Tooltip("Rigged hand model or prefab, e.g. LeftHandAndroidXR.fbx.")]
     [SerializeField] GameObject leftHandVisualPrefab;
@@ -26,6 +27,7 @@ public sealed class XrHandsRig : MonoBehaviour
     [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
 
     XROrigin origin;
+    XRPokeInteractor leftPoke;
     XRPokeInteractor rightPoke;
     Transform rightIndexTip;
     TabletFingerTip rightFingerTip;
@@ -34,12 +36,12 @@ public sealed class XrHandsRig : MonoBehaviour
     bool ready;
     bool controllerModels;
     bool preferHandTrackingWhenAvailable;
-    Vector3 leftFrozenWorldPos;
-    Quaternion leftFrozenWorldRot = Quaternion.identity;
-    Vector3 rightFrozenWorldPos;
-    Quaternion rightFrozenWorldRot = Quaternion.identity;
-    bool leftFrozen;
-    bool rightFrozen;
+    Vector3 leftGoodLocalPos;
+    Quaternion leftGoodLocalRot = Quaternion.identity;
+    Vector3 rightGoodLocalPos;
+    Quaternion rightGoodLocalRot = Quaternion.identity;
+    bool leftHasGoodPose;
+    bool rightHasGoodPose;
     readonly List<InputDevice> poseDevices = new List<InputDevice>();
 
     public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
@@ -73,6 +75,8 @@ public sealed class XrHandsRig : MonoBehaviour
         // button reports hands. That drops the hand to the origin (~1 m) and can leave
         // only one side active, so left and right appear to swap.
         KeepControllerObjects(origin);
+        // Scene / prefab hand-tracking components under the rig also snap wrists to Origin (0,0,0).
+        StripHandTrackingUnder(origin.transform);
 
         foreach (var line in origin.GetComponentsInChildren<XRInteractorLineVisual>(true))
         {
@@ -100,7 +104,7 @@ public sealed class XrHandsRig : MonoBehaviour
             // Controllers only — hide any tracked-hand meshes that would draw over the grips.
             HideSceneHandVisuals();
         }
-        EnsurePokeOnController(origin, "Left Controller");
+        leftPoke = EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
         ready = true;
     }
@@ -167,21 +171,41 @@ public sealed class XrHandsRig : MonoBehaviour
             return;
         }
 
-        var old = controller.Find(HandObjectName);
-        if (old != null) Destroy(old.gameObject);
+        // Old builds parented under the Controller; current builds under Camera Offset.
+        // Left and right must use distinct names — both sit under the same Camera Offset.
+        var space = origin.CameraFloorOffsetObject != null
+            ? origin.CameraFloorOffsetObject.transform
+            : origin.transform;
+        var handName = HandObjectNameFor(isLeft);
+        foreach (var parent in new[] { controller, space, origin.transform })
+        {
+            if (parent == null) continue;
+            foreach (var name in new[] { handName, HandObjectName })
+            {
+                var old = parent.Find(name);
+                if (old != null) Destroy(old.gameObject);
+            }
+        }
 
         var source = Instantiate(template);
-        // Remove XR Hands drivers entirely — enabling them (Quest action / hand-tracker button)
-        // reparents bones under the Origin and jumps the mesh about a metre.
+        // Disable tracking before Bind. Bind reads joint refs then DestroyImmediate's the
+        // drivers — a deferred Destroy would still LateUpdate and break finger joints.
         foreach (var driver in source.GetComponentsInChildren<XRHandSkeletonDriver>(true))
-            Destroy(driver);
+            driver.enabled = false;
         foreach (var events in source.GetComponentsInChildren<XRHandTrackingEvents>(true))
-            Destroy(events);
+            events.enabled = false;
         foreach (var meshCtrl in source.GetComponentsInChildren<XRHandMeshController>(true))
-            Destroy(meshCtrl);
+        {
+            meshCtrl.enabled = false;
+            DestroyImmediate(meshCtrl);
+        }
         // Any other tracking scripts on hand prefabs would move or hide the bones.
         foreach (var behaviour in source.GetComponentsInChildren<MonoBehaviour>(true))
+        {
+            if (behaviour is XRHandSkeletonDriver || behaviour is XRHandTrackingEvents)
+                continue;
             behaviour.enabled = false;
+        }
         // The hand is only a picture. Hand prefabs (e.g. the scene's Tracked Hands) carry colliders
         // and rigidbodies for their own interactors, which bumped and shoved the tablet and cases.
         // Switched off rather than removed: other (disabled) components may require them.
@@ -209,23 +233,16 @@ public sealed class XrHandsRig : MonoBehaviour
 
         var wrist = FindBone(skinned, source.transform, "wrist") ?? skinned.rootBone ?? skinned.transform;
 
-        var offset = handOnControllerPosition;
-        var euler = handOnControllerEuler;
-        if (isLeft)
-        {
-            offset.x = -offset.x;
-            euler.y = -euler.y;
-            euler.z = -euler.z;
-        }
-
-        // Wrist anchor: XR hand convention, +Z toward the fingers, +Y out of the back of the hand.
-        // Holding a controller the back of the right hand faces +X, the left hand faces -X.
-        var anchor = new GameObject(HandObjectName).transform;
+        // Wrist anchor lives under Camera Offset — never under Left/Right Controller.
+        // The Quest action button parks those transforms at XR Origin (0,0,0); parenting here
+        // would drop the mesh one body-height under the headset.
+        var anchor = new GameObject(handName).transform;
         if (isLeft) leftAnchor = anchor; else rightAnchor = anchor;
-        anchor.SetParent(controller, false);
-        anchor.localPosition = offset;
-        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+        anchor.SetParent(space, false);
+        anchor.localPosition = Vector3.zero;
+        anchor.localRotation = Quaternion.identity;
         anchor.localScale = Vector3.one;
+        ApplyAnchorOffset(anchor, isLeft);
 
         // Keep the rig (bones) under the anchor, moved so its wrist sits exactly on the anchor.
         // The sample prefab parks the wrist away from its root; this cancels that offset.
@@ -349,7 +366,7 @@ public sealed class XrHandsRig : MonoBehaviour
         foreach (var child in root.GetComponentsInChildren<Transform>(true))
         {
             if (child == null) continue;
-            if (child.name == HandObjectName)
+            if (child.name == HandObjectName || child.name.StartsWith("ProjectHand"))
             {
                 Destroy(child.gameObject);
                 continue;
@@ -383,19 +400,20 @@ public sealed class XrHandsRig : MonoBehaviour
     }
 
     /// <summary>
-    /// Wrist pose as a child of the controller. When the Quest action / hand-tracker button
-    /// snaps the controller transform to the tracking origin, keep the last good world pose
-    /// so the hand mesh does not jump with it.
+    /// Drive the hand from the OpenXR device pose under Camera Offset — never from the
+    /// Left/Right Controller transform. The Quest action button parks that transform at
+    /// XR Origin (0,0,0), one body-height under the headset; following it jumps the mesh.
     /// </summary>
     void ApplyAnchorOffset(Transform anchor, bool isLeft)
     {
-        if (anchor == null) return;
+        if (anchor == null || origin == null) return;
 
-        var controller = origin != null
-            ? FindNamed(origin, isLeft ? "Left Controller" : "Right Controller")
-            : null;
-        if (controller != null && anchor.parent != controller)
-            anchor.SetParent(controller, false);
+        var space = origin.CameraFloorOffsetObject != null
+            ? origin.CameraFloorOffsetObject.transform
+            : origin.transform;
+        var head = origin.Camera != null
+            ? origin.Camera.transform.position
+            : space.position + Vector3.up * 1.6f;
 
         var offset = handOnControllerPosition;
         var euler = handOnControllerEuler;
@@ -407,69 +425,110 @@ public sealed class XrHandsRig : MonoBehaviour
         }
         var handRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
 
-        if (controller != null && !ControllerPoseValid(controller, isLeft))
+        if (anchor.parent != space)
+            anchor.SetParent(space, false);
+
+        if (TryGetHeldDevicePose(isLeft, space, head, out var localPos, out var localRot))
         {
+            // Keep pose in Camera Offset local space so elevator moves still carry the hands.
+            var localHandRot = localRot * handRotation;
+            var localHandPos = localPos + localRot * offset;
+            anchor.localPosition = localHandPos;
+            anchor.localRotation = localHandRot;
+            anchor.localScale = Vector3.one;
+
             if (isLeft)
             {
-                if (!leftFrozen)
-                {
-                    leftFrozenWorldPos = anchor.position;
-                    leftFrozenWorldRot = anchor.rotation;
-                    leftFrozen = true;
-                }
-                anchor.SetPositionAndRotation(leftFrozenWorldPos, leftFrozenWorldRot);
+                leftGoodLocalPos = localHandPos;
+                leftGoodLocalRot = localHandRot;
+                leftHasGoodPose = true;
             }
             else
             {
-                if (!rightFrozen)
-                {
-                    rightFrozenWorldPos = anchor.position;
-                    rightFrozenWorldRot = anchor.rotation;
-                    rightFrozen = true;
-                }
-                anchor.SetPositionAndRotation(rightFrozenWorldPos, rightFrozenWorldRot);
+                rightGoodLocalPos = localHandPos;
+                rightGoodLocalRot = localHandRot;
+                rightHasGoodPose = true;
             }
             return;
         }
 
-        if (isLeft) leftFrozen = false;
-        else rightFrozen = false;
-
-        anchor.localPosition = offset;
-        anchor.localRotation = handRotation;
+        // Action button / lost tracking: freeze last good LOCAL pose (moves with the cabin).
+        if (isLeft && leftHasGoodPose)
+        {
+            anchor.localPosition = leftGoodLocalPos;
+            anchor.localRotation = leftGoodLocalRot;
+        }
+        else if (!isLeft && rightHasGoodPose)
+        {
+            anchor.localPosition = rightGoodLocalPos;
+            anchor.localRotation = rightGoodLocalRot;
+        }
+        else
+        {
+            // Never sit at y≈0 under the headset — park beside the head until a real pose arrives.
+            var side = isLeft ? -0.2f : 0.2f;
+            var parkWorld = head + origin.Camera.transform.right * side + Vector3.down * 0.35f;
+            anchor.position = parkWorld;
+            anchor.rotation = origin.Camera.transform.rotation * handRotation;
+        }
         anchor.localScale = Vector3.one;
     }
 
-    bool ControllerPoseValid(Transform controller, bool isLeft)
+    bool TryGetHeldDevicePose(bool isLeft, Transform space, Vector3 head, out Vector3 localPos, out Quaternion localRot)
     {
-        if (controller == null || origin == null) return false;
+        localPos = default;
+        localRot = Quaternion.identity;
 
         var wanted = isLeft ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right;
         var other = isLeft ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
-        var tracked = false;
         InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | wanted, poseDevices);
         foreach (var device in poseDevices)
         {
             if ((device.characteristics & other) != 0 && (device.characteristics & wanted) == 0)
                 continue;
-            if (device.TryGetFeatureValue(CommonUsages.isTracked, out var on) && on)
+            // Ignore pure hand-tracker devices — they report a wrist near the body / Origin
+            // when the Quest action button flips modality.
+            if ((device.characteristics & InputDeviceCharacteristics.HandTracking) != 0 &&
+                (device.characteristics & InputDeviceCharacteristics.Controller) == 0)
+                continue;
+            if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var on) || !on)
+                continue;
+            if (device.TryGetFeatureValue(CommonUsages.trackingState, out InputTrackingState state))
             {
-                tracked = true;
-                break;
+                if ((state & InputTrackingState.Position) == 0 || (state & InputTrackingState.Rotation) == 0)
+                    continue;
             }
-        }
-        if (!tracked) return false;
+            if (!device.TryGetFeatureValue(CommonUsages.devicePosition, out localPos) ||
+                !device.TryGetFeatureValue(CommonUsages.deviceRotation, out localRot))
+                continue;
 
-        // Action button: OpenXR parks the controller at the tracking origin while the headset
-        // is still up in the cabin — treat that as invalid.
-        var space = origin.CameraFloorOffsetObject != null
-            ? origin.CameraFloorOffsetObject.transform
-            : origin.transform;
-        var head = origin.Camera != null ? origin.Camera.transform.position : space.position + Vector3.up * 1.5f;
-        if (Vector3.Distance(controller.position, space.position) < 0.15f &&
-            Vector3.Distance(head, space.position) > 0.5f)
+            // devicePose is in the same space TrackedPoseDriver writes onto Camera Offset children.
+            var world = space.TransformPoint(localPos);
+            // Reject Origin / feet snaps (action button) — about one character-height under the head.
+            if (head.y - world.y > 0.75f)
+                return false;
+            if (world.y < space.position.y + 0.35f && head.y - space.position.y > 0.8f)
+                return false;
+            if (Vector3.Distance(world, space.position) < 0.25f && head.y - space.position.y > 0.8f)
+                return false;
+            if (Vector3.Distance(world, origin.transform.position) < 0.4f && head.y - origin.transform.position.y > 0.8f)
+                return false;
+
+            return true;
+        }
+
+        // Fallback: controller transform if the InputDevice list is empty (editor / mock).
+        var controller = FindNamed(origin, isLeft ? "Left Controller" : "Right Controller");
+        if (controller == null) return false;
+        if (head.y - controller.position.y > 0.75f) return false;
+        if (controller.position.y < space.position.y + 0.35f && head.y - space.position.y > 0.8f)
+            return false;
+        if (Vector3.Distance(controller.position, origin.transform.position) < 0.4f &&
+            head.y - origin.transform.position.y > 0.8f)
             return false;
 
+        localPos = space.InverseTransformPoint(controller.position);
+        localRot = Quaternion.Inverse(space.rotation) * controller.rotation;
         return true;
     }
 
@@ -493,6 +552,46 @@ public sealed class XrHandsRig : MonoBehaviour
             if (controller != null && !controller.gameObject.activeSelf)
                 controller.gameObject.SetActive(true);
         }
+
+        StripHandTrackingUnder(xrOrigin.transform);
+    }
+
+    static void StripHandTrackingUnder(Transform root)
+    {
+        if (root == null) return;
+        foreach (var driver in root.GetComponentsInChildren<XRHandSkeletonDriver>(true))
+        {
+            // ProjectHand already stripped its driver in Bind; anything else under Origin must go.
+            if (driver.GetComponentInParent<ControllerHandRig>(true) != null) continue;
+            driver.enabled = false;
+            Destroy(driver);
+        }
+        foreach (var events in root.GetComponentsInChildren<XRHandTrackingEvents>(true))
+        {
+            if (events.GetComponentInParent<ControllerHandRig>(true) != null) continue;
+            events.enabled = false;
+            Destroy(events);
+        }
+        foreach (var mesh in root.GetComponentsInChildren<XRHandMeshController>(true))
+        {
+            mesh.enabled = false;
+            Destroy(mesh);
+        }
+    }
+
+    static void SyncPokeToHand(XRPokeInteractor poke, Transform handAnchor, Transform indexTip)
+    {
+        if (poke == null) return;
+        if (indexTip != null && indexTip.gameObject.activeInHierarchy)
+        {
+            poke.transform.SetPositionAndRotation(indexTip.position, indexTip.rotation);
+            return;
+        }
+        if (handAnchor == null) return;
+        // Default poke sits slightly forward of the wrist toward the fingers (+Z of hand).
+        poke.transform.SetPositionAndRotation(
+            handAnchor.position + handAnchor.forward * 0.09f + handAnchor.up * -0.01f,
+            handAnchor.rotation);
     }
 
     void OnBeforeRender()
@@ -501,6 +600,8 @@ public sealed class XrHandsRig : MonoBehaviour
         if (!ready) return;
         ApplyAnchorOffset(leftAnchor, true);
         ApplyAnchorOffset(rightAnchor, false);
+        SyncPokeToHand(leftPoke, leftAnchor, null);
+        SyncPokeToHand(rightPoke, rightAnchor, rightIndexTip);
     }
 
     void OnEnable() => Application.onBeforeRender += OnBeforeRender;
@@ -517,8 +618,11 @@ public sealed class XrHandsRig : MonoBehaviour
         ApplyAnchorOffset(leftAnchor, true);
         ApplyAnchorOffset(rightAnchor, false);
 
-        // Touch point stays on the controller hand / poke. Do not drive the poke from XR Hands
-        // while holding a controller — that pulled the click off the grip and looked like a jump.
+        // Poke stays with the ProjectHand (device pose), not the Controller transform —
+        // otherwise action-button Origin snaps make tablet taps miss.
+        SyncPokeToHand(leftPoke, leftAnchor, null);
+        SyncPokeToHand(rightPoke, rightAnchor, rightIndexTip);
+
         var clickPoint = Vector3.zero;
         var hasClick = false;
         if (rightIndexTip != null && rightIndexTip.gameObject.activeInHierarchy)

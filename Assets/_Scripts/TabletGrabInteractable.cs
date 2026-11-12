@@ -18,39 +18,18 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
     [Range(-60f, 60f)] [SerializeField] float leftHoldTurn = 20f;
 
     Transform leftAttach;
-    MovementType rightMovementType = MovementType.VelocityTracking;
-
-    protected override void Awake()
-    {
-        base.Awake();
-        rightMovementType = movementType;
-    }
 
     protected override void OnSelectEntering(SelectEnterEventArgs args)
     {
         var left = IsLeftHand(args.interactorObject);
-        // Decided before the base grab, which reads these to set up the attach pose.
+        // Follow the hand directly while held — gravity is off for the grab duration.
         useDynamicAttach = !left;
+        movementType = MovementType.Instantaneous;
         if (left)
-        {
-            // Instantaneous + fixed attach: VelocityTracking fought the pose and the left hand lost it.
-            movementType = MovementType.Instantaneous;
             attachTransform = LeftAttach();
-        }
-        else
-        {
-            movementType = rightMovementType;
-            // Keep a previous left attach out of a right-hand grab.
-            if (attachTransform == leftAttach) attachTransform = null;
-        }
+        else if (attachTransform == leftAttach)
+            attachTransform = null;
         base.OnSelectEntering(args);
-    }
-
-    protected override void OnSelectExiting(SelectExitEventArgs args)
-    {
-        base.OnSelectExiting(args);
-        // Next grab starts from the default movement again unless it is another left grab.
-        if (!isSelected) movementType = rightMovementType;
     }
 
     static bool IsLeftHand(IXRInteractor interactor)
