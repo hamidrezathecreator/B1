@@ -342,6 +342,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var rig = GetComponent<XrHandsRig>();
         if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
         rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
+        rig.PreferHandTrackingWhenAvailable(true);
         rig.UseControllerModels(!showHandsOnControllers);
         rig.Setup(xrOrigin);
         ShowElevatorHint();
@@ -889,13 +890,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         var tablet = GameObject.Find("SM_Military_tablet");
         if (tablet == null) return;
-        var alreadyGrab = tablet.GetComponent<XRGrabInteractable>();
-        if (alreadyGrab != null)
-        {
-            alreadyGrab.interactionLayers = -1;
-            alreadyGrab.selectMode = InteractableSelectMode.Multiple;
-            return;
-        }
+
+        // An old XRGrabInteractable from a previous setup: replace it with the tablet grab.
+        var oldGrab = tablet.GetComponent<XRGrabInteractable>();
+        if (oldGrab != null && oldGrab is not TabletGrabInteractable)
+            Destroy(oldGrab);
 
         foreach (var child in tablet.GetComponentsInChildren<Transform>(true))
         {
@@ -920,11 +919,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         if (box == null) box = tablet.AddComponent<BoxCollider>();
         box.isTrigger = false;
         box.center = center;
-        // A flat tablet collider is paper thin and slipped through the floor; give it some depth.
+        // Thin tablets slip into the floor / table and get stuck; keep a usable grab thickness.
         var scale = tablet.transform.lossyScale;
-        size.x = Mathf.Max(size.x, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.x)));
-        size.y = Mathf.Max(size.y, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.y)));
-        size.z = Mathf.Max(size.z, 0.02f / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
+        size.x = Mathf.Max(size.x, 0.04f / Mathf.Max(0.0001f, Mathf.Abs(scale.x)));
+        size.y = Mathf.Max(size.y, 0.035f / Mathf.Max(0.0001f, Mathf.Abs(scale.y)));
+        size.z = Mathf.Max(size.z, 0.04f / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
         box.size = size;
 
         // Held in front of the chest the tablet hit the player's own body capsule and jittered or dropped.
@@ -937,41 +936,47 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var body = tablet.GetComponent<Rigidbody>();
         if (body == null) body = tablet.AddComponent<Rigidbody>();
         body.mass = 1.2f;
+        body.linearDamping = 0.4f;
+        body.angularDamping = 2.5f;
         // Rest on the table until grabbed — gravity was dropping it to the floor.
         body.useGravity = false;
         body.isKinematic = true;
         body.interpolation = RigidbodyInterpolation.Interpolate;
-        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
 
         // Bottom of the tablet exactly on the table top (its pivot is in the middle, so half of it
         // used to sit inside the table).
         Physics.SyncTransforms();
         SitOnTableTop(tablet, box, table);
 
-        var grab = tablet.AddComponent<TabletGrabInteractable>();
+        var grab = tablet.GetComponent<TabletGrabInteractable>();
+        if (grab == null) grab = tablet.AddComponent<TabletGrabInteractable>();
         grab.interactionLayers = -1;
         grab.selectMode = InteractableSelectMode.Multiple;
-        // Velocity tracking moves the tablet through physics, so the hand cannot push it into the table.
+        // Right hand: velocity tracking so it cannot be shoved into the table while held.
+        // Left hand switches to Instantaneous inside TabletGrabInteractable.
         grab.movementType = XRBaseInteractable.MovementType.VelocityTracking;
         grab.useDynamicAttach = true;
         grab.trackPosition = true;
         grab.trackRotation = true;
-        grab.throwOnDetach = true;
+        grab.throwOnDetach = false;
         grab.forceGravityOnDetach = true;
         // Only the tablet body is grabbable — LCD poke buttons stay separate for the other hand.
         grab.colliders.Clear();
         grab.colliders.Add(box);
+        NearOnlyGrabFilter.AddTo(grab, 0.35f);
+        grab.selectEntered.RemoveAllListeners();
+        grab.selectExited.RemoveAllListeners();
         grab.selectEntered.AddListener(_ =>
         {
             body.isKinematic = false;
             body.useGravity = false;
+            body.constraints = RigidbodyConstraints.None;
         });
         grab.selectExited.AddListener(_ =>
         {
             if (grab.isSelected) return;
-            body.isKinematic = false;
-            body.useGravity = true;
-            StartCoroutine(LiftOutOfTable(tablet, box, body));
+            StartCoroutine(SettleTabletAfterDrop(tablet, box, body));
         });
 
         AttachTabletLcdUi(tablet);
@@ -979,8 +984,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     }
 
     /// <summary>
-    /// If the tablet ever ends up under the floor or far away, put it back on the table so it
-    /// can always be picked up again.
+    /// If the tablet ever ends up under the floor, stuck inside a collider, or far away, put it
+    /// back on the table so it can always be picked up again.
     /// </summary>
     IEnumerator KeepTabletReachable(GameObject tablet, BoxCollider box, Rigidbody body, XRGrabInteractable grab)
     {
@@ -993,21 +998,18 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             var table = GameObject.Find("SM_Table");
             if (table == null || !TryTableTop(table, out var top, out var area)) continue;
 
+            // Stuck inside the floor / a prop: free it in place when possible.
+            if (IsEmbedded(box))
+            {
+                UnstickFromWorld(tablet, box, body);
+                if (!IsEmbedded(box)) continue;
+            }
+
             var y = box.bounds.center.y;
-            var lost = y < top - 1.2f || Vector3.Distance(tablet.transform.position, area.center) > 25f;
+            var lost = y < top - 0.6f || Vector3.Distance(tablet.transform.position, area.center) > 12f;
             if (!lost) continue;
 
-            if (!body.isKinematic)
-            {
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
-            }
-            body.isKinematic = true;
-            body.useGravity = false;
-            tablet.transform.SetPositionAndRotation(
-                new Vector3(area.center.x, top + 0.05f, area.center.z), Quaternion.Euler(0f, 180f, 90f));
-            Physics.SyncTransforms();
-            SitOnTableTop(tablet, box, table);
+            ReturnTabletToTable(tablet, box, body, table, area, top);
         }
     }
 
@@ -1021,32 +1023,110 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var over = b.center.x >= area.min.x && b.center.x <= area.max.x &&
                    b.center.z >= area.min.z && b.center.z <= area.max.z;
         if (!over) return;
-        tablet.transform.position += Vector3.up * (top + 0.003f - b.min.y);
+        tablet.transform.position += Vector3.up * (top + 0.005f - b.min.y);
     }
 
     /// <summary>
-    /// After a release the tablet may be partly inside the table (pushed there while held).
-    /// If so, lift it onto the top instead of letting physics shove it through.
+    /// After a drop: pull the tablet out of any solid it sank into (table, floor, ENV boxes),
+    /// then let gravity take over. Without this it often wedged inside a collider and could not
+    /// be grabbed again.
     /// </summary>
-    IEnumerator LiftOutOfTable(GameObject tablet, BoxCollider tabletBox, Rigidbody body)
+    IEnumerator SettleTabletAfterDrop(GameObject tablet, BoxCollider tabletBox, Rigidbody body)
     {
-        yield return new WaitForFixedUpdate();
+        if (tablet == null || tabletBox == null || body == null) yield break;
+
+        body.isKinematic = true;
+        body.useGravity = false;
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+
         var table = GameObject.Find("SM_Table");
-        if (tablet == null || tabletBox == null || table == null) yield break;
-        if (!TryTableTop(table, out var top, out var area)) yield break;
+        if (table != null && TryTableTop(table, out var top, out var area))
+        {
+            var b = tabletBox.bounds;
+            var over = b.center.x >= area.min.x && b.center.x <= area.max.x &&
+                       b.center.z >= area.min.z && b.center.z <= area.max.z;
+            if (over && b.min.y < top + 0.02f)
+                tablet.transform.position += Vector3.up * (top + 0.008f - b.min.y);
+        }
 
-        var b = tabletBox.bounds;
-        var over = b.center.x >= area.min.x && b.center.x <= area.max.x &&
-                   b.center.z >= area.min.z && b.center.z <= area.max.z;
-        if (!over || b.min.y >= top - 0.005f || b.center.y < area.min.y) yield break;
+        for (var i = 0; i < 8; i++)
+        {
+            if (!UnstickFromWorld(tablet, tabletBox, body)) break;
+            yield return new WaitForFixedUpdate();
+        }
 
+        Physics.SyncTransforms();
+        body.isKinematic = false;
+        body.useGravity = true;
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+    }
+
+    static void ReturnTabletToTable(GameObject tablet, BoxCollider box, Rigidbody body, GameObject table,
+        Bounds area, float top)
+    {
         if (!body.isKinematic)
         {
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
         }
-        tablet.transform.position += Vector3.up * (top + 0.003f - b.min.y);
+        body.isKinematic = true;
+        body.useGravity = false;
+        tablet.transform.SetPositionAndRotation(
+            new Vector3(area.center.x, top + 0.05f, area.center.z), Quaternion.Euler(0f, 180f, 90f));
         Physics.SyncTransforms();
+        SitOnTableTop(tablet, box, table);
+        UnstickFromWorld(tablet, box, body);
+    }
+
+    /// <summary>True when the tablet overlaps a solid collider that is not itself.</summary>
+    static bool IsEmbedded(BoxCollider box)
+    {
+        if (box == null) return false;
+        var hits = Physics.OverlapBox(box.bounds.center, box.bounds.extents * 0.95f, box.transform.rotation,
+            ~0, QueryTriggerInteraction.Ignore);
+        foreach (var hit in hits)
+        {
+            if (hit == null || hit == box) continue;
+            if (hit.transform.IsChildOf(box.transform) || box.transform.IsChildOf(hit.transform)) continue;
+            if (Physics.ComputePenetration(box, box.transform.position, box.transform.rotation,
+                    hit, hit.transform.position, hit.transform.rotation, out _, out var distance) &&
+                distance > 0.002f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Separates the tablet from every overlapping solid. Returns true if it moved.</summary>
+    static bool UnstickFromWorld(GameObject tablet, BoxCollider box, Rigidbody body)
+    {
+        if (tablet == null || box == null) return false;
+        Physics.SyncTransforms();
+        var moved = false;
+        var hits = Physics.OverlapBox(box.bounds.center, box.bounds.extents, box.transform.rotation,
+            ~0, QueryTriggerInteraction.Ignore);
+        foreach (var hit in hits)
+        {
+            if (hit == null || hit == box) continue;
+            if (hit.transform.IsChildOf(tablet.transform) || tablet.transform.IsChildOf(hit.transform)) continue;
+            if (!Physics.ComputePenetration(box, tablet.transform.position, tablet.transform.rotation,
+                    hit, hit.transform.position, hit.transform.rotation, out var direction, out var distance))
+                continue;
+            if (distance < 0.001f) continue;
+            tablet.transform.position += direction * (distance + 0.01f);
+            moved = true;
+        }
+        if (moved)
+        {
+            if (body != null && !body.isKinematic)
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+            }
+            Physics.SyncTransforms();
+        }
+        return moved;
     }
 
     static bool TryTableTop(GameObject table, out float top, out Bounds area)

@@ -33,7 +33,9 @@ public sealed class XrHandsRig : MonoBehaviour
     Transform rightAnchor;
     bool ready;
     bool controllerModels;
+    bool preferHandTrackingWhenAvailable;
 
+    public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
     /// <summary>
     /// Show the normal controller models instead of hands. Pokes and the right fingertip touch
     /// still work, from the controller's poke point. Call before <see cref="Setup"/>.
@@ -211,8 +213,7 @@ public sealed class XrHandsRig : MonoBehaviour
         rigRoot.position += anchor.position - wrist.position;
 
         var meshObject = new GameObject("Hand Mesh");
-        // Keep the baked visual under the skeleton when it switches to XR hand tracking.
-        meshObject.transform.SetParent(rigRoot, true);
+        meshObject.transform.SetParent(anchor, false);
         meshObject.AddComponent<MeshFilter>();
         var renderer = meshObject.AddComponent<MeshRenderer>();
         var skin = BlueHandMaterial();
@@ -223,6 +224,7 @@ public sealed class XrHandsRig : MonoBehaviour
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
         rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, TrackingSpace(origin));
+        rig.PreferHandTrackingWhenAvailable(preferHandTrackingWhenAvailable);
         indexTip = rig.IndexTip;
 
         Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +

@@ -54,15 +54,22 @@ public sealed class ControllerHandRig : MonoBehaviour
 
     Transform rigRoot;
     Transform trackingSpace;
+    Transform wristTransform;
+    Transform wristOriginalParent;
+    Vector3 wristOriginalLocalPosition;
+    Quaternion wristOriginalLocalRotation;
     Vector3 rigOnControllerPosition;
     Quaternion rigOnControllerRotation;
     XRHandSkeletonDriver driver;
     XRHandTrackingEvents trackingEvents;
     bool tracked;
+    bool preferHandTrackingWhenAvailable;
 
     public Transform IndexTip { get; private set; }
     public int FingerBoneCount => bones.Count;
     public bool IsHandTracked => tracked;
+
+    public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
 
     /// <param name="rig">Root of the hidden rig, already placed so its wrist sits on this anchor.</param>
     /// <param name="handTrackingSpace">XR Origin camera offset; XR Hands poses are relative to it.</param>
@@ -86,6 +93,13 @@ public sealed class ControllerHandRig : MonoBehaviour
 
         driver = rigRoot.GetComponentInChildren<XRHandSkeletonDriver>(true);
         trackingEvents = rigRoot.GetComponentInChildren<XRHandTrackingEvents>(true);
+        wristTransform = driver != null && driver.rootTransform != null ? driver.rootTransform : skinned.rootBone;
+        if (wristTransform != null)
+        {
+            wristOriginalParent = wristTransform.parent;
+            wristOriginalLocalPosition = wristTransform.localPosition;
+            wristOriginalLocalRotation = wristTransform.localRotation;
+        }
         if (driver != null) driver.enabled = false;
         if (trackingEvents != null) trackingEvents.enabled = false;
 
@@ -213,15 +227,16 @@ public sealed class ControllerHandRig : MonoBehaviour
     {
         if (driver == null || trackingEvents == null || trackingSpace == null) return false;
 
-        // Quest can report a tracked hand while the controller is still held; the controller
-        // wins, otherwise the hand jumps between the two (e.g. when pressing the trigger).
-        InputDevices.GetDevicesWithCharacteristics(
-            InputDeviceCharacteristics.Controller |
-            (leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right), devices);
-        foreach (var device in devices)
+        if (!preferHandTrackingWhenAvailable)
         {
-            if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var controllerTracked) || controllerTracked)
-                return false;
+            InputDevices.GetDevicesWithCharacteristics(
+                InputDeviceCharacteristics.Controller |
+                (leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right), devices);
+            foreach (var device in devices)
+            {
+                if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var controllerTracked) || controllerTracked)
+                    return false;
+            }
         }
 
         SubsystemManager.GetSubsystems(handSubsystems);
@@ -237,10 +252,16 @@ public sealed class ControllerHandRig : MonoBehaviour
     void EnterHandTracking()
     {
         tracked = true;
-        // XR Hands writes the wrist pose relative to the rig root, in tracking space.
+        // XRHandSkeletonDriver applies the wrist pose locally, so its parent must be tracking space.
         rigRoot.SetParent(trackingSpace, false);
         rigRoot.localPosition = Vector3.zero;
         rigRoot.localRotation = Quaternion.identity;
+        if (wristTransform != null)
+        {
+            wristTransform.SetParent(trackingSpace, false);
+            wristTransform.localPosition = Vector3.zero;
+            wristTransform.localRotation = Quaternion.identity;
+        }
         trackingEvents.enabled = true;
         driver.enabled = true;
     }
@@ -257,6 +278,12 @@ public sealed class ControllerHandRig : MonoBehaviour
             if (pose.transform == null) continue;
             pose.transform.localPosition = pose.position;
             pose.transform.localRotation = pose.rotation;
+        }
+        if (wristTransform != null && wristOriginalParent != null)
+        {
+            wristTransform.SetParent(wristOriginalParent, false);
+            wristTransform.localPosition = wristOriginalLocalPosition;
+            wristTransform.localRotation = wristOriginalLocalRotation;
         }
         rigRoot.SetParent(transform, false);
         rigRoot.localPosition = rigOnControllerPosition;
@@ -291,6 +318,12 @@ public sealed class ControllerHandRig : MonoBehaviour
     void OnDestroy()
     {
         if (baked != null) Destroy(baked);
+        if (wristTransform != null && wristOriginalParent != null && wristTransform.parent != wristOriginalParent)
+        {
+            wristTransform.SetParent(wristOriginalParent, false);
+            wristTransform.localPosition = wristOriginalLocalPosition;
+            wristTransform.localRotation = wristOriginalLocalRotation;
+        }
         if (rigRoot != null && rigRoot.parent != transform) Destroy(rigRoot.gameObject);
     }
 }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 /// <summary>
 /// Tablet grab: the left hand holds it in a fixed pose, screen toward the player and beside the
@@ -10,28 +11,58 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
 {
     [Header("Left hand hold")]
     [Tooltip("Screen centre relative to the left controller, meters: x right, y up, z forward.")]
-    [SerializeField] Vector3 leftHoldOffset = new Vector3(0.1f, 0.04f, 0.08f);
+    [SerializeField] Vector3 leftHoldOffset = new Vector3(0.12f, 0.05f, 0.1f);
     [Tooltip("Tilts the screen up toward the face, degrees.")]
-    [Range(0f, 80f)] [SerializeField] float leftHoldTilt = 35f;
+    [Range(0f, 80f)] [SerializeField] float leftHoldTilt = 40f;
     [Tooltip("Turns the screen in toward the middle of the body, degrees.")]
-    [Range(-60f, 60f)] [SerializeField] float leftHoldTurn = 15f;
+    [Range(-60f, 60f)] [SerializeField] float leftHoldTurn = 20f;
 
     Transform leftAttach;
+    MovementType rightMovementType = MovementType.VelocityTracking;
+
+    protected override void Awake()
+    {
+        base.Awake();
+        rightMovementType = movementType;
+    }
 
     protected override void OnSelectEntering(SelectEnterEventArgs args)
     {
-        var left = IsLeftHand(args.interactorObject != null ? args.interactorObject.transform : null);
+        var left = IsLeftHand(args.interactorObject);
         // Decided before the base grab, which reads these to set up the attach pose.
         useDynamicAttach = !left;
-        // Left only: the right hand's grab uses its own touch point, and the left hand may still hold on.
-        if (left) attachTransform = LeftAttach();
+        if (left)
+        {
+            // Instantaneous + fixed attach: VelocityTracking fought the pose and the left hand lost it.
+            movementType = MovementType.Instantaneous;
+            attachTransform = LeftAttach();
+        }
+        else
+        {
+            movementType = rightMovementType;
+            // Keep a previous left attach out of a right-hand grab.
+            if (attachTransform == leftAttach) attachTransform = null;
+        }
         base.OnSelectEntering(args);
     }
 
-    static bool IsLeftHand(Transform interactor)
+    protected override void OnSelectExiting(SelectExitEventArgs args)
     {
-        for (var t = interactor; t != null; t = t.parent)
-            if (t.name.Contains("Left")) return true;
+        base.OnSelectExiting(args);
+        // Next grab starts from the default movement again unless it is another left grab.
+        if (!isSelected) movementType = rightMovementType;
+    }
+
+    static bool IsLeftHand(IXRInteractor interactor)
+    {
+        if (interactor == null) return false;
+        // Near-Far / poke / ray under the left controller all count as the left hand.
+        for (var t = interactor.transform; t != null; t = t.parent)
+        {
+            var n = t.name;
+            if (n.IndexOf("Left", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (n.IndexOf("Right", System.StringComparison.OrdinalIgnoreCase) >= 0) return false;
+        }
         return false;
     }
 
@@ -62,6 +93,12 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
             toViewer = transform.up;
             up = transform.forward;
         }
+
+        if (toViewer.sqrMagnitude < 1e-6f) toViewer = Vector3.up;
+        if (up.sqrMagnitude < 1e-6f) up = Vector3.forward;
+        toViewer.Normalize();
+        up = Vector3.ProjectOnPlane(up, toViewer).normalized;
+        if (up.sqrMagnitude < 1e-6f) up = Vector3.Cross(toViewer, Vector3.right).normalized;
 
         // Wanted, in the controller's frame: screen toward the player, tilted up and turned inward.
         var wanted = Quaternion.Euler(leftHoldTilt, -leftHoldTurn, 0f);
