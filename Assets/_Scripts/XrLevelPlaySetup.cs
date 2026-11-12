@@ -41,11 +41,17 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [Tooltip("Hint above the right controller until the first launch button is pressed. Empty = no hint.")]
     [SerializeField] string launchHintMessage = "برو روی دکمه لانچر بزن";
 
+    [Header("Music")]
+    [Tooltip("Looped level music. Empty = Resources/Audio/Lvl3Music.")]
+    [SerializeField] AudioClip music;
+    [Range(0f, 1f)] [SerializeField] float musicVolume = 0.35f;
+
     XROrigin origin;
     HandHintBanner launchHint;
 
     void Start()
     {
+        PlayMusic();
         origin = FindAnyObjectByType<XROrigin>();
         if (origin == null) return;
 
@@ -72,6 +78,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
         MissileLaunchButton.AutoWireScene();
+        LaserWeaponScope.SetupByName("LaserWeapon", "SM_LaserWeapon");
 
         if (beaconObjectNames != null)
         {
@@ -89,6 +96,19 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         }
 
         ShowLaunchHint();
+    }
+
+    void PlayMusic()
+    {
+        var clip = music != null ? music : Resources.Load<AudioClip>("Audio/Lvl3Music");
+        if (clip == null) return;
+        var source = gameObject.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.loop = true;
+        source.playOnAwake = false;
+        source.spatialBlend = 0f;
+        source.volume = musicVolume;
+        source.Play();
     }
 
     void ShowLaunchHint()

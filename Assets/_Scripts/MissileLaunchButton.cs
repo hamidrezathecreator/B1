@@ -28,6 +28,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
     [Tooltip("Start point. Empty = where the object already is.")]
     [SerializeField] Transform pointA;
     [SerializeField] Transform pointB;
+    [Tooltip("Flight time from Point A to Point B in seconds. Higher = slower.")]
     [Min(0.1f)] [SerializeField] float travelSeconds = 3f;
     [Tooltip("Speeds up over the flight like a launch, instead of a constant speed.")]
     [SerializeField] bool accelerate = true;
@@ -48,6 +49,11 @@ public sealed class MissileLaunchButton : MonoBehaviour
     [SerializeField] GameObject smokePrefab;
     [Tooltip("1 = sized to the object automatically. Raise or lower to taste.")]
     [Min(0.1f)] [SerializeField] float smokeSize = 1f;
+
+    [Header("Sound")]
+    [Tooltip("Played at the object when it launches. Empty = Resources/Audio/RocketLaunch.")]
+    [SerializeField] AudioClip launchSound;
+    [Range(0f, 1f)] [SerializeField] float launchVolume = 1f;
 
     [Header("Events")]
     public UnityEvent onPressed;
@@ -272,7 +278,6 @@ public sealed class MissileLaunchButton : MonoBehaviour
     {
         if (busy) return;
         if (launchOnlyOnce && launched) return;
-        ButtonClickSound.Play();
         StartCoroutine(PressAndLaunch());
     }
 
@@ -342,6 +347,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
         var trailRotation = Quaternion.LookRotation(-travelDir, upHint);
         if (groundSmoke)
             LaunchSmoke.CreateGroundBurst(target.position + tailOffset, scale);
+        PlayLaunchSound(target.position);
 
         Transform emitter = null;
         ParticleSystem trail = null;
@@ -381,6 +387,23 @@ public sealed class MissileLaunchButton : MonoBehaviour
 
         if (hideAtPointB)
             movingObject.SetActive(false);
+    }
+
+    void PlayLaunchSound(Vector3 at)
+    {
+        var clip = launchSound != null ? launchSound : Resources.Load<AudioClip>("Audio/RocketLaunch");
+        if (clip == null) return;
+        var go = new GameObject("Rocket Launch Sound");
+        go.transform.position = at;
+        var source = go.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.volume = launchVolume;
+        // Mostly 3D so it comes from the launcher, but still loud from across the base.
+        source.spatialBlend = 0.7f;
+        source.minDistance = 15f;
+        source.maxDistance = 400f;
+        source.Play();
+        Destroy(go, clip.length + 0.5f);
     }
 
     float SmokeScale(Transform target)

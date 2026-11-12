@@ -4335,9 +4335,9 @@ MonoBehaviour:
   pathStopBeforeTable: 0.45
   pathStraightFraction: 0.5
   elevatorSound: {fileID: 8300000, guid: d89c2adf7b0dccf4fb40eca6e2d592ab, type: 3}
-  elevatorVolume: 1
+  elevatorVolume: 0.592
   tunnelMusic: {fileID: 8300000, guid: 958f1c8b7c80c4342b0c00b982adb265, type: 3}
-  tunnelVolume: 0.484
+  tunnelVolume: 0.359
   musicCrossfadeSeconds: 1.5
   nextSceneName: LVL3_MissileLaunch
   delayAfterClicks: 5
