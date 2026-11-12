@@ -86,6 +86,15 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Tooltip("How much of the forward distance to the table is walked straight before the bend.")]
     [Range(0.1f, 0.9f)] [SerializeField] float pathStraightFraction = 0.5f;
 
+    [Header("Sound")]
+    [Tooltip("Plays from the start, looped, until the cabin arrives.")]
+    [SerializeField] AudioClip elevatorSound;
+    [Range(0f, 1f)] [SerializeField] float elevatorVolume = 1f;
+    [Tooltip("Tunnel music, faded in when the cabin arrives. A scene Audio Source already using this clip is reused.")]
+    [SerializeField] AudioClip tunnelMusic;
+    [Range(0f, 1f)] [SerializeField] float tunnelVolume = 0.5f;
+    [Min(0f)] [SerializeField] float musicCrossfadeSeconds = 1.5f;
+
     [Header("After all three tablet options are checked")]
     [SerializeField] string nextSceneName = "LVL3_MissileLaunch";
     [Min(0f)] [SerializeField] float delayAfterClicks = 5f;
@@ -104,6 +113,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     Vector3 elevatorRestPosition;
     bool started;
     bool floorPressed;
+    AudioSource elevatorAudio;
+    AudioSource tunnelAudio;
 
     void Start()
     {
@@ -111,6 +122,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         started = true;
 
         ResolveRefs();
+        StartElevatorSound();
         // Do not plant to tunnel floor / BridgeDeckLock here — that left the player
         // floating high while the cabin dropped for the ride.
         if (xrOrigin != null)
@@ -827,6 +839,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (floorPressed) return;
         floorPressed = true;
+        ButtonClickSound.Play();
         if (handHint != null)
         {
             handHint.Hide();
@@ -1163,6 +1176,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             elevatorRoot.position = end;
         }
 
+        StartCoroutine(CrossfadeToTunnelMusic());
+
         var remaining = doorDelaySeconds - rideSeconds;
         if (remaining > 0f)
             yield return new WaitForSecondsRealtime(remaining);
@@ -1263,6 +1278,64 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         // Visible floor: the hidden teleport pads and the tunnel floor planes are not at the same height.
         FloorPathGuide.Create(points, xrOrigin != null ? xrOrigin.transform : null, true,
             table.GetComponentsInChildren<Collider>());
+    }
+
+    void StartElevatorSound()
+    {
+        // The scene's tunnel music plays on awake; hold it back until the cabin arrives.
+        if (tunnelMusic != null)
+        {
+            foreach (var source in FindObjectsByType<AudioSource>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (source.clip != tunnelMusic && source.resource != tunnelMusic) continue;
+                source.Stop();
+                if (tunnelAudio == null) tunnelAudio = source;
+                else source.enabled = false;
+            }
+        }
+
+        if (elevatorSound == null) return;
+        elevatorAudio = CreateMusicSource("Elevator Sound", elevatorSound);
+        elevatorAudio.volume = elevatorVolume;
+        elevatorAudio.Play();
+    }
+
+    IEnumerator CrossfadeToTunnelMusic()
+    {
+        if (tunnelMusic != null)
+        {
+            if (tunnelAudio == null) tunnelAudio = CreateMusicSource("Tunnel Music", tunnelMusic);
+            tunnelAudio.resource = tunnelMusic;
+            tunnelAudio.loop = true;
+            tunnelAudio.volume = 0f;
+            tunnelAudio.Play();
+        }
+
+        var elevatorStart = elevatorAudio != null ? elevatorAudio.volume : 0f;
+        var elapsed = 0f;
+        while (elapsed < musicCrossfadeSeconds)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            var t = Mathf.Clamp01(elapsed / musicCrossfadeSeconds);
+            if (elevatorAudio != null) elevatorAudio.volume = Mathf.Lerp(elevatorStart, 0f, t);
+            if (tunnelAudio != null) tunnelAudio.volume = Mathf.Lerp(0f, tunnelVolume, t);
+            yield return null;
+        }
+
+        if (elevatorAudio != null) elevatorAudio.Stop();
+        if (tunnelAudio != null) tunnelAudio.volume = tunnelVolume;
+    }
+
+    AudioSource CreateMusicSource(string sourceName, AudioClip clip)
+    {
+        var go = new GameObject(sourceName);
+        go.transform.SetParent(transform, false);
+        var source = go.AddComponent<AudioSource>();
+        source.clip = clip;
+        source.loop = true;
+        source.playOnAwake = false;
+        source.spatialBlend = 0f;
+        return source;
     }
 
     IEnumerator AnimateDoorsOpen()

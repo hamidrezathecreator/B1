@@ -12,8 +12,15 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     /// <summary>One notification per arriving missile, independent of quad playback.</summary>
     public static event System.Action<MissileLauncherSystem, Vector3> MissileImpacted;
 
+    /// <summary>Raised whenever Fire is called (e.g. from a Timeline signal), even if the salvo cannot launch.</summary>
+    public static event System.Action<MissileLauncherSystem> FireRequested;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetImpactEvent() => MissileImpacted = null;
+    private static void ResetImpactEvent()
+    {
+        MissileImpacted = null;
+        FireRequested = null;
+    }
 
     [Header("Flight")]
     [Tooltip("Missile prefab assets. Each shot randomly picks one of the non-empty entries.")]
@@ -96,6 +103,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [ContextMenu("Fire Missiles")]
     public void Fire()
     {
+        if (isActiveAndEnabled) FireRequested?.Invoke(this);
         if (!isActiveAndEnabled || !ValidatePrefab()) return;
         if (pointB == null || missilePrefabs == null || missilePrefabs.Length == 0)
         {
@@ -116,10 +124,30 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         int currentRun = runId;
         onStarted.Invoke();
         if (currentRun != runId) return;
-        StartCoroutine(LaunchRoutine(availablePrefabs, endCenter, count, currentRun));
+        StartCoroutine(LaunchRoutine(availablePrefabs, endCenter, count, currentRun, null));
     }
 
-    private IEnumerator LaunchRoutine(List<GameObject> availablePrefabs, Vector3 endCenter, int count, int currentRun)
+    /// <summary>Flight time of one missile, from launch to impact.</summary>
+    public float FlightDuration => Mathf.Max(0.01f, flightDuration);
+
+    /// <summary>Launches a single missile at an exact point; Point B and the endpoint radius are not used.</summary>
+    public void FireAt(Vector3 point, System.Action<Vector3> arrived = null)
+    {
+        if (!isActiveAndEnabled || missilePrefabs == null) return;
+        var availablePrefabs = new List<GameObject>();
+        foreach (var prefab in missilePrefabs)
+            if (prefab != null) availablePrefabs.Add(prefab);
+        if (availablePrefabs.Count == 0)
+        {
+            Debug.LogWarning("MissileLauncherSystem needs at least one assigned missile prefab.", this);
+            return;
+        }
+        flights.RemoveAll(flight => !flight.isAlive);
+        StartCoroutine(LaunchRoutine(availablePrefabs, point, 1, runId, arrived, true));
+    }
+
+    private IEnumerator LaunchRoutine(List<GameObject> availablePrefabs, Vector3 endCenter, int count, int currentRun,
+        System.Action<Vector3> arrived, bool exactPoint = false)
     {
         // Each invocation owns its completion count; overlapping salvos cannot overwrite it.
         int remaining = count;
@@ -139,7 +167,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
                 Random.Range(-Mathf.Abs(launchRandomness.x), Mathf.Abs(launchRandomness.x)),
                 Random.Range(-Mathf.Abs(launchRandomness.y), Mathf.Abs(launchRandomness.y)),
                 Random.Range(-Mathf.Abs(launchRandomness.z), Mathf.Abs(launchRandomness.z)));
-            Vector2 endOffset = Random.insideUnitCircle * Mathf.Max(0f, endPointRadius);
+            Vector2 endOffset = exactPoint ? Vector2.zero : Random.insideUnitCircle * Mathf.Max(0f, endPointRadius);
             Vector3 destination = endCenter + new Vector3(endOffset.x, 0f, endOffset.y);
             Vector3 direction = destination - start;
             float duration = Mathf.Max(0.01f, flightDuration);
@@ -164,6 +192,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
                     Destroy(missile);
                     if (currentRun != runId) return;
                     HandleArrival(destination);
+                    arrived?.Invoke(destination);
                 }
                 if (currentRun == runId && --remaining == 0) onCompleted.Invoke();
             }));

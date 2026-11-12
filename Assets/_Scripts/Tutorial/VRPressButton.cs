@@ -48,6 +48,7 @@ public sealed class VRPressButton : XRBaseInteractable
         base.OnSelectEntered(args);
         if (hasBeenPressed) return;
         hasBeenPressed = true;
+        ButtonClickSound.Play();
         Vector3 direction = localPressDirection.sqrMagnitude > 0.0001f ? localPressDirection.normalized : Vector3.down;
         pressTransform.localPosition = startLocalPosition + direction * pressDistance;
         pressed?.Invoke();

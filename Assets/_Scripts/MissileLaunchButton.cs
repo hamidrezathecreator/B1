@@ -272,6 +272,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
     {
         if (busy) return;
         if (launchOnlyOnce && launched) return;
+        ButtonClickSound.Play();
         StartCoroutine(PressAndLaunch());
     }
 

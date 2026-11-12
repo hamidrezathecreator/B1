@@ -9,6 +9,8 @@ public sealed class ExplosionScatter : MonoBehaviour
     [SerializeField] private Transform[] pieces = new Transform[0];
     [SerializeField] private Transform launchPoint;
     [SerializeField] private Transform groundPoint;
+    [Tooltip("Pieces with these names (or under an object with these names) never move, even if listed above.")]
+    [SerializeField] private string[] stayStillNames = { "Topology" };
 
     [Header("Random Areas")]
     [Min(0f)] [SerializeField] private float launchRadius = 1f;
@@ -40,6 +42,24 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     private void Awake() => CacheStartState();
 
+    /// <summary>Sets the pieces from code (for a scatter added at runtime) and remembers where they start.</summary>
+    public void Configure(Transform[] newPieces, Transform blastCenter, float throwRadius, float landRadius,
+        float height, LayerMask ground)
+    {
+        StopActiveTweens();
+        pieces = newPieces ?? new Transform[0];
+        launchPoint = blastCenter;
+        launchRadius = throwRadius;
+        landingRadius = landRadius;
+        launchHeight = height;
+        groundLayers = ground;
+        raycastHeight = Mathf.Max(raycastHeight, 500f);
+        gatherAtGroundPoint = false;
+        partialExplosionStep = 0;
+        nextPieceIndex = 0;
+        CacheStartState();
+    }
+
     [ContextMenu("Test Explosion")]
     public void Explode()
     {
@@ -51,6 +71,18 @@ public sealed class ExplosionScatter : MonoBehaviour
         nextPieceIndex = pieces.Length;
         for (int i = 0; i < pieces.Length; i++)
             ExplodePiece(pieces[i]);
+    }
+
+    /// <summary>Throws every piece not yet thrown, all at once. Later calls do nothing until ResetExplosion.</summary>
+    [ContextMenu("Test Explode Once")]
+    public void ExplodeOnce()
+    {
+        if (!HasSetup()) return;
+        if (partialExplosionStep >= 4) return;
+
+        partialExplosionStep = 4;
+        while (nextPieceIndex < pieces.Length)
+            ExplodePiece(pieces[nextPieceIndex++]);
     }
 
     [ContextMenu("Test Partial Explosion")]
@@ -69,7 +101,7 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     private void ExplodePiece(Transform piece)
     {
-        if (piece == null) return;
+        if (piece == null || StaysStill(piece)) return;
         Vector3 start = piece.position;
         Vector2 launchOffset = Random.insideUnitCircle * launchRadius;
         // Rise from each piece's own position instead of converging on the launch point.
@@ -96,6 +128,15 @@ public sealed class ExplosionScatter : MonoBehaviour
                     Quaternion.SlerpUnclamped(apexRotation, endRotation, t));
             }, ease: fallEase));
         activeTweens.Add(sequence);
+    }
+
+    private bool StaysStill(Transform piece)
+    {
+        if (stayStillNames == null) return false;
+        for (Transform t = piece; t != null; t = t.parent)
+            foreach (string name in stayStillNames)
+                if (!string.IsNullOrEmpty(name) && t.name == name) return true;
+        return false;
     }
 
     [ContextMenu("Reset Explosion")]

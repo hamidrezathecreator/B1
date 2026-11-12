@@ -37,6 +37,7 @@ public sealed class MissileLauncherButtons : MonoBehaviour
     public void PressRotate()
     {
         if (!isActiveAndEnabled || !rotateAllowed) return;
+        ButtonClickSound.Play();
         DisableButtons();
         rotatePressed.Invoke();
     }
@@ -45,6 +46,7 @@ public sealed class MissileLauncherButtons : MonoBehaviour
     public void PressFire()
     {
         if (!isActiveAndEnabled || !fireAllowed) return;
+        ButtonClickSound.Play();
         DisableButtons();
         firePressed.Invoke();
     }

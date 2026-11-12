@@ -38,6 +38,11 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         new Target { intactName = "SM_Luncher01 (3)", delay = 3f },
     };
 
+    [Header("Fighter jet")]
+    [Tooltip("When a target's time comes, this jet fires a missile at it and the target blows up on the hit. " +
+             "Empty = the first Fighter Jet Flight in the scene; no jet = targets blow up on their own.")]
+    [SerializeField] FighterJetFlight jet;
+
     [Header("Effects")]
     [Tooltip("Explosion prefab, e.g. DAVFX Explosion 13. Empty = built-in fiery burst.")]
     [SerializeField] GameObject explosionPrefab;
@@ -99,6 +104,20 @@ public sealed class ExplodeAndSwap : MonoBehaviour
 
         var bounds = WorldBounds(reference);
         var center = bounds.center;
+
+        if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
+        if (jet != null && jet.isActiveAndEnabled)
+        {
+            var hit = false;
+            var timeout = jet.MissileFlightSeconds + 1f;
+            jet.FireMissileAt(center, () => hit = true);
+            // The jet may be switched off mid-flight; the target still blows up.
+            while (!hit && timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+        }
 
         if (explosionPrefab != null)
         {

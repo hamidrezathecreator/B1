@@ -222,6 +222,7 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         if (Time.unscaledTime - lastToggleTime[index] < retouchDelay) return;
 
         lastToggleTime[index] = Time.unscaledTime;
+        ButtonClickSound.Play();
         optionActive[index] = !optionActive[index];
         var tex = optionActive[index] ? activeTextures[index] : inactiveTextures[index];
         if (tex != null)

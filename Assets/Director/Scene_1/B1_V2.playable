@@ -428,10 +428,10 @@ MonoBehaviour:
   m_Children: []
   m_Clips:
   - m_Version: 1
-    m_Start: 12.566666666666668
+    m_Start: 5
     m_ClipIn: 0
     m_Asset: {fileID: -2019923284283491762}
-    m_Duration: 29.32210884353742
+    m_Duration: 36.88877551020409
     m_TimeScale: 1
     m_ParentTrack: {fileID: -4353129395384996570}
     m_EaseInDuration: 0

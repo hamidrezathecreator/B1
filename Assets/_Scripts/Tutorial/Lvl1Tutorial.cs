@@ -119,6 +119,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (destroyedBridge == null)
             Debug.LogWarning("Lvl1Tutorial: no destroyed bridge named " + destroyedBridgeName + ".", this);
         SetBridgeDestroyed(false);
+        if (GetComponentInChildren<SecondMissileStrike>() == null) SecondMissileStrike.Create(transform);
 
         // Let the first-scene setup (floor, body) finish first.
         yield return null;
@@ -297,8 +298,22 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
         var director = FindDirector();
         SetBridgeDestroyed(true);
-        if (director != null)
+        if (director != null && director.playOnAwake)
         {
+            // Play On Awake: the timeline already started with the scene, so it is not restarted here.
+            var sinceSnap = 0f;
+            while (sinceSnap < fallAtTimelineSeconds)
+            {
+                sinceSnap += Time.deltaTime;
+                if (sinceSnap >= doneMessageSeconds) HideBanner();
+                yield return null;
+            }
+        }
+        else if (director != null)
+        {
+            // Fresh pieces: every Timeline signal throws its share again from the start.
+            ResetScatters();
+            director.Stop();
             director.time = 0;
             director.Play();
             StartCoroutine(ExplosionAfterDelay());
@@ -395,6 +410,12 @@ public sealed class Lvl1Tutorial : MonoBehaviour
                 if (t.name == name && t.gameObject.scene.IsValid()) return t.gameObject;
         }
         return null;
+    }
+
+    static void ResetScatters()
+    {
+        foreach (var scatter in FindObjectsByType<ExplosionScatter>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (scatter.gameObject.scene.IsValid()) scatter.ResetExplosion();
     }
 
     IEnumerator ExplosionAfterDelay()
