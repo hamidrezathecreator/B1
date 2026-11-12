@@ -16875,6 +16875,8 @@ PlayableDirector:
     value: {fileID: 2103559442}
   - key: {fileID: -3778399433528389451, guid: 6d74b13daf24e104b9babded9749682d, type: 2}
     value: {fileID: 1361216919}
+  - key: {fileID: -8846399655483131434, guid: 6d74b13daf24e104b9babded9749682d, type: 2}
+    value: {fileID: 919132148051000050}
   m_ExposedReferences:
     m_References: []
 --- !u!4 &1182121652
@@ -19697,7 +19699,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!82 &1361216920
 AudioSource:
   m_ObjectHideFlags: 0
@@ -29911,7 +29913,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!82 &2103559443
 AudioSource:
   m_ObjectHideFlags: 0
