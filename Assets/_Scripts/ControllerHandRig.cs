@@ -20,7 +20,7 @@ public sealed class ControllerHandRig : MonoBehaviour
     const float DistalCurl = 60f;
     const float ThumbCurl = 40f;
     const float Smoothing = 18f;
-    const float TrackingLossGraceSeconds = 0.25f;
+    const float TrackingLossGraceSeconds = 1f;
 
     enum Finger { Thumb, Index, Other }
 

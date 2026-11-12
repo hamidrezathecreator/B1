@@ -425,7 +425,7 @@ public sealed class XrHandsRig : MonoBehaviour
             gripDevices);
         foreach (var device in gripDevices)
         {
-            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) && !isTracked)
+            if (!device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) || !isTracked)
                 continue;
             if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out position) &&
                 device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.deviceRotation, out rotation))
