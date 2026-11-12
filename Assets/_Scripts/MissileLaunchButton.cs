@@ -77,6 +77,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
     /// <summary>
     /// Wires every "ShootMissile.002" button in the loaded scenes: "ShootMissile.002" launches the
     /// nearest SM_missile straight up, "ShootMissile.002 (1)" the nearest Shahed forward.
+    /// Also recognizes the Level 3 instance renamed by Unity to "ShootMissile (2)".
     /// Buttons that already have a Moving Object are left alone.
     /// </summary>
     /// <param name="makePoint">Creates a path point (editor passes an Undo-aware version).</param>
@@ -90,7 +91,8 @@ public sealed class MissileLaunchButton : MonoBehaviour
         var buttons = new List<Transform>();
         foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
-            if (t.name.StartsWith("ShootMissile.002", StringComparison.Ordinal))
+            if (t.name.StartsWith("ShootMissile.002", StringComparison.Ordinal) ||
+                t.name == "ShootMissile (2)")
                 buttons.Add(t);
         }
         buttons.Sort((a, b) => string.CompareOrdinal(GetPath(a), GetPath(b)));
