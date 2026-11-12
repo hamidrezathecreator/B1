@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.XR.Hands;
+using UnityEngine.XR.Interaction.Toolkit.Inputs;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Interactors.Visuals;
 
@@ -61,6 +62,11 @@ public sealed class XrHandsRig : MonoBehaviour
     {
         origin = xrOrigin;
         if (origin == null) return;
+
+        // The rig's modality manager turns the controller off when the hand-tracker
+        // button reports hands. That drops the hand to the origin (~1 m) and can leave
+        // only one side active, so left and right appear to swap.
+        KeepControllerObjects(origin);
 
         foreach (var line in origin.GetComponentsInChildren<XRInteractorLineVisual>(true))
         {
@@ -225,7 +231,9 @@ public sealed class XrHandsRig : MonoBehaviour
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
-        rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, TrackingSpace(origin));
+        // Joint poses are in XR Origin space, not the camera-floor offset (that offset is ~1 m
+        // when Device tracking is on, and is what threw the hand off the grip).
+        rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, origin.transform);
         rig.PreferHandTrackingWhenAvailable(preferHandTrackingWhenAvailable);
         indexTip = rig.IndexTip;
 
@@ -402,14 +410,41 @@ public sealed class XrHandsRig : MonoBehaviour
         if (space != null && TryGetGripPose(isLeft, out var gripPosition, out var gripRotation))
         {
             var worldGrip = space.rotation * gripRotation;
-            anchor.SetPositionAndRotation(
-                space.TransformPoint(gripPosition) + worldGrip * offset,
-                worldGrip * handRotation);
-            return;
+            var worldPos = space.TransformPoint(gripPosition) + worldGrip * offset;
+            // Aim-to-grip is a few centimetres. A pose on the other hand, or a pose that
+            // snapped to the tracking origin when the hand-tracker button was pressed, is not.
+            var controller = anchor.parent;
+            if (controller == null || Vector3.Distance(worldPos, controller.position) <= 0.25f)
+            {
+                anchor.SetPositionAndRotation(worldPos, worldGrip * handRotation);
+                return;
+            }
         }
 
         anchor.localPosition = offset;
         anchor.localRotation = handRotation;
+    }
+
+    /// <summary>
+    /// Leave both controller objects on. XR Input Modality Manager hides a side when that
+    /// side's hand tracking wakes up (the controller hand-tracker button), which parked the
+    /// hand mesh at the rig origin.
+    /// </summary>
+    static void KeepControllerObjects(XROrigin xrOrigin)
+    {
+        if (xrOrigin == null) return;
+
+        foreach (var modality in xrOrigin.GetComponentsInChildren<XRInputModalityManager>(true))
+        {
+            if (modality.enabled) modality.enabled = false;
+        }
+
+        foreach (var name in new[] { "Left Controller", "Right Controller" })
+        {
+            var controller = FindNamed(xrOrigin, name);
+            if (controller != null && !controller.gameObject.activeSelf)
+                controller.gameObject.SetActive(true);
+        }
     }
 
     readonly List<UnityEngine.XR.InputDevice> gripDevices = new List<UnityEngine.XR.InputDevice>();
@@ -419,12 +454,19 @@ public sealed class XrHandsRig : MonoBehaviour
     {
         position = default;
         rotation = Quaternion.identity;
+        var wanted = isLeft
+            ? UnityEngine.XR.InputDeviceCharacteristics.Left
+            : UnityEngine.XR.InputDeviceCharacteristics.Right;
+        var other = isLeft
+            ? UnityEngine.XR.InputDeviceCharacteristics.Right
+            : UnityEngine.XR.InputDeviceCharacteristics.Left;
         UnityEngine.XR.InputDevices.GetDevicesWithCharacteristics(
-            UnityEngine.XR.InputDeviceCharacteristics.Controller |
-            (isLeft ? UnityEngine.XR.InputDeviceCharacteristics.Left : UnityEngine.XR.InputDeviceCharacteristics.Right),
+            UnityEngine.XR.InputDeviceCharacteristics.Controller | wanted,
             gripDevices);
         foreach (var device in gripDevices)
         {
+            if ((device.characteristics & other) != 0 && (device.characteristics & wanted) == 0)
+                continue;
             if (!device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) || !isTracked)
                 continue;
             if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out position) &&
@@ -449,6 +491,8 @@ public sealed class XrHandsRig : MonoBehaviour
     void LateUpdate()
     {
         if (!ready) return;
+
+        KeepControllerObjects(origin);
 
         // Live: changing the wrist offset in the inspector moves the hands right away.
         ApplyAnchorOffset(leftAnchor, true);

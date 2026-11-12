@@ -103,7 +103,11 @@ public sealed class ControllerHandRig : MonoBehaviour
             wristOriginalLocalRotation = wristTransform.localRotation;
         }
         if (driver != null) driver.enabled = false;
-        if (trackingEvents != null) trackingEvents.enabled = false;
+        if (trackingEvents != null)
+        {
+            trackingEvents.handedness = isLeft ? Handedness.Left : Handedness.Right;
+            trackingEvents.enabled = false;
+        }
 
         restPoses.Clear();
         foreach (var t in rigRoot.GetComponentsInChildren<Transform>(true))
@@ -234,17 +238,10 @@ public sealed class ControllerHandRig : MonoBehaviour
     {
         if (driver == null || trackingEvents == null || trackingSpace == null) return false;
 
-        if (!preferHandTrackingWhenAvailable)
-        {
-            InputDevices.GetDevicesWithCharacteristics(
-                InputDeviceCharacteristics.Controller |
-                (leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right), devices);
-            foreach (var device in devices)
-            {
-                if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var controllerTracked) || controllerTracked)
-                    return false;
-            }
-        }
+        // A live controller owns the hand mesh. The hand-tracker button reports hands while the
+        // controller is still held; following that pose pulls the mesh off the grip.
+        if (!preferHandTrackingWhenAvailable || SameSideControllerTracked())
+            return false;
 
         SubsystemManager.GetSubsystems(handSubsystems);
         foreach (var subsystem in handSubsystems)
@@ -256,22 +253,42 @@ public sealed class ControllerHandRig : MonoBehaviour
         return false;
     }
 
+    bool SameSideControllerTracked()
+    {
+        var wanted = leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right;
+        var other = leftHand ? InputDeviceCharacteristics.Right : InputDeviceCharacteristics.Left;
+        InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller | wanted, devices);
+        foreach (var device in devices)
+        {
+            if ((device.characteristics & other) != 0 && (device.characteristics & wanted) == 0)
+                continue;
+            if (!device.TryGetFeatureValue(CommonUsages.isTracked, out var controllerTracked) || controllerTracked)
+                return true;
+        }
+        return false;
+    }
+
     void EnterHandTracking()
     {
         tracked = true;
         trackingLossTimer = 0f;
-        // XRHandSkeletonDriver applies the wrist pose locally, so its parent must be tracking space.
+        // Wrist pose is in XR Origin space and is applied as a local pose, so the rig root
+        // (the wrist's parent) sits on the origin. Pulling the wrist out of the skeleton
+        // left the mesh at the origin, about a metre off the real hand, and broke the pose.
         rigRoot.SetParent(trackingSpace, false);
         rigRoot.localPosition = Vector3.zero;
         rigRoot.localRotation = Quaternion.identity;
-        if (wristTransform != null)
+        if (wristTransform != null && wristOriginalParent != null && wristTransform.parent != wristOriginalParent)
         {
-            wristTransform.SetParent(trackingSpace, false);
-            wristTransform.localPosition = Vector3.zero;
-            wristTransform.localRotation = Quaternion.identity;
+            wristTransform.SetParent(wristOriginalParent, false);
+            wristTransform.localPosition = wristOriginalLocalPosition;
+            wristTransform.localRotation = wristOriginalLocalRotation;
         }
+        trackingEvents.handedness = leftHand ? Handedness.Left : Handedness.Right;
         trackingEvents.enabled = true;
         driver.enabled = true;
+        if (meshTransform != null)
+            meshTransform.SetParent(trackingSpace, true);
     }
 
     void EnterController()
@@ -296,6 +313,13 @@ public sealed class ControllerHandRig : MonoBehaviour
         rigRoot.SetParent(transform, false);
         rigRoot.localPosition = rigOnControllerPosition;
         rigRoot.localRotation = rigOnControllerRotation;
+        if (meshTransform != null)
+        {
+            meshTransform.SetParent(transform, false);
+            meshTransform.localPosition = Vector3.zero;
+            meshTransform.localRotation = Quaternion.identity;
+            meshTransform.localScale = Vector3.one;
+        }
 
         lastIndex = -1f;
         lastGrip = -1f;

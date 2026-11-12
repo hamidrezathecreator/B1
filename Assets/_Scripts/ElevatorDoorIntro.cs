@@ -342,6 +342,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var rig = GetComponent<XrHandsRig>();
         if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
         rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
+        // Hands stay on the controllers. Bare-hand poses are only used once that side's
+        // controller is no longer tracked, so the hand-tracker button cannot swap or jump them.
         rig.PreferHandTrackingWhenAvailable(true);
         rig.UseControllerModels(!showHandsOnControllers);
         rig.Setup(xrOrigin);
