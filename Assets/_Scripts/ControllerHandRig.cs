@@ -20,6 +20,7 @@ public sealed class ControllerHandRig : MonoBehaviour
     const float DistalCurl = 60f;
     const float ThumbCurl = 40f;
     const float Smoothing = 18f;
+    const float TrackingLossGraceSeconds = 0.25f;
 
     enum Finger { Thumb, Index, Other }
 
@@ -64,6 +65,7 @@ public sealed class ControllerHandRig : MonoBehaviour
     XRHandTrackingEvents trackingEvents;
     bool tracked;
     bool preferHandTrackingWhenAvailable;
+    float trackingLossTimer;
 
     public Transform IndexTip { get; private set; }
     public int FingerBoneCount => bones.Count;
@@ -189,11 +191,16 @@ public sealed class ControllerHandRig : MonoBehaviour
     {
         if (skinned == null || meshTransform == null) return;
 
-        var nowTracked = IsTrackedByXRHands();
-        if (nowTracked != tracked)
+        if (IsTrackedByXRHands())
         {
-            if (nowTracked) EnterHandTracking();
-            else EnterController();
+            trackingLossTimer = 0f;
+            if (!tracked) EnterHandTracking();
+        }
+        else if (tracked)
+        {
+            trackingLossTimer += Time.unscaledDeltaTime;
+            if (trackingLossTimer >= TrackingLossGraceSeconds)
+                EnterController();
         }
 
         if (tracked)
@@ -252,6 +259,7 @@ public sealed class ControllerHandRig : MonoBehaviour
     void EnterHandTracking()
     {
         tracked = true;
+        trackingLossTimer = 0f;
         // XRHandSkeletonDriver applies the wrist pose locally, so its parent must be tracking space.
         rigRoot.SetParent(trackingSpace, false);
         rigRoot.localPosition = Vector3.zero;
