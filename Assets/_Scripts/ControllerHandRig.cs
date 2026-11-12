@@ -270,11 +270,16 @@ public sealed class ControllerHandRig : MonoBehaviour
 
     void EnterHandTracking()
     {
+        // Lvl2 / controller-mounted hands: never leave the controller parent. Reparenting the
+        // rig under the XR Origin (or floor offset) while the cabin moves is what jumped the
+        // mesh about a metre when the index finger poked a button.
+        if (!preferHandTrackingWhenAvailable || SameSideControllerTracked())
+            return;
+
         tracked = true;
         trackingLossTimer = 0f;
         // Wrist pose is in XR Origin space and is applied as a local pose, so the rig root
-        // (the wrist's parent) sits on the origin. Pulling the wrist out of the skeleton
-        // left the mesh at the origin, about a metre off the real hand, and broke the pose.
+        // (the wrist's parent) sits on the origin.
         rigRoot.SetParent(trackingSpace, false);
         rigRoot.localPosition = Vector3.zero;
         rigRoot.localRotation = Quaternion.identity;

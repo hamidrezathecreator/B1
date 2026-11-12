@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.XR.Hands;
@@ -24,9 +23,7 @@ public sealed class XrHandsRig : MonoBehaviour
     [Tooltip("Extra wrist rotation on the controller, degrees.")]
     [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
 
-    readonly List<XRHandSubsystem> handSubsystems = new List<XRHandSubsystem>();
     XROrigin origin;
-    XRPokeInteractor leftPoke;
     XRPokeInteractor rightPoke;
     Transform rightIndexTip;
     TabletFingerTip rightFingerTip;
@@ -94,7 +91,7 @@ public sealed class XrHandsRig : MonoBehaviour
             // Controllers only — hide any tracked-hand meshes that would draw over the grips.
             HideSceneHandVisuals();
         }
-        leftPoke = EnsurePokeOnController(origin, "Left Controller");
+        EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
         ready = true;
     }
@@ -231,8 +228,7 @@ public sealed class XrHandsRig : MonoBehaviour
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
-        // Joint poses are in XR Origin space, not the camera-floor offset (that offset is ~1 m
-        // when Device tracking is on, and is what threw the hand off the grip).
+        // Tracking space for optional bare-hand mode. Controller mode keeps the mesh under the grip.
         rig.Bind(skinned, meshObject.transform, isLeft, rigRoot, origin.transform);
         rig.PreferHandTrackingWhenAvailable(preferHandTrackingWhenAvailable);
         indexTip = rig.IndexTip;
@@ -369,33 +365,22 @@ public sealed class XrHandsRig : MonoBehaviour
         return poke;
     }
 
-    static Transform TrackingSpace(XROrigin xrOrigin)
-    {
-        if (xrOrigin == null) return null;
-        return xrOrigin.CameraFloorOffsetObject != null
-            ? xrOrigin.CameraFloorOffsetObject.transform
-            : xrOrigin.transform;
-    }
-
-    static bool TryIndexTip(XRHand hand, out Vector3 tip)
-    {
-        tip = default;
-        if (!hand.isTracked) return false;
-        var joint = hand.GetJoint(XRHandJointID.IndexTip);
-        if (!joint.TryGetPose(out var pose)) return false;
-        tip = pose.position;
-        return true;
-    }
-
     /// <summary>
-    /// Wrist pose on the controller; right-hand values, the left hand is mirrored.
-    /// Placed on the controller's grip pose (the handle in the fist). The "Left/Right Controller"
-    /// objects follow the aim pose (tip of the controller, tilted along the laser), which put the
-    /// hand off the handle.
+    /// Wrist pose as a child of the controller. Always local — world grip poses break when the
+    /// XR Origin is parented (elevator cabin) or when a poke briefly wakes hand tracking.
     /// </summary>
     void ApplyAnchorOffset(Transform anchor, bool isLeft)
     {
         if (anchor == null) return;
+
+        // Stay under Left/Right Controller; never reparent to the origin / floor offset.
+        if (origin != null)
+        {
+            var controller = FindNamed(origin, isLeft ? "Left Controller" : "Right Controller");
+            if (controller != null && anchor.parent != controller)
+                anchor.SetParent(controller, false);
+        }
+
         var offset = handOnControllerPosition;
         var euler = handOnControllerEuler;
         if (isLeft)
@@ -404,25 +389,9 @@ public sealed class XrHandsRig : MonoBehaviour
             euler.y = -euler.y;
             euler.z = -euler.z;
         }
-        var handRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
-
-        var space = TrackingSpace(origin);
-        if (space != null && TryGetGripPose(isLeft, out var gripPosition, out var gripRotation))
-        {
-            var worldGrip = space.rotation * gripRotation;
-            var worldPos = space.TransformPoint(gripPosition) + worldGrip * offset;
-            // Aim-to-grip is a few centimetres. A pose on the other hand, or a pose that
-            // snapped to the tracking origin when the hand-tracker button was pressed, is not.
-            var controller = anchor.parent;
-            if (controller == null || Vector3.Distance(worldPos, controller.position) <= 0.25f)
-            {
-                anchor.SetPositionAndRotation(worldPos, worldGrip * handRotation);
-                return;
-            }
-        }
-
         anchor.localPosition = offset;
-        anchor.localRotation = handRotation;
+        anchor.localRotation = Quaternion.Euler(0f, 0f, isLeft ? 90f : -90f) * Quaternion.Euler(euler);
+        anchor.localScale = Vector3.one;
     }
 
     /// <summary>
@@ -447,35 +416,6 @@ public sealed class XrHandsRig : MonoBehaviour
         }
     }
 
-    readonly List<UnityEngine.XR.InputDevice> gripDevices = new List<UnityEngine.XR.InputDevice>();
-
-    /// <summary>Grip pose of the controller in tracking space (OpenXR devicePose).</summary>
-    bool TryGetGripPose(bool isLeft, out Vector3 position, out Quaternion rotation)
-    {
-        position = default;
-        rotation = Quaternion.identity;
-        var wanted = isLeft
-            ? UnityEngine.XR.InputDeviceCharacteristics.Left
-            : UnityEngine.XR.InputDeviceCharacteristics.Right;
-        var other = isLeft
-            ? UnityEngine.XR.InputDeviceCharacteristics.Right
-            : UnityEngine.XR.InputDeviceCharacteristics.Left;
-        UnityEngine.XR.InputDevices.GetDevicesWithCharacteristics(
-            UnityEngine.XR.InputDeviceCharacteristics.Controller | wanted,
-            gripDevices);
-        foreach (var device in gripDevices)
-        {
-            if ((device.characteristics & other) != 0 && (device.characteristics & wanted) == 0)
-                continue;
-            if (!device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.isTracked, out var isTracked) || !isTracked)
-                continue;
-            if (device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.devicePosition, out position) &&
-                device.TryGetFeatureValue(UnityEngine.XR.CommonUsages.deviceRotation, out rotation))
-                return true;
-        }
-        return false;
-    }
-
     void OnBeforeRender()
     {
         // Same frame as the headset pose, so the hand does not lag behind the controller.
@@ -498,38 +438,11 @@ public sealed class XrHandsRig : MonoBehaviour
         ApplyAnchorOffset(leftAnchor, true);
         ApplyAnchorOffset(rightAnchor, false);
 
-        SubsystemManager.GetSubsystems(handSubsystems);
-        Vector3 leftTip = default, rightTip = default;
-        var hasLeft = false;
-        var hasRight = false;
-        foreach (var subsystem in handSubsystems)
-        {
-            if (subsystem == null || !subsystem.running) continue;
-            hasLeft |= TryIndexTip(subsystem.leftHand, out leftTip);
-            hasRight |= TryIndexTip(subsystem.rightHand, out rightTip);
-        }
-
-        // XR Hands joint poses are in tracking space, not world space.
-        var space = TrackingSpace(origin);
-        if (space != null)
-        {
-            if (hasLeft) leftTip = space.TransformPoint(leftTip);
-            if (hasRight) rightTip = space.TransformPoint(rightTip);
-        }
-
-        if (hasLeft && leftPoke != null)
-            leftPoke.transform.position = leftTip;
-
-        // Right fingertip touches UI. Tracked joint wins; then the index tip of the hand on the
-        // controller; then the controller poke point.
+        // Touch point stays on the controller hand / poke. Do not drive the poke from XR Hands
+        // while holding a controller — that pulled the click off the grip and looked like a jump.
         var clickPoint = Vector3.zero;
         var hasClick = false;
-        if (hasRight)
-        {
-            clickPoint = rightTip;
-            hasClick = true;
-        }
-        else if (rightIndexTip != null && rightIndexTip.gameObject.activeInHierarchy)
+        if (rightIndexTip != null && rightIndexTip.gameObject.activeInHierarchy)
         {
             clickPoint = rightIndexTip.position;
             hasClick = true;
@@ -544,14 +457,8 @@ public sealed class XrHandsRig : MonoBehaviour
             rightFingerTip = TabletFingerTip.Create("RightFingerTipTouch");
 
         if (hasClick)
-        {
-            if (rightPoke != null && (hasRight || rightIndexTip != null))
-                rightPoke.transform.position = clickPoint;
             rightFingerTip.MoveTo(clickPoint);
-        }
         else
-        {
             rightFingerTip.Park();
-        }
     }
 }

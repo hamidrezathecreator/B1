@@ -28,6 +28,13 @@ public sealed class ExplosionCue : MonoBehaviour
 
     void OnEnable()
     {
+        // Timeline only SetActive(true); force particle systems to start so the blast is visible.
+        foreach (var ps in GetComponentsInChildren<ParticleSystem>(true))
+        {
+            if (!ps.gameObject.activeInHierarchy) continue;
+            ps.Clear(true);
+            ps.Play(true);
+        }
         if (playSound) PlayAt(transform.position, sound, volume);
         Shown?.Invoke(this);
     }

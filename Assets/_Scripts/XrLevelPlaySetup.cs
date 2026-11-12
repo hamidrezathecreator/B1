@@ -83,7 +83,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
         MissileLaunchButton.AutoWireScene();
-        LaserWeaponScope.SetupByName(missileLaunchSound, "LaserWeapon", "SM_LaserWeapon");
+        LaserWeaponScope.SetupByName(missileLaunchSound, handHintFont, "LaserWeapon", "SM_LaserWeapon");
 
         if (beaconObjectNames != null)
         {

@@ -108,7 +108,7 @@ public sealed class HandHintBanner : MonoBehaviour
         label.fontSizeMax = 34f;
         label.color = Color.white;
         label.raycastTarget = false;
-        label.enableWordWrapping = false;
+        label.enableWordWrapping = lines > 1;
         label.text = message;
     }
 

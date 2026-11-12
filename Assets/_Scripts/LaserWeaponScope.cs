@@ -59,6 +59,13 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] AudioClip missileLaunchSound;
     [Range(0f, 1f)] [SerializeField] float missileLaunchVolume = 1f;
 
+    [Header("Kill feedback")]
+    [Tooltip("Shown above the right controller after SM_Shahed149 is destroyed.")]
+    [SerializeField] string killMessage = "پهباد جاسوسی رو زدی\nآفرین";
+    [SerializeField] TMPro.TMP_FontAsset killMessageFont;
+    [Min(0.5f)] [SerializeField] float killMessageSeconds = 4f;
+    [Min(0.5f)] [SerializeField] float killExplosionScale = 1.4f;
+
     Camera scopeCamera;
     bool createdCamera = true;
     readonly System.Collections.Generic.List<UnityEngine.UI.Image> crosshair = new System.Collections.Generic.List<UnityEngine.UI.Image>();
@@ -75,7 +82,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     Quaternion homeRotation;
 
     /// <summary>Sets up the first object found with one of the names (once).</summary>
-    public static void SetupByName(AudioClip launchSound, params string[] names)
+    public static void SetupByName(AudioClip launchSound, TMPro.TMP_FontAsset font, params string[] names)
     {
         foreach (var n in names)
         {
@@ -83,10 +90,15 @@ public sealed class LaserWeaponScope : MonoBehaviour
             if (go == null) continue;
             var scope = go.GetComponent<LaserWeaponScope>();
             if (scope == null) scope = go.AddComponent<LaserWeaponScope>();
-            scope.missileLaunchSound = launchSound;
+            if (launchSound != null) scope.missileLaunchSound = launchSound;
+            if (font != null) scope.killMessageFont = font;
             return;
         }
     }
+
+    /// <summary>Sets up the first object found with one of the names (once).</summary>
+    public static void SetupByName(AudioClip launchSound, params string[] names) =>
+        SetupByName(launchSound, null, names);
 
     void Start()
     {
@@ -317,23 +329,36 @@ public sealed class LaserWeaponScope : MonoBehaviour
             case Axis.MinusZ: return Vector3.back;
         }
 
-        // The barrel is the longest side of the body.
+        // Barrel = longest local axis that stays mostly horizontal in the world.
+        // SM_LaserWeapon's mesh is taller in Y, so "longest = Y" wrongly aimed the scope at the sky.
         var size = bodyBounds.size;
-        var axis = size.x >= size.y && size.x >= size.z ? Vector3.right
-            : size.y >= size.z ? Vector3.up
-            : Vector3.forward;
-        var half = Vector3.Dot(bodyBounds.extents, axis);
+        var axis = Vector3.forward;
+        var bestScore = float.NegativeInfinity;
+        foreach (var candidate in new[] { Vector3.right, Vector3.up, Vector3.forward })
+        {
+            var length = Vector3.Dot(size, Abs(candidate));
+            var world = transform.TransformDirection(candidate).normalized;
+            // 1 = flat along the ground, 0 = straight up/down (the green arrow the user rejected).
+            var horizontal = 1f - Mathf.Abs(world.y);
+            var score = length * (0.35f + horizontal);
+            if (score <= bestScore) continue;
+            bestScore = score;
+            axis = candidate;
+        }
 
+        var half = Vector3.Dot(bodyBounds.extents, axis);
         if (hasScreen)
         {
-            // Muzzle = the end where the screen sits behind the camera (LCD toward the grip / eyepiece).
-            // Camera Lase often sat at identity (+Z) which for this mesh was the rear.
+            // Muzzle = the end where the screen sits behind the camera (LCD toward the grip).
             var muzzle = bodyBounds.center + axis * half;
             if (Vector3.Dot(muzzle - screenBounds.center, axis) < 0f) return -axis;
             return axis;
         }
 
+        // Prefer the end that points along the object's forward, else the flatter world direction.
         var worldAxis = transform.TransformDirection(axis);
+        if (Mathf.Abs(Vector3.Dot(worldAxis, transform.forward)) > 0.15f)
+            return Vector3.Dot(worldAxis, transform.forward) >= 0f ? axis : -axis;
         return worldAxis.y >= 0f ? axis : -axis;
     }
 
@@ -599,17 +624,66 @@ public sealed class LaserWeaponScope : MonoBehaviour
     void DestroyTarget(Vector3 at)
     {
         if (target == null || !target.gameObject.activeInHierarchy) { missileAway = false; return; }
-        var size = TargetBounds(out var bounds) ? Mathf.Clamp(bounds.size.magnitude / 4f, 0.8f, 6f) : 2f;
+        var size = TargetBounds(out var bounds)
+            ? Mathf.Clamp(bounds.size.magnitude / 4f, 0.8f, 6f) * killExplosionScale
+            : 2f * killExplosionScale;
         var center = TargetBounds(out bounds) ? bounds.center : at;
 
+        // Blast stays in world space so it is not dragged by the drone before it disappears.
         LaunchSmoke.CreateExplosionBurst(center, size);
+        LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
 
-        var jet = target.GetComponent<FighterJetFlight>();
-        if (jet != null) jet.StopFlying();
-        target.gameObject.SetActive(false);
+        FreezeAndHideTarget();
         targetDown = true;
         missileAway = false;
         SetCrosshairColor(crosshairColor);
+        StartCoroutine(ShowKillMessage());
+    }
+
+    void FreezeAndHideTarget()
+    {
+        if (target == null) return;
+
+        // Stop every mover so the wreck does not keep drifting after the hit.
+        foreach (var jet in target.GetComponentsInChildren<FighterJetFlight>(true))
+        {
+            jet.StopFlying();
+            jet.enabled = false;
+        }
+        foreach (var animator in target.GetComponentsInChildren<Animator>(true))
+        {
+            animator.enabled = false;
+            animator.speed = 0f;
+        }
+        foreach (var rb in target.GetComponentsInChildren<Rigidbody>(true))
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            rb.detectCollisions = false;
+        }
+
+        foreach (var renderer in target.GetComponentsInChildren<Renderer>(true))
+            renderer.enabled = false;
+        foreach (var col in target.GetComponentsInChildren<Collider>(true))
+            col.enabled = false;
+
+        target.gameObject.SetActive(false);
+    }
+
+    System.Collections.IEnumerator ShowKillMessage()
+    {
+        if (string.IsNullOrWhiteSpace(killMessage)) yield break;
+
+        var origin = FindAnyObjectByType<XROrigin>();
+        if (origin == null || origin.Camera == null) yield break;
+        var hand = XrHandsRig.FindNamed(origin, "Right Controller");
+        if (hand == null) hand = origin.Camera.transform;
+
+        var banner = HandHintBanner.Create(origin.Camera, killMessageFont, killMessage);
+        banner.SetHand(hand);
+        yield return new WaitForSeconds(killMessageSeconds);
+        if (banner != null) banner.Hide();
     }
 
     void FindMissileLaunchOrigin()
