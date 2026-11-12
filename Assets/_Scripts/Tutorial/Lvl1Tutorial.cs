@@ -416,6 +416,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             fallCue = null;
             return;
         }
+        // Trim the DAVFX burst for Quest before the Timeline switches it on.
+        VrExplosionOptimizer.Apply(go);
         fallCue = ExplosionCue.AddTo(go);
         fallCue.Shown -= OnFallExplosionShown;
         fallCue.Shown += OnFallExplosionShown;

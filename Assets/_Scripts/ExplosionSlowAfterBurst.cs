@@ -11,6 +11,14 @@ public sealed class ExplosionSlowAfterBurst : MonoBehaviour
     [SerializeField] float slowSpeedMultiplier = 0.35f;
     [SerializeField] float slowdownBlendSeconds = 0.5f;
 
+    /// <summary>Overrides the linger timing (used by the VR explosion optimizer).</summary>
+    public void Configure(float fullSpeed, float slowMultiplier, float blendSeconds)
+    {
+        fullSpeedSeconds = Mathf.Max(0.05f, fullSpeed);
+        slowSpeedMultiplier = Mathf.Clamp(slowMultiplier, 0.05f, 1f);
+        slowdownBlendSeconds = Mathf.Max(0.05f, blendSeconds);
+    }
+
     ParticleSystem[] systems;
     float[] originalSpeeds;
 

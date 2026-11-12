@@ -211,7 +211,8 @@ public sealed class XrHandsRig : MonoBehaviour
         rigRoot.position += anchor.position - wrist.position;
 
         var meshObject = new GameObject("Hand Mesh");
-        meshObject.transform.SetParent(anchor, false);
+        // Keep the baked visual under the skeleton when it switches to XR hand tracking.
+        meshObject.transform.SetParent(rigRoot, true);
         meshObject.AddComponent<MeshFilter>();
         var renderer = meshObject.AddComponent<MeshRenderer>();
         var skin = BlueHandMaterial();

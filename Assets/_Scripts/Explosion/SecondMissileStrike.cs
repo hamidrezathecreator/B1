@@ -15,6 +15,8 @@ public sealed class SecondMissileStrike : MonoBehaviour
     [Tooltip("Explosions that play the explosion sound from code when they appear. Empty: the sound is on the " +
              "Timeline's \"Explosion Sounds\" Audio Track, where it can be moved.")]
     [SerializeField] string[] soundExplosionNames = new string[0];
+    [Tooltip("DAVFX explosions trimmed for Quest before the Timeline switches them on.")]
+    [SerializeField] string[] vrOptimizeExplosionNames = { "Explosion_Two" };
 
     [Header("Throw")]
     [Min(0f)] [SerializeField] float throwRadius = 3f;
@@ -34,6 +36,9 @@ public sealed class SecondMissileStrike : MonoBehaviour
     void Start()
     {
         EnsureScatter();
+
+        foreach (var name in vrOptimizeExplosionNames)
+            VrExplosionOptimizer.Apply(FindIncludingInactive(name));
 
         foreach (var name in soundExplosionNames)
         {
