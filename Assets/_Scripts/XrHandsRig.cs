@@ -85,6 +85,8 @@ public sealed class XrHandsRig : MonoBehaviour
         else
         {
             ShowControllerMeshes(origin.transform);
+            // Controllers only — hide any tracked-hand meshes that would draw over the grips.
+            HideSceneHandVisuals();
         }
         leftPoke = EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");

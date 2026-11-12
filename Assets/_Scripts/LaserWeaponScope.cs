@@ -107,7 +107,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         var screenUp = ScreenUp(screenNormal, aimLocal);
 
         texture = CreateTexture(screenBounds, screenNormal, screenUp, hasScreen);
-        if (!UseSceneCamera()) CreateCamera(bodyBounds, aimLocal, screenUp);
+        if (!UseSceneCamera(bodyBounds, aimLocal, screenUp)) CreateCamera(bodyBounds, aimLocal, screenUp);
         if (hasScreen)
         {
             CreateScreen(meshRenderer, screenBounds, screenNormal, screenUp);
@@ -118,15 +118,17 @@ public sealed class LaserWeaponScope : MonoBehaviour
     }
 
     /// <summary>Renders the scope with the scene's laser camera, if there is one.</summary>
-    bool UseSceneCamera()
+    bool UseSceneCamera(Bounds bodyBounds, Vector3 aimLocal, Vector3 upLocal)
     {
         if (laserCamera == null) laserCamera = FindLaserCamera();
         if (laserCamera == null) return false;
 
         createdCamera = false;
         scopeCamera = laserCamera;
-        // It must turn with the weapon in the hand.
-        if (!scopeCamera.transform.IsChildOf(transform)) scopeCamera.transform.SetParent(transform, true);
+        // Child of the weapon so it turns with the grip; identity world pose was often +Z, not the barrel.
+        scopeCamera.transform.SetParent(transform, false);
+        AlignScopeCamera(scopeCamera.transform, bodyBounds, aimLocal, upLocal);
+
         // Level setup switches off every MainCamera except the headset; this one only draws the scope.
         if (scopeCamera.CompareTag("MainCamera")) scopeCamera.tag = "Untagged";
         var listener = scopeCamera.GetComponent<AudioListener>();
@@ -137,19 +139,58 @@ public sealed class LaserWeaponScope : MonoBehaviour
         scopeCamera.stereoTargetEye = StereoTargetEyeMask.None;
         scopeCamera.targetTexture = texture;
         scopeCamera.depth = -10f;
+        var data = scopeCamera.GetComponent<UniversalAdditionalCameraData>();
+        if (data != null) data.allowXRRendering = false;
         farClip = Mathf.Max(farClip, scopeCamera.farClipPlane);
-        Debug.Log(name + ": scope uses the scene camera '" + scopeCamera.name + "'.", this);
+        scopeCamera.farClipPlane = farClip;
+
+        // Extra laser cameras under the weapon must not also render into the headset.
+        foreach (var cam in GetComponentsInChildren<Camera>(true))
+        {
+            if (cam == scopeCamera) continue;
+            if (!MatchesLaserName(cam.name)) continue;
+            cam.enabled = false;
+            cam.stereoTargetEye = StereoTargetEyeMask.None;
+            var otherListener = cam.GetComponent<AudioListener>();
+            if (otherListener != null) otherListener.enabled = false;
+            var otherData = cam.GetComponent<UniversalAdditionalCameraData>();
+            if (otherData != null) otherData.allowXRRendering = false;
+        }
+
+        Debug.Log(name + ": scope uses the scene camera '" + scopeCamera.name + "' along aim " + aimLocal + ".", this);
         return true;
+    }
+
+    void AlignScopeCamera(Transform cam, Bounds bodyBounds, Vector3 aimLocal, Vector3 upLocal)
+    {
+        var aimWorld = transform.TransformDirection(aimLocal).normalized;
+        var upWorld = transform.TransformDirection(upLocal).normalized;
+        if (aimWorld.sqrMagnitude < 1e-8f) aimWorld = transform.forward;
+        if (Mathf.Abs(Vector3.Dot(upWorld, aimWorld)) > 0.98f)
+            upWorld = Vector3.Cross(aimWorld, transform.right).normalized;
+        if (upWorld.sqrMagnitude < 1e-8f) upWorld = Vector3.up;
+
+        var muzzle = transform.TransformPoint(bodyBounds.center + Vector3.Scale(aimLocal, bodyBounds.extents));
+        cam.SetPositionAndRotation(muzzle + aimWorld * cameraAhead, Quaternion.LookRotation(aimWorld, upWorld));
     }
 
     Camera FindLaserCamera()
     {
-        // Prefer a camera under the weapon, then any camera in the scene with one of the names.
+        Camera fallback = null;
+        // Prefer a camera under the weapon named exactly "Camera Lase" over "Camera Lase (1)".
         foreach (var cam in GetComponentsInChildren<Camera>(true))
-            if (MatchesLaserName(cam.name)) return cam;
+        {
+            if (!MatchesLaserName(cam.name)) continue;
+            if (Normalize(cam.name) == "cameralase") return cam;
+            if (fallback == null) fallback = cam;
+        }
         foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (cam.gameObject.scene.IsValid() && MatchesLaserName(cam.name)) return cam;
-        return null;
+        {
+            if (!cam.gameObject.scene.IsValid() || !MatchesLaserName(cam.name)) continue;
+            if (Normalize(cam.name) == "cameralase") return cam;
+            if (fallback == null) fallback = cam;
+        }
+        return fallback;
     }
 
     bool MatchesLaserName(string camName)
@@ -266,14 +307,24 @@ public sealed class LaserWeaponScope : MonoBehaviour
             case Axis.MinusZ: return Vector3.back;
         }
 
-        // The barrel is the longest side of the body; the muzzle is the end away from the screen.
+        // The barrel is the longest side of the body.
         var size = bodyBounds.size;
-        var axis = size.x >= size.y && size.x >= size.z ? Vector3.right : size.y >= size.z ? Vector3.up : Vector3.forward;
-        var length = Vector3.Dot(size, axis);
-        var away = hasScreen ? Vector3.Dot(bodyBounds.center - screenBounds.center, axis) : 0f;
-        if (Mathf.Abs(away) > length * 0.05f) return axis * Mathf.Sign(away);
-        // Screen sits in the middle: aim the end that points more to the sky right now.
-        return transform.TransformDirection(axis).y >= 0f ? axis : -axis;
+        var axis = size.x >= size.y && size.x >= size.z ? Vector3.right
+            : size.y >= size.z ? Vector3.up
+            : Vector3.forward;
+        var half = Vector3.Dot(bodyBounds.extents, axis);
+
+        if (hasScreen)
+        {
+            // Muzzle = the end where the screen sits behind the camera (LCD toward the grip / eyepiece).
+            // Camera Lase often sat at identity (+Z) which for this mesh was the rear.
+            var muzzle = bodyBounds.center + axis * half;
+            if (Vector3.Dot(muzzle - screenBounds.center, axis) < 0f) return -axis;
+            return axis;
+        }
+
+        var worldAxis = transform.TransformDirection(axis);
+        return worldAxis.y >= 0f ? axis : -axis;
     }
 
     /// <summary>The thin side of the flat screen, pointing out of the weapon.</summary>
@@ -325,11 +376,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     {
         var go = new GameObject("Scope Camera");
         go.transform.SetParent(transform, false);
-
-        var aimWorld = transform.TransformDirection(aimLocal).normalized;
-        var upWorld = transform.TransformDirection(upLocal).normalized;
-        var front = transform.TransformPoint(bodyBounds.center + Vector3.Scale(aimLocal, bodyBounds.extents));
-        go.transform.SetPositionAndRotation(front + aimWorld * cameraAhead, Quaternion.LookRotation(aimWorld, upWorld));
+        AlignScopeCamera(go.transform, bodyBounds, aimLocal, upLocal);
 
         scopeCamera = go.AddComponent<Camera>();
         scopeCamera.stereoTargetEye = StereoTargetEyeMask.None;
@@ -343,6 +390,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         data.renderShadows = false;
         data.renderPostProcessing = false;
         data.antialiasing = AntialiasingMode.None;
+        data.allowXRRendering = false;
     }
 
     void CreateScreen(MeshRenderer weaponRenderer, Bounds screen, Vector3 normal, Vector3 up)

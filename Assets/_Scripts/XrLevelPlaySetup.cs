@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Jump;
@@ -10,7 +11,7 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs.Readers;
 
 /// <summary>
 /// Open-ground level setup (Lvl 3): floor tracking, stick walking with gravity on uneven
-/// ground, teleport onto the ground mesh only, and the project hands on both controllers.
+/// ground, teleport onto the ground mesh only, and VR controller models (optional hands).
 /// Same rules as the Lvl 2 elevator scene, without the elevator.
 /// </summary>
 public sealed class XrLevelPlaySetup : MonoBehaviour
@@ -18,7 +19,9 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     const float BodyHeight = 1.75f;
     const float SkinWidth = 0.02f;
 
-    [Header("Hands")]
+    [Header("Hands / controllers")]
+    [Tooltip("Off: show the normal VR controller models (recommended for Lvl 3).")]
+    [SerializeField] bool showHandsOnControllers;
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
@@ -74,6 +77,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         var rig = GetComponent<XrHandsRig>();
         if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
         rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
+        rig.UseControllerModels(!showHandsOnControllers);
         rig.Setup(origin);
 
         // Launch panels: any button still without a target gets the nearest missile / Shahed.
@@ -146,18 +150,73 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         if (launchHint != null) launchHint.Hide();
     }
 
+    /// <summary>
+    /// Only the XR Origin headset camera may render to the HMD. Extra scene cameras tagged
+    /// MainCamera, or with Target Eye = Both (e.g. Camera Lase), steal the VR view.
+    /// Scope cameras are demoted to render-texture only (no stereo, no audio listener).
+    /// </summary>
     void UseOnlyHeadsetCamera()
     {
-        var headset = origin.Camera;
-        if (headset == null) return;
-
-        foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        var headset = origin != null ? origin.Camera : null;
+        if (headset == null)
         {
-            if (cam == headset || !cam.CompareTag("MainCamera")) continue;
+            Debug.LogWarning("XrLevelPlaySetup: XR Origin has no Camera — VR view will be wrong.", this);
+            return;
+        }
+
+        headset.tag = "MainCamera";
+        headset.stereoTargetEye = StereoTargetEyeMask.Both;
+        headset.enabled = true;
+        var headsetListener = headset.GetComponent<AudioListener>();
+        if (headsetListener != null) headsetListener.enabled = true;
+
+        var headsetData = headset.GetComponent<UniversalAdditionalCameraData>();
+        if (headsetData != null) headsetData.allowXRRendering = true;
+
+        foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (cam == null || cam == headset) continue;
+            if (!cam.gameObject.scene.IsValid()) continue;
+
+            // Scope / weapon cameras: never write into the headset.
+            var isScope = cam.name.IndexOf("Lase", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          cam.name.IndexOf("Laser", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          cam.name.IndexOf("Scope", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (isScope)
+            {
+                DemoteToRenderTextureCamera(cam);
+                continue;
+            }
+
+            // Orphan editor Main Camera and any other stereo camera without a target texture.
+            var stealsHeadset = cam.targetTexture == null &&
+                                (cam.CompareTag("MainCamera") || cam.stereoTargetEye != StereoTargetEyeMask.None);
+            if (!stealsHeadset) continue;
+
             cam.enabled = false;
+            if (cam.CompareTag("MainCamera")) cam.tag = "Untagged";
+            cam.stereoTargetEye = StereoTargetEyeMask.None;
             var listener = cam.GetComponent<AudioListener>();
             if (listener != null) listener.enabled = false;
+            var data = cam.GetComponent<UniversalAdditionalCameraData>();
+            if (data != null) data.allowXRRendering = false;
         }
+    }
+
+    static void DemoteToRenderTextureCamera(Camera cam)
+    {
+        cam.stereoTargetEye = StereoTargetEyeMask.None;
+        cam.tag = "Untagged";
+        var listener = cam.GetComponent<AudioListener>();
+        if (listener != null) listener.enabled = false;
+        var data = cam.GetComponent<UniversalAdditionalCameraData>();
+        if (data != null)
+        {
+            data.allowXRRendering = false;
+            data.renderType = CameraRenderType.Base;
+        }
+        // LaserWeaponScope enables it and assigns the render texture when ready.
+        if (cam.targetTexture == null) cam.enabled = false;
     }
 
     IEnumerable<Transform> GroundRoots()
