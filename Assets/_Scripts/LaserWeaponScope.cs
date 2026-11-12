@@ -14,7 +14,11 @@ public sealed class LaserWeaponScope : MonoBehaviour
     public enum Axis { Auto, PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ }
 
     [Header("Scope camera")]
-    [Tooltip("Smaller = more zoom.")]
+    [Tooltip("Scene camera that renders the scope picture and aims the lock ray. Empty = found by name below, " +
+             "or a camera is made in front of the weapon.")]
+    [SerializeField] Camera laserCamera;
+    [SerializeField] string[] laserCameraNames = { "Camera Lase", "Camera Laser", "CameraLaser", "Laser Camera" };
+    [Tooltip("Smaller = more zoom. Only for the camera made by this script; a scene camera keeps its own.")]
     [Range(1f, 60f)] [SerializeField] float fieldOfView = 12f;
     [Tooltip("How far past the front end of the weapon the camera sits, meters.")]
     [Min(0f)] [SerializeField] float cameraAhead = 0.3f;
@@ -32,12 +36,13 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] bool grabbable = true;
 
     [Header("Target lock")]
-    [Tooltip("What the scope locks onto. Empty = the Fighter Jet Flight in the scene (the Shahed).")]
+    [Tooltip("What the scope locks onto. Empty = SM_Shahed149, else the Fighter Jet Flight in the scene.")]
     [SerializeField] Transform target;
+    [SerializeField] string targetName = "SM_Shahed149";
     [Tooltip("Seconds the target must stay in the crosshair before the missile goes.")]
     [Min(0.1f)] [SerializeField] float lockSeconds = 2f;
-    [Tooltip("How far from the middle of the picture the target still counts, 0.5 = anywhere in the picture.")]
-    [Range(0.02f, 0.7f)] [SerializeField] float lockViewportRadius = 0.5f;
+    [Tooltip("How far off the camera's line the target may be and still count, degrees. 0 = the ray must hit it.")]
+    [Range(0f, 15f)] [SerializeField] float aimToleranceDegrees = 2.5f;
     [Tooltip("Only lock while the weapon is in the player's hand.")]
     [SerializeField] bool requireHeld = true;
     [SerializeField] Color crosshairColor = Color.white;
@@ -52,6 +57,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [Min(0f)] [SerializeField] float fireSeconds = 3f;
 
     Camera scopeCamera;
+    bool createdCamera = true;
     readonly System.Collections.Generic.List<UnityEngine.UI.Image> crosshair = new System.Collections.Generic.List<UnityEngine.UI.Image>();
     Renderer[] targetRenderers;
     float lockTimer;
@@ -101,7 +107,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         var screenUp = ScreenUp(screenNormal, aimLocal);
 
         texture = CreateTexture(screenBounds, screenNormal, screenUp, hasScreen);
-        CreateCamera(bodyBounds, aimLocal, screenUp);
+        if (!UseSceneCamera()) CreateCamera(bodyBounds, aimLocal, screenUp);
         if (hasScreen)
         {
             CreateScreen(meshRenderer, screenBounds, screenNormal, screenUp);
@@ -111,8 +117,58 @@ public sealed class LaserWeaponScope : MonoBehaviour
         FindTarget();
     }
 
+    /// <summary>Renders the scope with the scene's laser camera, if there is one.</summary>
+    bool UseSceneCamera()
+    {
+        if (laserCamera == null) laserCamera = FindLaserCamera();
+        if (laserCamera == null) return false;
+
+        createdCamera = false;
+        scopeCamera = laserCamera;
+        // It must turn with the weapon in the hand.
+        if (!scopeCamera.transform.IsChildOf(transform)) scopeCamera.transform.SetParent(transform, true);
+        // Level setup switches off every MainCamera except the headset; this one only draws the scope.
+        if (scopeCamera.CompareTag("MainCamera")) scopeCamera.tag = "Untagged";
+        var listener = scopeCamera.GetComponent<AudioListener>();
+        if (listener != null) listener.enabled = false;
+
+        scopeCamera.gameObject.SetActive(true);
+        scopeCamera.enabled = true;
+        scopeCamera.stereoTargetEye = StereoTargetEyeMask.None;
+        scopeCamera.targetTexture = texture;
+        scopeCamera.depth = -10f;
+        farClip = Mathf.Max(farClip, scopeCamera.farClipPlane);
+        Debug.Log(name + ": scope uses the scene camera '" + scopeCamera.name + "'.", this);
+        return true;
+    }
+
+    Camera FindLaserCamera()
+    {
+        // Prefer a camera under the weapon, then any camera in the scene with one of the names.
+        foreach (var cam in GetComponentsInChildren<Camera>(true))
+            if (MatchesLaserName(cam.name)) return cam;
+        foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (cam.gameObject.scene.IsValid() && MatchesLaserName(cam.name)) return cam;
+        return null;
+    }
+
+    bool MatchesLaserName(string camName)
+    {
+        var n = Normalize(camName);
+        foreach (var wanted in laserCameraNames)
+            if (!string.IsNullOrWhiteSpace(wanted) && n == Normalize(wanted)) return true;
+        return false;
+    }
+
+    static string Normalize(string s) => s.ToLowerInvariant().Replace(" ", "").Replace("_", "").Replace("-", "");
+
     void FindTarget()
     {
+        if (target == null && !string.IsNullOrWhiteSpace(targetName))
+        {
+            var named = GameObject.Find(targetName);
+            if (named != null) target = named.transform;
+        }
         if (target == null)
         {
             var jet = FindAnyObjectByType<FighterJetFlight>();
@@ -367,7 +423,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     void LateUpdate()
     {
         if (scopeCamera == null) return;
-        scopeCamera.fieldOfView = fieldOfView;
+        if (createdCamera) scopeCamera.fieldOfView = fieldOfView;
         // Only render while someone can see the screen (or it is in hand).
         var held = grab != null && grab.isSelected;
         scopeCamera.enabled = held || screenRenderer == null || screenRenderer.isVisible;
@@ -410,13 +466,12 @@ public sealed class LaserWeaponScope : MonoBehaviour
         }
         if (targetHit < nearestOther) return true;
 
-        // Or anywhere inside the picture, as long as nothing (ground, hills) is in the way.
-        if (!TargetBounds(out var bounds)) return false;
-        var viewport = scopeCamera.WorldToViewportPoint(bounds.center);
-        if (viewport.z <= 0f || viewport.z > farClip) return false;
-        if (new Vector2(viewport.x - 0.5f, viewport.y - 0.5f).magnitude > lockViewportRadius) return false;
-
+        // Or just off that line (a far Shahed is tiny), as long as nothing (ground, hills) is in the way.
+        if (aimToleranceDegrees <= 0f || !TargetBounds(out var bounds)) return false;
         var toTarget = bounds.center - from;
+        if (toTarget.magnitude > farClip) return false;
+        if (Vector3.Angle(scopeCamera.transform.forward, toTarget) > aimToleranceDegrees) return false;
+
         foreach (var hit in Physics.RaycastAll(from, toTarget.normalized, toTarget.magnitude, ~0, QueryTriggerInteraction.Ignore))
         {
             if (hit.collider.transform.IsChildOf(target) || hit.collider.transform.IsChildOf(transform)) continue;

@@ -32,6 +32,13 @@ public sealed class XrHandsRig : MonoBehaviour
     Transform leftAnchor;
     Transform rightAnchor;
     bool ready;
+    bool controllerModels;
+
+    /// <summary>
+    /// Show the normal controller models instead of hands. Pokes and the right fingertip touch
+    /// still work, from the controller's poke point. Call before <see cref="Setup"/>.
+    /// </summary>
+    public void UseControllerModels(bool on) => controllerModels = on;
 
     /// <summary>Updates the wrist offset only (live tuning in Play mode).</summary>
     public void SetWristOffset(Vector3 wristPosition, Vector3 wristEuler)
@@ -66,10 +73,17 @@ public sealed class XrHandsRig : MonoBehaviour
                 Destroy(child.gameObject);
         }
 
-        HideControllerMeshes(origin.transform);
-        BuildControllerHand(leftHandVisualPrefab, "Left Controller", true, out _);
-        BuildControllerHand(rightHandVisualPrefab, "Right Controller", false, out rightIndexTip);
-        HideSceneHandVisuals();
+        if (!controllerModels)
+        {
+            HideControllerMeshes(origin.transform);
+            BuildControllerHand(leftHandVisualPrefab, "Left Controller", true, out _);
+            BuildControllerHand(rightHandVisualPrefab, "Right Controller", false, out rightIndexTip);
+            HideSceneHandVisuals();
+        }
+        else
+        {
+            ShowControllerMeshes(origin.transform);
+        }
         leftPoke = EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
         ready = true;
@@ -299,6 +313,25 @@ public sealed class XrHandsRig : MonoBehaviour
                 continue;
             foreach (var renderer in child.GetComponentsInChildren<Renderer>(true))
                 renderer.enabled = false;
+        }
+    }
+
+    /// <summary>Controller models back on, and any project hand left on the rig removed.</summary>
+    static void ShowControllerMeshes(Transform root)
+    {
+        if (root == null) return;
+        foreach (var child in root.GetComponentsInChildren<Transform>(true))
+        {
+            if (child == null) continue;
+            if (child.name == HandObjectName)
+            {
+                Destroy(child.gameObject);
+                continue;
+            }
+            if (!child.name.Contains("Controller Visual") && !child.name.Contains("UniversalController"))
+                continue;
+            foreach (var renderer in child.GetComponentsInChildren<Renderer>(true))
+                renderer.enabled = true;
         }
     }
 

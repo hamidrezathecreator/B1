@@ -27,6 +27,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [SerializeField] XROrigin xrOrigin;
 
     [Header("Hand visuals")]
+    [Tooltip("Off: the normal controller models are shown instead of hands.")]
+    [SerializeField] bool showHandsOnControllers;
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
@@ -340,6 +342,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         var rig = GetComponent<XrHandsRig>();
         if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
         rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
+        rig.UseControllerModels(!showHandsOnControllers);
         rig.Setup(xrOrigin);
         ShowElevatorHint();
     }
@@ -945,7 +948,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         Physics.SyncTransforms();
         SitOnTableTop(tablet, box, table);
 
-        var grab = tablet.AddComponent<XRGrabInteractable>();
+        var grab = tablet.AddComponent<TabletGrabInteractable>();
         grab.interactionLayers = -1;
         grab.selectMode = InteractableSelectMode.Multiple;
         // Velocity tracking moves the tablet through physics, so the hand cannot push it into the table.
