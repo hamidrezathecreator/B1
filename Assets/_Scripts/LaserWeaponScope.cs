@@ -19,7 +19,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] Camera laserCamera;
     [SerializeField] string[] laserCameraNames = { "Camera Lase", "Camera Laser", "CameraLaser", "Laser Camera" };
     [Tooltip("Smaller = more zoom. Only for the camera made by this script; a scene camera keeps its own.")]
-    [Range(1f, 60f)] [SerializeField] float fieldOfView = 12f;
+    [Range(1f, 60f)] [SerializeField] float fieldOfView = 8f;
     [Tooltip("How far past the front end of the weapon the camera sits, meters.")]
     [Min(0f)] [SerializeField] float cameraAhead = 0.3f;
     [Tooltip("Direction the weapon fires in its own space. Auto = its long axis, away from the screen.")]
@@ -42,7 +42,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] Transform target;
     [SerializeField] string targetName = "SM_Shahed149";
     [Tooltip("Seconds the target must stay in the crosshair before the missile goes.")]
-    [Min(0.1f)] [SerializeField] float lockSeconds = 2f;
+    [Min(0.1f)] [SerializeField] float lockSeconds = 1f;
     [Tooltip("How far off the camera's line the target may be and still count, degrees. 0 = the ray must hit it.")]
     [Range(0f, 15f)] [SerializeField] float aimToleranceDegrees = 2.5f;
     [Tooltip("Only lock while the weapon is in the player's hand.")]
@@ -57,7 +57,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [Min(0.01f)] [SerializeField] float missileScale = 0.33333334f;
     [SerializeField] string missileLaunchOriginName = "SM_AirDefense (1)";
     [SerializeField] Vector3 missileLaunchOffset = new Vector3(0f, 0f, 0.5f);
-    [Min(0.1f)] [SerializeField] float missileSeconds = 1.5f;
+    [Min(0.1f)] [SerializeField] float missileSeconds = 1.2f;
     [SerializeField] AudioClip missileLaunchSound;
     [Range(0f, 1f)] [SerializeField] float missileLaunchVolume = 1f;
     [SerializeField] AudioClip missileImpactSound;
