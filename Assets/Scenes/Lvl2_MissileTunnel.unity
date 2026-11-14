@@ -5310,9 +5310,9 @@ MonoBehaviour:
   playerLocalPosition: {x: -0.9, y: 0.05, z: 0}
   placePlayerOnStart: 1
   door01OpenLocal: {x: 0.267, y: 0.1, z: 1.214}
-  door01ClosedLocal: {x: -0.436, y: 0.1, z: 1.214}
+  door01ClosedLocal: {x: -0.45, y: 0.1, z: 1.214}
   door02OpenLocal: {x: -2.164, y: 0.1, z: 1.207}
-  door02ClosedLocal: {x: -1.445, y: 0.1, z: 1.207}
+  door02ClosedLocal: {x: -1.4, y: 0.1, z: 1.207}
   floor1LocalPosition: {x: -0.04, y: -0.16, z: 0.02}
   floor1LocalSize: {x: 0.18, y: 0.18, z: 0.12}
   buttonRestLocal: {x: 0.894, y: 1.338, z: 1.0577}
@@ -5330,7 +5330,7 @@ MonoBehaviour:
   showPathToTable: 1
   pathWaypoints: []
   pathStartLocal: {x: -0.95, y: 0, z: 1.6}
-  pathStopBeforeTable: 0.45
+  pathStopBeforeTable: 0
   pathStraightFraction: 0.5
   elevatorSound: {fileID: 8300000, guid: d1f79ce1b030fb04c932ee00b34661f0, type: 3}
   elevatorVolume: 0.592
@@ -6237,7 +6237,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6129632811647607716, guid: 7909bd2e1333ae84687aff0232fee0d2, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 10.599695
+      value: 36.93
       objectReference: {fileID: 0}
     - target: {fileID: 6129632811647607716, guid: 7909bd2e1333ae84687aff0232fee0d2, type: 3}
       propertyPath: m_LocalRotation.w
@@ -7481,7 +7481,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 10.6
+      value: 36.93031
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 51b248978db896b4eb6ea50547df7257, type: 3}
       propertyPath: m_LocalRotation.w
@@ -15028,14 +15028,6 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
-    - target: {fileID: 2218496723442559054, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
-      propertyPath: m_Name
-      value: XR Origin (XR Rig)
-      objectReference: {fileID: 0}
-    - target: {fileID: 2218496723442559054, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
     - target: {fileID: 2218496723442559053, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
       propertyPath: m_LocalPosition.x
       value: -8.391
@@ -15075,6 +15067,14 @@ PrefabInstance:
     - target: {fileID: 2218496723442559053, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2218496723442559054, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
+      propertyPath: m_Name
+      value: XR Origin (XR Rig)
+      objectReference: {fileID: 0}
+    - target: {fileID: 2218496723442559054, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -16450,7 +16450,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: 958f1c8b7c80c4342b0c00b982adb265, type: 3}
   m_PlayOnAwake: 1
-  m_Volume: 0.484
+  m_Volume: 1
   m_Pitch: 1
   Loop: 1
   Mute: 0
@@ -21658,39 +21658,31 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 1800725127586568702, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6355494128053973299, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 1800725127586568702, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
-      propertyPath: m_IsActive
-      value: 0
+    - target: {fileID: 7300000000000000002, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -8.391
+      objectReference: {fileID: 0}
+    - target: {fileID: 7300000000000000002, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.05
+      objectReference: {fileID: 0}
+    - target: {fileID: 7300000000000000002, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.9
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
---- !u!4 &7300000000000000101 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 657184242161839408, guid: d6878e1999eb4b44a9f5a263af86c185, type: 3}
-  m_PrefabInstance: {fileID: 1429904690}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &7300000000000000102 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7300000000000000002, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000100}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &7300000000000000103 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 6355494128053973299, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000100}
-  m_PrefabAsset: {fileID: 0}
---- !u!1 &7300000000000000104 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 1800725127586568702, guid: b217e190391cba11e3e656dec302e8ff, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000100}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &8431837158550182075
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -21809,3 +21801,4 @@ SceneRoots:
   - {fileID: 688829802}
   - {fileID: 19341239}
   - {fileID: 1734483108}
+  - {fileID: 7300000000000000100}
