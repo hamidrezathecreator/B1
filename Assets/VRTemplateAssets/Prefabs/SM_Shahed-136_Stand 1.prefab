@@ -10,7 +10,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1609935097699718166, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: m_LODs.Array.data[0].screenRelativeHeight
-      value: 0.12436344
+      value: 0.025213154
       objectReference: {fileID: 0}
     - target: {fileID: 1609935097699718166, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: m_LODs.Array.data[1].screenRelativeHeight
@@ -20,6 +20,10 @@ PrefabInstance:
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 7011e88c5aa9ca8459238531b644bf5d, type: 2}
+    - target: {fileID: 3671153749626660486, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
+      propertyPath: m_StaticEditorFlags
+      value: 65
+      objectReference: {fileID: 0}
     - target: {fileID: 4632212209193967180, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: m_Name
       value: Shahed-136_LOD_00 (1)
@@ -87,28 +91,40 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 10.7
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: -0.005
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: -1.5500007
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 1
+      value: 0.33258018
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0
+      value: 0.94307506
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalRotation.z
@@ -120,7 +136,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
+      value: 141.149
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -133,6 +149,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_Name
       value: SM_Shahed-136_Stand 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
+      propertyPath: m_StaticEditorFlags
+      value: 65
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
