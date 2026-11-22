@@ -97,6 +97,7 @@ public sealed class XrHandsRig : MonoBehaviour
         }
         EnsurePokeOnController(origin, "Left Controller");
         rightPoke = EnsurePokeOnController(origin, "Right Controller");
+        XrAffordanceUtility.FixAffordances(origin.transform);
         ready = true;
     }
 

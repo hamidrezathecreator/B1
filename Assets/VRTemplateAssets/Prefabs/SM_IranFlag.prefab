@@ -10,15 +10,15 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 17.78
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: 143.8
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: -60.22
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
       propertyPath: m_LocalRotation.w
@@ -59,6 +59,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
       propertyPath: m_Name
       value: SM_IranFlag
+      objectReference: {fileID: 0}
+    - target: {fileID: 2183909508479057072, guid: cccd40ab54914df4a9b2cc0754c3b9af, type: 3}
+      propertyPath: m_LocalScale.x
+      value: -1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []

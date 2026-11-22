@@ -1,0 +1,142 @@
+  savedRestPoses:
+  - piece: {fileID: 1964579620272943449}
+    position: {x: 12.6901245, y: -0.052597046, z: -113.74713}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 4089937625302965511}
+    position: {x: 21.314949, y: -0.09727478, z: -112.703476}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 2214206382768679042}
+    position: {x: 26.286758, y: -0.03477478, z: -112.20589}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 409729392494337081}
+    position: {x: 1.815361, y: -0.029129028, z: -113.76442}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 5087276530861826527}
+    position: {x: 7.563698, y: -0.19859314, z: -113.252716}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8475298824106258664}
+    position: {x: 32.139786, y: -0.038528442, z: -114.15379}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 4088216449038395101}
+    position: {x: 1.7945709, y: 0, z: -109.30827}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 543899444566372551}
+    position: {x: 7.921715, y: 0, z: -109.69562}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3350666640448432132}
+    position: {x: 13.095795, y: 0, z: -109.694916}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3284061802393538715}
+    position: {x: 21.53199, y: 0, z: -109.477646}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 807749648512485944}
+    position: {x: 25.925278, y: 0, z: -109.34895}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 325259410424108967}
+    position: {x: 31.703903, y: 0, z: -109.92032}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 868906993582056800}
+    position: {x: 31.70388, y: 0, z: -108.26276}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3813256020142745213}
+    position: {x: 1.6182861, y: 0, z: -105.98532}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 2093880119288976599}
+    position: {x: 7.4132004, y: 0, z: -105.23483}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3727820037904839411}
+    position: {x: 12.928429, y: 0.09742737, z: -106.50807}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7930808121580985902}
+    position: {x: 21.568222, y: 0, z: -106.116}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7660744026913734767}
+    position: {x: 26.41224, y: 0, z: -105.58661}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 1519903242924030307}
+    position: {x: 31.974678, y: 0, z: -105.8277}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 6956679374876346506}
+    position: {x: 2.4936066, y: 0, z: -102.70444}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8762148884553612739}
+    position: {x: 12.354469, y: 0, z: -101.762695}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8614610627685950597}
+    position: {x: 31.882935, y: 0, z: -102.14708}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 1743492613647572556}
+    position: {x: 21.586922, y: 0, z: -102.50285}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 2742464463760334390}
+    position: {x: 8.043388, y: 0, z: -99.59967}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 4397561674420945850}
+    position: {x: 12.902496, y: 0, z: -98.33731}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7179482923980187341}
+    position: {x: 21.289055, y: 0, z: -98.99472}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7994500513643555925}
+    position: {x: 32.359993, y: 0, z: -98.52983}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7999876699774408822}
+    position: {x: 2.0915527, y: 0, z: -98.513}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7007090849372527985}
+    position: {x: 21.26944, y: 0, z: -97.02962}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 4852165020931056741}
+    position: {x: 2.1667404, y: 0, z: -95.40657}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 5130382941265052183}
+    position: {x: 8.231865, y: 0, z: -95.48929}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8597293025989017008}
+    position: {x: 13.009392, y: 0, z: -94.57045}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8550905094853234268}
+    position: {x: 25.89766, y: 0.042251587, z: -93.864365}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8382797510170766588}
+    position: {x: 32.586548, y: 0, z: -95.54384}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7429860298858910177}
+    position: {x: 26.289856, y: -0.041549683, z: -95.316635}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7671913552154470288}
+    position: {x: 2.4469528, y: 0, z: -91.63556}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7049269800870396462}
+    position: {x: 8.578575, y: 0, z: -92.05859}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3993664592280075167}
+    position: {x: 13.035408, y: 0, z: -91.6741}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 3004916186378321149}
+    position: {x: 21.649147, y: 0, z: -92.32704}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8251705479225870822}
+    position: {x: 26.177254, y: 0, z: -91.21591}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 103313758500767303}
+    position: {x: 32.01104, y: -0.0038909912, z: -91.208115}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 5854607140675231679}
+    position: {x: 1.9753952, y: 0, z: -88.04048}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 8988889407470265121}
+    position: {x: 7.9160385, y: 0, z: -88.612335}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7690756341055297162}
+    position: {x: 12.899612, y: 0, z: -88.76254}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 5229579570872383755}
+    position: {x: 26.593323, y: -0.12232971, z: -87.8031}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 7785739906110251026}
+    position: {x: 21.728119, y: -0.0796051, z: -88.47415}
+    rotation: {x: -0, y: -0, z: -0, w: 1}
+  - piece: {fileID: 2082813570619771904}
+    position: {x: 26.41224, y: -0.14381409, z: -99.701965}
+    rotation: {x: -0, y: -0, z: -0, w: 1}

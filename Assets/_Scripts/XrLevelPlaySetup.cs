@@ -305,12 +305,19 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
     void SetupBody(LayerMask groundMask)
     {
-        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
-        origin.CameraYOffset = 0f;
-        if (origin.CameraFloorOffsetObject != null)
+        var settings = origin.GetComponent<XrOriginPlaySettings>();
+        var bodyHeight = settings != null ? settings.BodyHeightMeters : BodyHeight;
+        if (settings != null)
+            settings.Apply();
+        else
         {
-            var offset = origin.CameraFloorOffsetObject.transform.localPosition;
-            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+            origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+            origin.CameraYOffset = 0f;
+            if (origin.CameraFloorOffsetObject != null)
+            {
+                var offset = origin.CameraFloorOffsetObject.transform.localPosition;
+                origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+            }
         }
 
         var defaultLayer = LayerMask.NameToLayer("Default");
@@ -320,9 +327,9 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         if (body != null)
         {
             body.enabled = true;
-            body.height = BodyHeight;
+            body.height = bodyHeight;
             body.radius = 0.2f;
-            body.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+            body.center = new Vector3(0f, bodyHeight * 0.5f, 0f);
             body.stepOffset = 0.3f;
             body.slopeLimit = maxSlopeDegrees;
             body.skinWidth = SkinWidth;
@@ -341,13 +348,16 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         foreach (var jump in origin.GetComponentsInChildren<JumpProvider>(true))
             jump.enabled = false;
 
-        var move = origin.GetComponentInChildren<DynamicMoveProvider>(true);
-        if (move != null)
+        if (settings == null)
         {
-            move.enabled = true;
-            move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
-            move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
-            move.enableFly = false;
+            var move = origin.GetComponentInChildren<DynamicMoveProvider>(true);
+            if (move != null)
+            {
+                move.enabled = true;
+                move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
+                move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
+                move.enableFly = false;
+            }
         }
     }
 

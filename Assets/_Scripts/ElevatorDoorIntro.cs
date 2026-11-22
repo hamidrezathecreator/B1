@@ -205,12 +205,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         // Local Y is cabin floor. Floor tracking supplies eye height from the headset.
         var worldPos = elevatorRoot.TransformPoint(playerLocalPosition);
         xrOrigin.transform.SetPositionAndRotation(worldPos, elevatorRoot.rotation);
-        if (xrOrigin.CameraFloorOffsetObject != null)
-        {
-            var offset = xrOrigin.CameraFloorOffsetObject.transform.localPosition;
-            xrOrigin.CameraFloorOffsetObject.transform.localPosition =
-                new Vector3(offset.x, BridgeXrPlaySetup.ExtraCameraLift, offset.z);
-        }
+        xrOrigin.GetComponent<XrOriginPlaySettings>()?.Apply();
     }
 
     void BuildCabinCage()

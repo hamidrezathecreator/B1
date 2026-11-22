@@ -37,6 +37,13 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [SerializeField] private Vector3 launchRandomness = new Vector3(25f, 10f, 25f);
     [Tooltip("Random impact radius around Point B on the world XZ plane. Impact height stays at Point B's Y.")]
     [SerializeField, Min(0f)] private float endPointRadius;
+    [Header("Impact targeting")]
+    [Tooltip("Raycasts from above each horizontal aim point to find the strike surface (e.g. your bridge layer). Empty = Point B height only.")]
+    [SerializeField] private LayerMask impactLayers;
+    [Tooltip("Ray origin height above the horizontal aim point.")]
+    [SerializeField, Min(0.1f)] private float impactRaycastHeight = 500f;
+    [Tooltip("If nothing on Impact Layers is hit, keep Point B height instead of skipping the shot.")]
+    [SerializeField] private bool fallbackToPointBHeight;
     [Tooltip("Flight time in seconds for each missile, regardless of its randomized travel distance.")]
     [SerializeField, Min(0.01f)] private float flightDuration = 4f;
     [Tooltip("The direction the missile nose points in prefab local space. Usually +Z; use +Y for an upright model.")]
@@ -54,6 +61,12 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     // Preserve material assignments serialized before the variants array was introduced.
     [HideInInspector]
     [SerializeField] private Material explosionMaterial;
+
+    [Header("Condensation cloud")]
+    [SerializeField] private bool spawnCondensationCloud = true;
+    [SerializeField, Min(0.01f)] private float condensationCloudRadius = 8f;
+    [Tooltip("Seconds; 0 or negative uses CondensationCloudSystem default.")]
+    [SerializeField] private float condensationCloudLifetime;
 
     [Header("Presentation")]
     [SerializeField] private ExplosionFacing facing = ExplosionFacing.FaceCamera;
@@ -130,6 +143,40 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     /// <summary>Flight time of one missile, from launch to impact.</summary>
     public float FlightDuration => Mathf.Max(0.01f, flightDuration);
 
+    /// <summary>Play Mode test: one missile to the surface under Point B (uses Impact Layers when set).</summary>
+    public void TestFireAtPointB()
+    {
+        if (pointB == null)
+        {
+            Debug.LogWarning("MissileLauncherSystem: assign Point B before testing.", this);
+            return;
+        }
+        if (!TryResolveImpactPoint(pointB.position, Vector2.zero, out Vector3 impact))
+        {
+            Debug.LogWarning("MissileLauncherSystem: no collider on Impact Layers under Point B.", this);
+            return;
+        }
+        FireAt(impact);
+    }
+
+    /// <summary>Resolves a world impact point from a horizontal center and XZ offset.</summary>
+    public bool TryResolveImpactPoint(Vector3 horizontalCenter, Vector2 xzOffset, out Vector3 impactPoint)
+    {
+        impactPoint = horizontalCenter + new Vector3(xzOffset.x, 0f, xzOffset.y);
+        if (impactLayers.value == 0) return true;
+
+        var rayStart = impactPoint + Vector3.up * impactRaycastHeight;
+        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit,
+                impactRaycastHeight * 2f, impactLayers, QueryTriggerInteraction.Ignore))
+        {
+            impactPoint = hit.point;
+            return true;
+        }
+
+        if (fallbackToPointBHeight) return true;
+        return false;
+    }
+
     /// <summary>Launches a single missile at an exact point; Point B and the endpoint radius are not used.</summary>
     public void FireAt(Vector3 point, System.Action<Vector3> arrived = null)
     {
@@ -168,7 +215,14 @@ public sealed class MissileLauncherSystem : MonoBehaviour
                 Random.Range(-Mathf.Abs(launchRandomness.y), Mathf.Abs(launchRandomness.y)),
                 Random.Range(-Mathf.Abs(launchRandomness.z), Mathf.Abs(launchRandomness.z)));
             Vector2 endOffset = exactPoint ? Vector2.zero : Random.insideUnitCircle * Mathf.Max(0f, endPointRadius);
-            Vector3 destination = endCenter + new Vector3(endOffset.x, 0f, endOffset.y);
+            Vector3 destination;
+            if (exactPoint)
+                destination = endCenter;
+            else if (!TryResolveImpactPoint(endCenter, endOffset, out destination))
+            {
+                Debug.LogWarning("MissileLauncherSystem: skipped a shot — no surface on Impact Layers.", this);
+                continue;
+            }
             Vector3 direction = destination - start;
             float duration = Mathf.Max(0.01f, flightDuration);
             var missile = Instantiate(prefab, start, GetFlightRotation(direction));
@@ -258,6 +312,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             billboard.Configure(targetCamera != null ? targetCamera : Camera.main, facing, flipFacing, true, sequence.FacingAxis);
 
         Destroy(instance, sequence.GetLifetime());
+        if (spawnCondensationCloud)
+            CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime);
+
         onImpact.Invoke(impactPosition);
     }
 
@@ -294,6 +351,12 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         effects.Clear();
     }
 
+    private void OnDrawGizmos()
+    {
+        if (pointB == null) return;
+        DrawImpactTargetGizmos(pointB.position, false);
+    }
+
     private void OnDrawGizmosSelected()
     {
         if (pointB == null) return;
@@ -310,6 +373,41 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             float angleB = (i + 1) * Mathf.PI * 2f / 48;
             Gizmos.DrawLine(center + new Vector3(Mathf.Cos(angleA), 0f, Mathf.Sin(angleA)) * radius,
                 center + new Vector3(Mathf.Cos(angleB), 0f, Mathf.Sin(angleB)) * radius);
+        }
+        DrawImpactTargetGizmos(center, true);
+    }
+
+    void DrawImpactTargetGizmos(Vector3 center, bool detailed)
+    {
+        Gizmos.color = new Color(0.95f, 0.95f, 1f, detailed ? 0.9f : 0.45f);
+        Gizmos.DrawWireSphere(center, detailed ? 0.35f : 0.2f);
+
+        if (impactLayers.value == 0) return;
+
+        var offsets = detailed
+            ? new[]
+            {
+                Vector2.zero,
+                new Vector2(endPointRadius, 0f),
+                new Vector2(-endPointRadius, 0f),
+                new Vector2(0f, endPointRadius),
+                new Vector2(0f, -endPointRadius),
+            }
+            : new[] { Vector2.zero };
+
+        foreach (var offset in offsets)
+        {
+            if (!TryResolveImpactPoint(center, offset, out Vector3 impact)) continue;
+            var rayStart = center + new Vector3(offset.x, 0f, offset.y) + Vector3.up * impactRaycastHeight;
+            Gizmos.color = new Color(1f, 0.85f, 0.2f, detailed ? 0.85f : 0.4f);
+            Gizmos.DrawLine(rayStart, impact);
+            Gizmos.color = new Color(0.65f, 0.85f, 1f, detailed ? 0.9f : 0.5f);
+            Gizmos.DrawWireSphere(impact, condensationCloudRadius);
+            if (spawnCondensationCloud && detailed)
+            {
+                Gizmos.color = new Color(0.65f, 0.85f, 1f, 0.25f);
+                Gizmos.DrawSphere(impact, condensationCloudRadius * 0.5f);
+            }
         }
     }
 }

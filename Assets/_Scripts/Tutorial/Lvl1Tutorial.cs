@@ -15,7 +15,7 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 /// <summary>
 /// Lvl 1 controller tutorial, shown as a banner above the right controller:
 /// 1. Press the Start button (no movement until then).
-/// 2. Teleport with the right thumbstick (teleport only; walking stays off).
+/// 2. Teleport with the right thumbstick (walking is on from the start; left stick also moves).
 /// 3. Walk to a case and grab it with the grip button.
 /// 4. Carry it along the yellow floor path to the yellow ghost on the table; released close by, it snaps in.
 /// 5. Fade to black and load the next level.
@@ -135,7 +135,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         font = FindPersianFont();
 
         PrepareTeleportFloor();
-        SetWalking(false);
+        XrBuildSceneLocomotion.EnableWalking(origin);
         SetTeleport(false);
 
         var startButton = FindStartButton();
@@ -168,6 +168,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     void BeginTeleportStep()
     {
         step = Step.Teleport;
+        XrBuildSceneLocomotion.EnableWalking(origin);
         SetTeleport(true);
         ShowBanner(teleportMessage);
         HighlightButton("ThumbStick");

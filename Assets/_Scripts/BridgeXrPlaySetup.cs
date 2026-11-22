@@ -18,8 +18,6 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 static class BridgeXrPlaySetup
 {
     const float BodyHeight = 1.75f;
-    // Between the old too-high Device offset and the last Floor height that felt too short.
-    internal const float ExtraCameraLift = 0.25f;
     const float SkinWidth = 0.02f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -54,7 +52,7 @@ static class BridgeXrPlaySetup
             return;
 
         EnsureHeadsetCamera(origin);
-        MatchEyeHeight(origin);
+        ApplyOriginPlaySettings(origin);
         WidenGrabReach(origin);
         var floorY = FindFloorHeight(origin);
         var groundMask = BuildFlatFloor(origin, floorY);
@@ -76,30 +74,21 @@ static class BridgeXrPlaySetup
         EnsureHeadsetCamera(origin);
         WidenGrabReach(origin);
 
-        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
-        origin.CameraYOffset = 0f;
-        if (origin.CameraFloorOffsetObject != null)
-        {
-            var offset = origin.CameraFloorOffsetObject.transform.localPosition;
-            // Same lift as the open levels, so the view is not down in the floor inside the cabin.
-            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, ExtraCameraLift, offset.z);
-        }
+        ApplyOriginPlaySettings(origin);
 
-        // XR Origin resets the camera offset to 0 once Floor tracking kicks in. Outside, the deck
-        // lock puts the lift back every frame; in the cabin there is no deck lock, so keep just the lift.
         var keeper = origin.GetComponent<CameraLiftKeeper>();
         if (keeper == null) keeper = origin.gameObject.AddComponent<CameraLiftKeeper>();
         keeper.origin = origin;
-        keeper.lift = ExtraCameraLift;
 
         var body = origin.GetComponent<CharacterController>();
+        var bodyHeight = origin.GetComponent<XrOriginPlaySettings>()?.BodyHeightMeters ?? BodyHeight;
         if (body != null)
         {
             body.enabled = true;
-            body.height = BodyHeight;
+            body.height = bodyHeight;
             // Slightly tighter so the cabin walls do not pinch the body in the middle.
             body.radius = 0.18f;
-            body.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+            body.center = new Vector3(0f, bodyHeight * 0.5f, 0f);
             body.stepOffset = 0.08f;
             body.slopeLimit = 20f;
             body.skinWidth = SkinWidth;
@@ -139,24 +128,25 @@ static class BridgeXrPlaySetup
         }
     }
 
-    static void MatchEyeHeight(XROrigin origin)
+    static void ApplyOriginPlaySettings(XROrigin origin)
     {
-        // Floor keeps Quest tracking from stacking a full Device offset again.
-        // ExtraCameraLift nudges the view a little above the last too-low height.
-        // Floor tracking already puts the headset at eye height. A second CameraYOffset
-        // (the rig default is 1.8) stacks on top and lifts the teleport ray with it.
-        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
-        origin.CameraYOffset = 0f;
-        ApplyCameraLift(origin);
-    }
-
-    static void ApplyCameraLift(XROrigin origin)
-    {
-        if (origin.CameraFloorOffsetObject == null)
+        if (origin == null)
             return;
 
-        var offset = origin.CameraFloorOffsetObject.transform.localPosition;
-        origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, ExtraCameraLift, offset.z);
+        var settings = origin.GetComponent<XrOriginPlaySettings>();
+        if (settings != null)
+        {
+            settings.Apply();
+            return;
+        }
+
+        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
+        origin.CameraYOffset = 0f;
+        if (origin.CameraFloorOffsetObject != null)
+        {
+            var offset = origin.CameraFloorOffsetObject.transform.localPosition;
+            origin.CameraFloorOffsetObject.transform.localPosition = new Vector3(offset.x, 0f, offset.z);
+        }
     }
 
     static float FindFloorHeight(XROrigin origin)
@@ -243,13 +233,16 @@ static class BridgeXrPlaySetup
 
     static void PlantBody(XROrigin origin, float floorY, LayerMask groundMask)
     {
+        var settings = origin.GetComponent<XrOriginPlaySettings>();
+        var bodyHeight = settings != null ? settings.BodyHeightMeters : BodyHeight;
+
         var body = origin.GetComponent<CharacterController>();
         if (body != null)
         {
             body.enabled = true;
-            body.height = BodyHeight;
+            body.height = bodyHeight;
             body.radius = 0.2f;
-            body.center = new Vector3(0f, BodyHeight * 0.5f, 0f);
+            body.center = new Vector3(0f, bodyHeight * 0.5f, 0f);
             body.stepOffset = 0.08f;
             body.slopeLimit = 20f;
             body.skinWidth = SkinWidth;
@@ -275,20 +268,24 @@ static class BridgeXrPlaySetup
         foreach (var jump in origin.GetComponentsInChildren<JumpProvider>(true))
             jump.enabled = false;
 
-        var move = origin.GetComponentInChildren<DynamicMoveProvider>(true);
-        if (move == null)
-            return;
-
-        move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
-        move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
-        move.enableFly = false;
+        if (settings != null)
+            settings.Apply();
+        else
+        {
+            var move = origin.GetComponentInChildren<DynamicMoveProvider>(true);
+            if (move != null)
+            {
+                move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
+                move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
+                move.enableFly = false;
+            }
+        }
     }
 
     static void KeepFeetOnFloor(XROrigin origin, float floorY)
     {
         var lockHeight = origin.gameObject.AddComponent<BridgeDeckLock>();
         lockHeight.floorY = floorY + SkinWidth;
-        lockHeight.cameraLift = ExtraCameraLift;
         lockHeight.origin = origin;
     }
 
@@ -396,17 +393,17 @@ static class BridgeXrPlaySetup
 sealed class CameraLiftKeeper : MonoBehaviour
 {
     public XROrigin origin;
-    public float lift;
 
     void LateUpdate()
     {
-        if (origin == null || origin.CameraFloorOffsetObject == null) return;
+        if (origin == null) return;
         if (origin.CameraYOffset != 0f)
             origin.CameraYOffset = 0f;
+        if (origin.CameraFloorOffsetObject == null) return;
         var offset = origin.CameraFloorOffsetObject.transform;
         var local = offset.localPosition;
-        if (Mathf.Abs(local.y - lift) <= 0.0001f) return;
-        offset.localPosition = new Vector3(local.x, lift, local.z);
+        if (Mathf.Abs(local.y) <= 0.0001f) return;
+        offset.localPosition = new Vector3(local.x, 0f, local.z);
     }
 }
 
@@ -416,7 +413,6 @@ sealed class CameraLiftKeeper : MonoBehaviour
 sealed class BridgeDeckLock : MonoBehaviour
 {
     public float floorY;
-    public float cameraLift;
     public XROrigin origin;
 
     void LateUpdate()
@@ -425,17 +421,20 @@ sealed class BridgeDeckLock : MonoBehaviour
         if (Mathf.Abs(position.y - floorY) > 0.0001f)
             transform.position = new Vector3(position.x, floorY, position.z);
 
-        if (origin == null || origin.CameraFloorOffsetObject == null)
+        if (origin == null)
             return;
 
         if (origin.CameraYOffset != 0f)
             origin.CameraYOffset = 0f;
 
-        var offset = origin.CameraFloorOffsetObject.transform;
-        var local = offset.localPosition;
-        if (Mathf.Abs(local.y - cameraLift) <= 0.0001f)
+        if (origin.CameraFloorOffsetObject == null)
             return;
 
-        offset.localPosition = new Vector3(local.x, cameraLift, local.z);
+        var offset = origin.CameraFloorOffsetObject.transform;
+        var local = offset.localPosition;
+        if (Mathf.Abs(local.y) <= 0.0001f)
+            return;
+
+        offset.localPosition = new Vector3(local.x, 0f, local.z);
     }
 }

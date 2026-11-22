@@ -6,7 +6,11 @@ Add `MissileLauncherSystem` to an empty controller. Assign missile prefab assets
 
 There is no Point A transform. `Launch Offset` sets the launch center relative to Point B in world axes; `(0, 100, 0)` launches 100 units above it. `Launch Randomness` adds an independent random offset of plus/minus each axis per missile; `(25, 10, 25)` scatters launches horizontally by up to 25 units and vertically by up to 10 units. Zero disables randomness on that axis.
 
-`End Point Radius` scatters each missile's destination uniformly inside a horizontal circle around Point B, retaining its Y coordinate. Zero hits Point B exactly. Each missile samples and captures its own launch position and destination when fired. Select the controller to see its launch volume and impact radius.
+`End Point Radius` scatters each missile's destination uniformly inside a horizontal circle around Point B. Zero hits Point B exactly. Each missile samples and captures its own launch position and destination when fired. Select the controller to see its launch volume and impact radius.
+
+`Impact Layers` raycasts downward from above each horizontal aim point and snaps the strike to the first collider on those layers (for example a dedicated bridge layer). Leave empty to keep the legacy Point B height. Shots with no hit are skipped unless `Fallback To Point B Height` is enabled. Scene gizmos draw the ray, resolved hit, and condensation cloud radius.
+
+`Spawn Condensation Cloud` plays a pooled Wilson cloud from `CondensationCloudSystem` at each impact. Assign one `CondensationCloudSystem` in the scene. Set `Condensation Cloud Radius` to match the gizmo sphere.
 
 Each missile spawns facing its own randomized endpoint, stays facing that captured destination during flight, and arrives after `Flight Duration` seconds regardless of distance. Movement is linear, with speed determined by each missile's distance and duration. Set `Model Forward Axis` to the direction the nose points in the prefab's local space: `(0, 0, 1)` for +Z or `(0, 1, 0)` for +Y. Straight vertical flights are supported.
 
