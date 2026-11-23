@@ -231,6 +231,21 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         var allChecked = optionActive[0] && optionActive[1] && optionActive[2];
         ChecklistChanged?.Invoke(allChecked);
     }
+
+    /// <summary>Editor / state-machine tester: check all three tablet options.</summary>
+    public void EditorTestActivateAllOptions()
+    {
+        if (!Application.isPlaying || optionActive == null) return;
+        for (var i = 0; i < optionActive.Length; i++)
+        {
+            optionActive[i] = true;
+            if (optionImages != null && i < optionImages.Length && optionImages[i] != null &&
+                activeTextures != null && i < activeTextures.Length && activeTextures[i] != null)
+                optionImages[i].texture = activeTextures[i];
+        }
+
+        ChecklistChanged?.Invoke(true);
+    }
 }
 
 /// <summary>Trigger relay on each option bar; forwards finger contacts to the tablet UI.</summary>
