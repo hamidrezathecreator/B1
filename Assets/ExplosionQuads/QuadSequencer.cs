@@ -39,6 +39,7 @@ public class QuadSequncerController : MonoBehaviour
     private static readonly int TilesYId         = Shader.PropertyToID("_TilesY");
     private static readonly int AnimationSpeedId = Shader.PropertyToID("_AnimationSpeed");
     private static readonly int StartTimeId      = Shader.PropertyToID("_StartTime");
+    private static readonly int PlaybackTimeId   = Shader.PropertyToID("_PlaybackTime");
     private static readonly int LoopId           = Shader.PropertyToID("_Loop");
     private static readonly int FrameCountId     = Shader.PropertyToID("_FrameCount");
 
@@ -46,6 +47,14 @@ public class QuadSequncerController : MonoBehaviour
     private float startTime;
     private float lifetime;
     private bool isPlaying;
+    private float playbackVirtualTime;
+    private float playbackWallTime;
+    private bool useScriptedPlayback;
+    private ExplosionTimeScaleSettings.Profile playbackProfile = ExplosionTimeScaleSettings.Profile.Identity;
+
+    public ExplosionTimeScaleSettings.Profile PlaybackProfile => playbackProfile;
+
+    public void SetPlaybackTimeScale(ExplosionTimeScaleSettings.Profile profile) => playbackProfile = profile;
 
     /// <summary>Frames-per-second this sequence plays at, as read from the material.</summary>
     public float FrameRate { get; private set; }
@@ -111,6 +120,9 @@ public class QuadSequncerController : MonoBehaviour
             mat.SetFloat(FrameCountId, FrameCount);
 
         lifetime = FrameCount / FrameRate;
+        useScriptedPlayback = mat.HasProperty(PlaybackTimeId);
+        if (useScriptedPlayback)
+            mat.SetFloat(PlaybackTimeId, -1f);
     }
 
     /// <summary>Starts (or restarts) the one-shot sequence from frame 0.</summary>
@@ -124,7 +136,24 @@ public class QuadSequncerController : MonoBehaviour
 
         startTime = Time.time;
         mat.SetFloat(StartTimeId, startTime);
+        playbackVirtualTime = 0f;
+        playbackWallTime = 0f;
         isPlaying = true;
+        if (useScriptedPlayback)
+            mat.SetFloat(PlaybackTimeId, 0f);
+    }
+
+    private void Update()
+    {
+        if (!isPlaying || mat == null || !useScriptedPlayback) return;
+
+        float dt = Time.deltaTime;
+        playbackWallTime += dt;
+        float scale = playbackProfile.Evaluate(playbackWallTime);
+        playbackVirtualTime += dt * scale;
+        mat.SetFloat(PlaybackTimeId, playbackVirtualTime);
+        if (playbackVirtualTime >= lifetime)
+            isPlaying = false;
     }
 
     /// <summary>Stops reporting the sequence as playing. Does not rewind the visible frame.</summary>
@@ -137,6 +166,7 @@ public class QuadSequncerController : MonoBehaviour
     public bool IsPlaying()
     {
         if (!isPlaying) return false;
+        if (useScriptedPlayback) return playbackVirtualTime < lifetime;
         return (Time.time - startTime) < lifetime;
     }
 
@@ -145,7 +175,11 @@ public class QuadSequncerController : MonoBehaviour
     {
         isPlaying = false;
         startTime = 0f;
+        playbackVirtualTime = 0f;
+        playbackWallTime = 0f;
         mat?.SetFloat(StartTimeId, 0f);
+        if (useScriptedPlayback)
+            mat?.SetFloat(PlaybackTimeId, -1f);
     }
 
     /// <summary>

@@ -9,6 +9,7 @@ Shader "Custom/QuadBottomFade Mobile Thermal HQ"
         _TilesY ("Tiles Y", Float) = 4
         _AnimationSpeed ("Animation Speed (FPS)", Float) = 24
         _StartTime ("Start Time", Float) = 0
+        _PlaybackTime ("Playback Time (>=0 = scripted)", Float) = -1
         _Loop ("Loop", Float) = 0
         // 0 = legacy behavior: play every tile in the _TilesX * _TilesY grid.
         // >0 = play only the first N tiles (row-major) as a single one-shot sequence,
@@ -66,6 +67,7 @@ Shader "Custom/QuadBottomFade Mobile Thermal HQ"
             float _TilesY;
             float _AnimationSpeed;
             float _StartTime;
+            float _PlaybackTime;
             float _Loop;
             float _FrameCount;
             float _FadeStart;
@@ -90,7 +92,7 @@ Shader "Custom/QuadBottomFade Mobile Thermal HQ"
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
                 
-                float elapsedTime = _Time.y - _StartTime;
+                float elapsedTime = _PlaybackTime >= 0.0 ? _PlaybackTime : (_Time.y - _StartTime);
                 float gridFrames = _TilesX * _TilesY;
                 // 0 = legacy/full-grid behavior; >0 = clamp the sheet to a shorter one-shot sequence.
                 float totalFrames = _FrameCount > 0.5 ? min(_FrameCount, gridFrames) : gridFrames;
@@ -180,6 +182,7 @@ Shader "Custom/QuadBottomFade Mobile Thermal HQ"
             float _TilesY;
             float _AnimationSpeed;
             float _StartTime;
+            float _PlaybackTime;
             float _Loop;
             float _FrameCount;
             float _FadeStart;
@@ -207,7 +210,7 @@ Shader "Custom/QuadBottomFade Mobile Thermal HQ"
                 v2f o;
                 o.pos = UnityObjectToClipPos(v.vertex);
                 
-                float elapsedTime = _Time.y - _StartTime;
+                float elapsedTime = _PlaybackTime >= 0.0 ? _PlaybackTime : (_Time.y - _StartTime);
                 float gridFrames = _TilesX * _TilesY;
                 // 0 = legacy/full-grid behavior; >0 = clamp the sheet to a shorter one-shot sequence.
                 float totalFrames = _FrameCount > 0.5 ? min(_FrameCount, gridFrames) : gridFrames;

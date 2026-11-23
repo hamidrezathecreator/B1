@@ -12660,6 +12660,9 @@ MonoBehaviour:
   initialCapacity: 12
   maxPoolSize: 64
   maxSimultaneousClouds: 12
+  startTimeScale: 0.25
+  endTimeScale: 1
+  timeScaleRampDuration: 0.15
 --- !u!1 &915057045
 GameObject:
   m_ObjectHideFlags: 0

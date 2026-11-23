@@ -139,14 +139,18 @@ namespace ExplosionQuads
                 }
             }
 
-            float longest = 0f;
-            foreach (GameObject instance in spawned)
+            while (true)
             {
-                if (instance == null) continue;
-                QuadSequncerController sequence = instance.GetComponent<QuadSequncerController>();
-                if (sequence != null) longest = Mathf.Max(longest, sequence.GetLifetime());
+                bool anyPlaying = false;
+                foreach (GameObject instance in spawned)
+                {
+                    if (instance == null) continue;
+                    QuadSequncerController sequence = instance.GetComponent<QuadSequncerController>();
+                    if (sequence != null && sequence.IsPlaying()) anyPlaying = true;
+                }
+                if (!anyPlaying) break;
+                yield return null;
             }
-            if (longest > 0f) yield return Wait(longest);
             playback = null;
             ClearSpawned();
             onExplosionCompleted.Invoke();

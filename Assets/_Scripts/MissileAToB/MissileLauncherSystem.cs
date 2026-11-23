@@ -68,6 +68,16 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [Tooltip("Seconds; 0 or negative uses CondensationCloudSystem default.")]
     [SerializeField] private float condensationCloudLifetime;
 
+    [Header("Impact time scale")]
+    [SerializeField] private bool useImpactTimeScale = true;
+    [Tooltip("Only the first arriving missile per Fire / FireAt gets the slow-mo ramp; later impacts in the same salvo play at normal speed.")]
+    [SerializeField] private bool timeScaleOnlyOnFirstImpact = true;
+    [Tooltip("When enabled, Start / End / Ramp come from the scene CondensationCloudSystem.")]
+    [SerializeField] private bool inheritTimeScaleFromCloudSystem = true;
+    [SerializeField, Min(0f)] private float impactStartTimeScale = 0.25f;
+    [SerializeField, Min(0f)] private float impactEndTimeScale = 1f;
+    [SerializeField, Min(0f)] private float impactTimeScaleRampDuration = 0.15f;
+
     [Header("Presentation")]
     [SerializeField] private ExplosionFacing facing = ExplosionFacing.FaceCamera;
     [SerializeField] private Camera targetCamera;
@@ -84,6 +94,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     private readonly Dictionary<GameObject, Vector3> spawnedMissiles = new Dictionary<GameObject, Vector3>();
     private int runId;
     private readonly List<GameObject> effects = new List<GameObject>();
+    private bool nextImpactUsesTimeScaleRamp;
 
     private void OnDisable()
     {
@@ -135,6 +146,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         Vector3 endCenter = pointB.position;
         int count = Mathf.Max(1, missileCount);
         int currentRun = runId;
+        BeginSalvoTimeScale();
         onStarted.Invoke();
         if (currentRun != runId) return;
         StartCoroutine(LaunchRoutine(availablePrefabs, endCenter, count, currentRun, null));
@@ -190,6 +202,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             return;
         }
         flights.RemoveAll(flight => !flight.isAlive);
+        BeginSalvoTimeScale();
         StartCoroutine(LaunchRoutine(availablePrefabs, point, 1, runId, arrived, true));
     }
 
@@ -258,7 +271,30 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     {
         StopFlights();
         ClearEffects();
+        nextImpactUsesTimeScaleRamp = false;
         onReset.Invoke();
+    }
+
+    void BeginSalvoTimeScale()
+    {
+        if (useImpactTimeScale && timeScaleOnlyOnFirstImpact)
+            nextImpactUsesTimeScaleRamp = true;
+    }
+
+    ExplosionTimeScaleSettings.Profile BuildImpactTimeScaleProfile() =>
+        inheritTimeScaleFromCloudSystem
+            ? ExplosionTimeScaleSettings.Current
+            : new ExplosionTimeScaleSettings.Profile(
+                impactStartTimeScale, impactEndTimeScale, impactTimeScaleRampDuration);
+
+    ExplosionTimeScaleSettings.Profile ConsumeImpactTimeScaleProfile()
+    {
+        if (!useImpactTimeScale) return ExplosionTimeScaleSettings.Profile.Identity;
+        var profile = BuildImpactTimeScaleProfile();
+        if (!timeScaleOnlyOnFirstImpact) return profile;
+        if (!nextImpactUsesTimeScaleRamp) return ExplosionTimeScaleSettings.Profile.Identity;
+        nextImpactUsesTimeScaleRamp = false;
+        return profile;
     }
 
     private void StopFlights()
@@ -302,7 +338,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         instance.transform.position += Vector3.up * sequence.WorldYOffset;
         sequence.gameObject.SetActive(true);
         instance.SetActive(true);
+        var impactTimeScale = ConsumeImpactTimeScaleProfile();
         sequence.Initialize(PickExplosionMaterial(renderer.sharedMaterial));
+        sequence.SetPlaybackTimeScale(impactTimeScale);
         sequence.Play();
 
         var billboard = instance.GetComponent<ExplosionQuadBillboard>();
@@ -311,9 +349,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         if (billboard != null)
             billboard.Configure(targetCamera != null ? targetCamera : Camera.main, facing, flipFacing, true, sequence.FacingAxis);
 
-        Destroy(instance, sequence.GetLifetime());
+        StartCoroutine(DestroyQuadWhenFinished(instance, sequence));
         if (spawnCondensationCloud)
-            CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime);
+            CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime, impactTimeScale);
 
         onImpact.Invoke(impactPosition);
     }
@@ -342,6 +380,19 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         }
 
         return explosionMaterial != null ? explosionMaterial : fallback;
+    }
+
+    private static IEnumerator DestroyQuadWhenFinished(GameObject instance, QuadSequncerController sequence)
+    {
+        if (instance == null || sequence == null) yield break;
+        float wallLimit = sequence.GetLifetime() / Mathf.Max(0.01f, sequence.PlaybackProfile.Start) + 30f;
+        float wall = 0f;
+        while (instance != null && sequence.IsPlaying() && wall < wallLimit)
+        {
+            wall += Time.deltaTime;
+            yield return null;
+        }
+        if (instance != null) Destroy(instance);
     }
 
     private void ClearEffects()

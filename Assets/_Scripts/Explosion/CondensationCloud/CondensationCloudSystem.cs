@@ -24,6 +24,14 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [Tooltip("Maximum clouds including those waiting for the pre-delay. Extra spawns are skipped.")]
     [SerializeField, Min(1)] private int maxSimultaneousClouds = 12;
 
+    [Header("Explosion time scale")]
+    [Tooltip("Playback speed at the first frame of each explosion (quads and Wilson clouds).")]
+    [SerializeField, Min(0f)] private float startTimeScale = 0.25f;
+    [Tooltip("Playback speed after the ramp finishes.")]
+    [SerializeField, Min(0f)] private float endTimeScale = 1f;
+    [Tooltip("Wall-clock seconds to ramp from Start to End time scale.")]
+    [SerializeField, Min(0f)] private float timeScaleRampDuration = 0.15f;
+
     private ObjectPool<GameObject> _pool;
     private int activeCloudCount;
     private static int MainColorId;
@@ -37,9 +45,19 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         SharedBlock ??= new MaterialPropertyBlock();
         _pool = new ObjectPool<GameObject>(Create, OnGet, OnRelease, OnDestroy,
             collectionCheck: true, defaultCapacity: initialCapacity, maxSize: maxPoolSize);
+        PublishTimeScale();
     }
 
-    public GameObject Spawn(Vector3 position, float radius, float lifetime = -1f)
+    private void OnEnable() => PublishTimeScale();
+
+    private void OnValidate() => PublishTimeScale();
+
+    void PublishTimeScale() =>
+        ExplosionTimeScaleSettings.Apply(new ExplosionTimeScaleSettings.Profile(
+            startTimeScale, endTimeScale, timeScaleRampDuration));
+
+    public GameObject Spawn(Vector3 position, float radius, float lifetime = -1f,
+        ExplosionTimeScaleSettings.Profile? timeScale = null)
     {
         if (_pool == null || activeCloudCount >= Mathf.Max(1, maxSimultaneousClouds)) return null;
         var cloud = _pool.Get();
@@ -50,12 +68,14 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         cloud.transform.localScale = Vector3.zero;
         var renderer = cloud.GetComponentInChildren<Renderer>();
         SetCloudAlpha(renderer, 0f);
-        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer));
+        var scale = timeScale ?? ExplosionTimeScaleSettings.Current;
+        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer, scale));
         return cloud;
     }
 
-    public static GameObject SpawnAt(Vector3 position, float radius, float lifetime = -1f)
-        => Instance != null ? Instance.Spawn(position, radius, lifetime) : null;
+    public static GameObject SpawnAt(Vector3 position, float radius, float lifetime = -1f,
+        ExplosionTimeScaleSettings.Profile? timeScale = null)
+        => Instance != null ? Instance.Spawn(position, radius, lifetime, timeScale) : null;
 
     private GameObject Create()
     {
@@ -82,31 +102,32 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     private static void OnRelease(GameObject cloud) => cloud.SetActive(false);
     private static void OnDestroy(GameObject cloud) { if (cloud != null) Destroy(cloud); }
 
-    private IEnumerator AnimateAndRelease(float delay, float seconds, float diameter, GameObject cloud, Renderer renderer)
+    private IEnumerator AnimateAndRelease(float delay, float seconds, float diameter, GameObject cloud, Renderer renderer,
+        ExplosionTimeScaleSettings.Profile timeScale)
     {
         if (delay > 0f) yield return new WaitForSeconds(delay);
         float attack = Mathf.Clamp(seconds * attackFraction, 0.01f, seconds);
-        float elapsed = 0f;
-        while (elapsed < seconds && cloud != null)
+        float wallPlayback = 0f;
+        float virtualElapsed = 0f;
+        while (virtualElapsed < seconds && cloud != null)
         {
-            elapsed += Time.deltaTime;
-            float t = Mathf.Clamp01(elapsed / seconds);
+            float dt = Time.deltaTime;
+            wallPlayback += dt;
+            virtualElapsed += dt * timeScale.Evaluate(wallPlayback);
             float alpha;
             float scale;
-            if (elapsed <= attack)
+            if (virtualElapsed <= attack)
             {
-                float rise = Mathf.Clamp01(elapsed / attack);
+                float rise = Mathf.Clamp01(virtualElapsed / attack);
                 rise = 1f - Mathf.Pow(1f - rise, 3f);
                 alpha = rise * peakAlpha;
                 scale = rise;
             }
             else
             {
-                float fall = Mathf.Clamp01((elapsed - attack) / Mathf.Max(0.001f, seconds - attack));
+                float fall = Mathf.Clamp01((virtualElapsed - attack) / Mathf.Max(0.001f, seconds - attack));
                 fall = fall * fall * (3f - 2f * fall);
                 alpha = (1f - fall) * peakAlpha;
-                // Wilson clouds dissipate in place with a restrained contraction
-                // so the fade has a little physical motion without collapsing.
                 scale = Mathf.Lerp(1f, 0.88f, fall);
             }
 
@@ -138,7 +159,11 @@ public sealed class CondensationCloudSystem : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (Instance == this) Instance = null;
+        if (Instance == this)
+        {
+            Instance = null;
+            ExplosionTimeScaleSettings.Clear();
+        }
         _pool?.Dispose();
     }
 }

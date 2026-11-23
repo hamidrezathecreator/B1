@@ -98,8 +98,11 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _CullDistance: 60
+    - _CullFadeRange: 5
     - _Cutoff: 0.5
     - _DualSidePoles: 1
+    - _EnableDistanceCull: 1
     - _NoiseScale: 3.5
     - _NoiseStrength: 0.45
     - _PoleAtMaxU: 0

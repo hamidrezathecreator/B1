@@ -1,9 +1,18 @@
-Shader "VRTemplate/Flag Wave Lit"
+Shader "VRTemplate/Flag Wave Unlit"
 {
     Properties
     {
         [MainTexture] _BaseMap("Albedo", 2D) = "white" {}
         [MainColor] _BaseColor("Color", Color) = (1, 1, 1, 1)
+
+        [Header(Cloth Lighting Variants)]
+        [Toggle] _UseClothLightMaps("Use Cloth Light Maps", Float) = 0
+        _ClothMap2("Cloth Light Map 2", 2D) = "white" {}
+        _ClothMap3("Cloth Light Map 3", 2D) = "white" {}
+        _MotionThresholdLow("Motion Threshold Low", Range(0, 1)) = 0.12
+        _MotionThresholdHigh("Motion Threshold High", Range(0, 1)) = 0.38
+        _MotionBlendSoftness("Threshold Blend Softness", Range(0.01, 0.35)) = 0.06
+        _MotionIntensityScale("Motion Intensity Scale", Float) = 1
 
         [Header(Wave)]
         _WindSpeed("Wind Speed", Float) = 1.25
@@ -19,9 +28,9 @@ Shader "VRTemplate/Flag Wave Lit"
 
         [Header(Attachment)]
         [Toggle] _DualSidePoles("Dual Side Poles (Left + Right)", Float) = 0
-        [Toggle] _PoleAtMaxU("Side Pole At UV U = 1", Float) = 0
+        [Enum(UV_U_0, 0, UV_U_1, 1)] _PoleAtMaxU("Side Pole Edge", Float) = 0
         [Toggle] _UseTopPole("Use Top Pole", Float) = 1
-        [Toggle] _TopAtMaxV("Top Pole At UV V = 1", Float) = 1
+        [Enum(UV_V_0, 0, UV_V_1, 1)] _TopAtMaxV("Top Edge Reference", Float) = 1
         _TetherPower("Tether Falloff Power", Range(1, 4)) = 2
         _TopExcludeDistance("Rigid Band From Top (UV)", Range(0, 1)) = 0
         _TopExcludeSoftness("Rigid Band Blend (UV)", Range(0.001, 0.35)) = 0.04
@@ -30,7 +39,12 @@ Shader "VRTemplate/Flag Wave Lit"
         _WindDir("Wind Direction", Vector) = (0, 0, 1, 0)
         _RippleDir("Vertical Ripple Direction", Vector) = (0, 1, 0, 0)
 
-        _Smoothness("Smoothness", Range(0, 1)) = 0.0
+        [Header(Distance Simplify)]
+        [Toggle] _EnableDistanceCull("Enable Distance Simplify", Float) = 1
+        _CullDistance("Simplify Beyond Distance", Float) = 60
+        _CullFadeRange("Simplify Fade Range", Float) = 5
+
+        [HideInInspector] _Smoothness("Smoothness", Range(0, 1)) = 0.0
         [HideInInspector] _Cutoff("Alpha Cutoff", Range(0, 1)) = 0.5
     }
 
@@ -45,7 +59,7 @@ Shader "VRTemplate/Flag Wave Lit"
 
         Pass
         {
-            Name "ForwardLit"
+            Name "Unlit"
             Tags { "LightMode" = "UniversalForward" }
 
             Cull Off
@@ -53,18 +67,14 @@ Shader "VRTemplate/Flag Wave Lit"
             ZTest LEqual
 
             HLSLPROGRAM
-            #pragma vertex LitVert
-            #pragma fragment LitFrag
+            #pragma vertex UnlitVert
+            #pragma fragment UnlitFrag
             #pragma target 3.0
 
             #pragma multi_compile_instancing
             #pragma multi_compile_fog
-            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
-            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
-            #pragma multi_compile_fragment _ _SHADOWS_SOFT
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "FlagWaveCommon.hlsl"
 
             struct Attributes
@@ -79,14 +89,14 @@ Shader "VRTemplate/Flag Wave Lit"
             {
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
-                float3 normalWS : TEXCOORD1;
-                float3 positionWS : TEXCOORD2;
-                float fogCoord : TEXCOORD3;
+                float fogCoord : TEXCOORD1;
+                half motion : TEXCOORD2;
+                half detail : TEXCOORD3;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
-            Varyings LitVert(Attributes input)
+            Varyings UnlitVert(Attributes input)
             {
                 Varyings output;
                 UNITY_SETUP_INSTANCE_ID(input);
@@ -98,30 +108,21 @@ Shader "VRTemplate/Flag Wave Lit"
                 ApplyFlagWave(input.uv, positionOS, normalOS);
 
                 VertexPositionInputs posInputs = GetVertexPositionInputs(positionOS);
-                VertexNormalInputs normInputs = GetVertexNormalInputs(normalOS);
-
                 output.positionCS = posInputs.positionCS;
-                output.positionWS = posInputs.positionWS;
-                output.normalWS = normInputs.normalWS;
                 output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
+                output.detail = FlagGetDetailFactor();
+                output.motion = FlagMotionIntensity(input.uv);
                 output.fogCoord = ComputeFogFactor(output.positionCS.z);
                 return output;
             }
 
-            half4 LitFrag(Varyings input) : SV_Target
+            half4 UnlitFrag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
-
-                float3 normalWS = normalize(input.normalWS);
-                Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
-                half3 diffuse = albedo.rgb * mainLight.color * (saturate(dot(normalWS, mainLight.direction)) * mainLight.shadowAttenuation);
-                half3 ambient = SampleSH(normalWS) * albedo.rgb;
-                half3 color = diffuse + ambient;
-
-                color = MixFog(color, input.fogCoord);
+                half4 albedo = FlagSampleClothAlbedo(input.uv, input.motion, input.detail) * _BaseColor;
+                half3 color = MixFog(albedo.rgb, input.fogCoord);
                 return half4(color, albedo.a);
             }
             ENDHLSL
