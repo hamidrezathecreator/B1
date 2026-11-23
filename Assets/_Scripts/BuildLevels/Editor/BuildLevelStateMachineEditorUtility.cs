@@ -61,22 +61,27 @@ static class BuildLevelStateMachineEditorExtensions
     {
         0 => "Fade In",
         1 => "Await Elevator Floor Button",
-        2 => "Elevator Ride + Doors",
-        3 => "Await Tablet Checklist (3)",
-        4 => "Load Lvl 3",
+        2 => "Elevator Ride + Doors Open",
+        3 => "Walk To Table",
+        4 => "Tablet Toggle Option 1",
+        5 => "Tablet Toggle Option 2",
+        6 => "Tablet Toggle Option 3",
+        7 => "Transition To Lvl 3",
         _ => "?"
     };
 
     static string Lvl3Name(int i) => i switch
     {
-        0 => "Waiting To Begin",
-        1 => "Rotate Intro / Card",
-        2 => "Awaiting Rotate Press",
-        3 => "Rotating Launchers",
-        4 => "Fire Intro / Card",
-        5 => "Awaiting Fire Press",
-        6 => "Firing Missiles",
-        7 => "Final Logo / Menu",
+        0 => "Idle",
+        1 => "Tutorial Rotate + Fire (2 units)",
+        2 => "Auto Launcher Salvo",
+        3 => "Drone Orbits",
+        4 => "Drone Shoots 2 Units",
+        5 => "Path To Tracker Device",
+        6 => "Pick Up Tracker",
+        7 => "Lock On Drone",
+        8 => "Drone Destroyed",
+        9 => "Complete",
         _ => "?"
     };
 }
@@ -116,6 +121,8 @@ sealed class Lvl1BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
 
             if (GUILayout.Button("Run full B1_V2 parity sequence (no Director)"))
                 lvl1.EditorTestRunFullPostPlacement();
+            if (GUILayout.Button("Show glass shard overlay"))
+                lvl1.EditorTestShowGlassShard();
         }
     }
 }
@@ -126,10 +133,16 @@ sealed class Lvl2BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
     protected override void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine)
     {
         var lvl2 = (Lvl2BuildLevelStateMachine)machine;
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Lvl 2 shortcuts", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("Tablet checked", $"{lvl2.TabletCheckedCount} / 3");
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
         {
             if (GUILayout.Button("Press elevator floor button")) lvl2.EditorTestPressElevator();
-            if (GUILayout.Button("Complete tablet checklist")) lvl2.EditorTestCompleteTablet();
+            if (GUILayout.Button("Toggle tablet option 1")) lvl2.EditorTestToggleOption1();
+            if (GUILayout.Button("Toggle tablet option 2")) lvl2.EditorTestToggleOption2();
+            if (GUILayout.Button("Toggle tablet option 3")) lvl2.EditorTestToggleOption3();
+            if (GUILayout.Button("All toggles + load Lvl 3")) lvl2.EditorTestCompleteTabletAndTransition();
         }
     }
 }
@@ -140,11 +153,16 @@ sealed class Lvl3BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
     protected override void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine)
     {
         var lvl3 = (Lvl3BuildLevelStateMachine)machine;
+        EditorGUILayout.Space(8);
+        EditorGUILayout.LabelField("Lvl 3 shortcuts", EditorStyles.boldLabel);
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
         {
-            if (GUILayout.Button("Begin tutorial")) lvl3.EditorTestBegin();
-            if (GUILayout.Button("Simulate rotate press")) lvl3.EditorTestPressRotate();
-            if (GUILayout.Button("Simulate fire press")) lvl3.EditorTestPressFire();
+            if (GUILayout.Button("Run full Lvl 3 sequence")) lvl3.EditorTestBeginSequence();
+            if (GUILayout.Button("Tutorial only (step 1)")) lvl3.EditorTestTutorialOnly();
+            if (GUILayout.Button("Auto launcher salvo")) lvl3.EditorTestAutoSalvoOnly();
+            if (GUILayout.Button("Drone shoots 2 units")) lvl3.EditorTestDroneEngagement();
+            if (GUILayout.Button("Show path to tracker")) lvl3.EditorTestShowTrackerPath();
+            if (GUILayout.Button("Force drone kill (test)")) lvl3.EditorTestForceDroneKill();
         }
     }
 }

@@ -1,6 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity;
@@ -51,6 +53,11 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [SerializeField] AudioClip missileLaunchSound;
     [SerializeField] AudioClip missileImpactSound;
 
+    [Header("Tracker scope (Lvl 3 only)")]
+    [SerializeField] Material trackerScopeThermalPost;
+    [SerializeField] Material trackerThermalReplacement;
+    [SerializeField] Material trackerDroneHeatmap;
+
     XROrigin origin;
     HandHintBanner launchHint;
 
@@ -90,7 +97,20 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             jet.ConfigureMissileLaunchSound(missileLaunchSound);
         foreach (var strike in FindObjectsByType<ExplodeAndSwap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             strike.SetImpactSound(missileImpactSound);
-        LaserWeaponScope.SetupByName(missileLaunchSound, missileImpactSound, handHintFont, "LaserWeapon", "SM_LaserWeapon");
+        TrackerWeaponScope.SetupByName(
+            missileLaunchSound,
+            missileImpactSound,
+            handHintFont,
+            trackerScopeThermalPost,
+            trackerThermalReplacement,
+            trackerDroneHeatmap,
+            "TrackerWeapon",
+            "TrackerDevice",
+            "SM_TrackerWeapon",
+            "LaserWeapon",
+            "SM_LaserWeapon");
+
+        StartCoroutine(WakeTrackerScopesAfterInit());
 
         if (beaconObjectNames != null)
         {
@@ -187,13 +207,15 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         }
 
         headset.tag = "MainCamera";
-        headset.stereoTargetEye = StereoTargetEyeMask.Both;
         headset.enabled = true;
         var headsetListener = headset.GetComponent<AudioListener>();
         if (headsetListener != null) headsetListener.enabled = true;
 
         var headsetData = headset.GetComponent<UniversalAdditionalCameraData>();
-        if (headsetData != null) headsetData.allowXRRendering = true;
+        if (headsetData != null)
+            headsetData.allowXRRendering = true;
+        else if (GraphicsSettings.currentRenderPipeline == null)
+            headset.stereoTargetEye = StereoTargetEyeMask.Both;
 
         foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
         {
@@ -211,23 +233,34 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             }
 
             // Orphan editor Main Camera and any other stereo camera without a target texture.
+            var camData = cam.GetComponent<UniversalAdditionalCameraData>();
             var stealsHeadset = cam.targetTexture == null &&
-                                (cam.CompareTag("MainCamera") || cam.stereoTargetEye != StereoTargetEyeMask.None);
+                                (cam.CompareTag("MainCamera") ||
+                                 (camData != null
+                                     ? camData.allowXRRendering
+                                     : cam.stereoTargetEye != StereoTargetEyeMask.None));
             if (!stealsHeadset) continue;
 
             cam.enabled = false;
             if (cam.CompareTag("MainCamera")) cam.tag = "Untagged";
-            cam.stereoTargetEye = StereoTargetEyeMask.None;
             var listener = cam.GetComponent<AudioListener>();
             if (listener != null) listener.enabled = false;
-            var data = cam.GetComponent<UniversalAdditionalCameraData>();
-            if (data != null) data.allowXRRendering = false;
+            if (camData != null)
+                camData.allowXRRendering = false;
+            else if (GraphicsSettings.currentRenderPipeline == null)
+                cam.stereoTargetEye = StereoTargetEyeMask.None;
         }
+    }
+
+    static IEnumerator WakeTrackerScopesAfterInit()
+    {
+        yield return null;
+        foreach (var scope in FindObjectsByType<TrackerWeaponScope>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            scope.WakeScopeCamera();
     }
 
     static void DemoteToRenderTextureCamera(Camera cam)
     {
-        cam.stereoTargetEye = StereoTargetEyeMask.None;
         cam.tag = "Untagged";
         var listener = cam.GetComponent<AudioListener>();
         if (listener != null) listener.enabled = false;
@@ -237,7 +270,10 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             data.allowXRRendering = false;
             data.renderType = CameraRenderType.Base;
         }
-        // LaserWeaponScope enables it and assigns the render texture when ready.
+        else if (GraphicsSettings.currentRenderPipeline == null)
+            cam.stereoTargetEye = StereoTargetEyeMask.None;
+
+        // Tracker weapon scope enables the camera and assigns the render texture when ready.
         if (cam.targetTexture == null) cam.enabled = false;
     }
 

@@ -14,7 +14,11 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 /// </summary>
 public sealed class MilitaryTabletLcdUi : MonoBehaviour
 {
+    public const int OptionCount = 3;
+
     public static event Action<bool> ChecklistChanged;
+    /// <summary>Fired when an option is toggled (index 0–2, new checked state).</summary>
+    public static event Action<int, bool> OptionToggled;
 
     [Header("UI refs (auto-found by name if empty)")]
     [SerializeField] RawImage option1Image;
@@ -46,6 +50,23 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     int[] triggerCount;
     float[] lastToggleTime;
     bool wired;
+
+    public int CheckedCount
+    {
+        get
+        {
+            if (optionActive == null) return 0;
+            var n = 0;
+            for (var i = 0; i < optionActive.Length; i++)
+                if (optionActive[i]) n++;
+            return n;
+        }
+    }
+
+    public bool IsOptionChecked(int index) =>
+        optionActive != null && index >= 0 && index < optionActive.Length && optionActive[index];
+
+    public bool AllOptionsChecked => CheckedCount >= OptionCount;
 
     public void Configure(
         Texture2D bg,
@@ -228,8 +249,26 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         if (tex != null)
             optionImages[index].texture = tex;
 
+        OptionToggled?.Invoke(index, optionActive[index]);
         var allChecked = optionActive[0] && optionActive[1] && optionActive[2];
         ChecklistChanged?.Invoke(allChecked);
+    }
+
+    /// <summary>QA / state machine: set one checklist toggle without finger poke.</summary>
+    public void EditorTestSetOptionChecked(int index, bool check)
+    {
+        if (!Application.isPlaying || optionActive == null) return;
+        if (index < 0 || index >= optionActive.Length) return;
+        if (optionActive[index] == check) return;
+        optionActive[index] = check;
+        if (optionImages != null && index < optionImages.Length && optionImages[index] != null)
+        {
+            var tex = check ? activeTextures[index] : inactiveTextures[index];
+            if (tex != null) optionImages[index].texture = tex;
+        }
+
+        OptionToggled?.Invoke(index, check);
+        ChecklistChanged?.Invoke(AllOptionsChecked);
     }
 
     /// <summary>Editor / state-machine tester: check all three tablet options.</summary>
@@ -237,14 +276,7 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     {
         if (!Application.isPlaying || optionActive == null) return;
         for (var i = 0; i < optionActive.Length; i++)
-        {
-            optionActive[i] = true;
-            if (optionImages != null && i < optionImages.Length && optionImages[i] != null &&
-                activeTextures != null && i < activeTextures.Length && activeTextures[i] != null)
-                optionImages[i].texture = activeTextures[i];
-        }
-
-        ChecklistChanged?.Invoke(true);
+            EditorTestSetOptionChecked(i, true);
     }
 }
 

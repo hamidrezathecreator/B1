@@ -50,6 +50,14 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     [SerializeField] string[] intactBridgeNames = { "BridgMain", "BridgeMain", "Bridge Main" };
     [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
 
+    [Header("Glass shard UI (after 2nd explosion)")]
+    [Tooltip("Optional existing overlay component. Created at runtime on this object if empty.")]
+    [SerializeField] VrFullscreenSpriteOverlay glassShardOverlay;
+    [Tooltip("Assign your glass shard PNG here when ready.")]
+    [SerializeField] Texture2D glassShardTexture;
+    [Min(0f)] [SerializeField] float glassShardFadeInSeconds = 0.35f;
+    [SerializeField] bool hideGlassShardOnSceneLoad = true;
+
     [Header("Fall")]
     [SerializeField] XrShockFallSequence shockFall;
     [SerializeField] bool preferShockFall = true;
@@ -174,6 +182,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         SetStep(5);
         missiles2?.Fire();
         PlaySecondExplosion();
+        ShowGlassShardOverlay();
 
         yield return new WaitForSeconds(fallAfterExplosionTwoSeconds);
         SetStep(6);
@@ -213,6 +222,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
             case 5:
                 missiles2?.Fire();
                 PlaySecondExplosion();
+                ShowGlassShardOverlay();
                 break;
             case 6:
                 if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
@@ -291,8 +301,27 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         }
     }
 
+    void ShowGlassShardOverlay()
+    {
+        if (glassShardTexture == null) return;
+        EnsureGlassShardOverlay();
+        if (glassShardOverlay == null) return;
+        glassShardOverlay.SetTexture(glassShardTexture);
+        glassShardOverlay.Show(glassShardFadeInSeconds);
+    }
+
+    void EnsureGlassShardOverlay()
+    {
+        if (glassShardOverlay != null) return;
+        glassShardOverlay = GetComponent<VrFullscreenSpriteOverlay>();
+        if (glassShardOverlay == null)
+            glassShardOverlay = gameObject.AddComponent<VrFullscreenSpriteOverlay>();
+    }
+
     IEnumerator LoadNextScene()
     {
+        if (hideGlassShardOnSceneLoad && glassShardOverlay != null)
+            glassShardOverlay.Hide(0.15f);
         if (shockFall != null) shockFall.RestoreFog();
         if (string.IsNullOrWhiteSpace(nextSceneName) || !Application.CanStreamedLevelBeLoaded(nextSceneName))
         {
@@ -371,4 +400,6 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
         sequenceRoutine = StartCoroutine(RunPostPlacementSequence());
     }
+
+    public void EditorTestShowGlassShard() => ShowGlassShardOverlay();
 }

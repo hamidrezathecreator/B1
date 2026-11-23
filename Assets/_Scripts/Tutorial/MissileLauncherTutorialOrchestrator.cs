@@ -116,6 +116,13 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     // Start runs after all scene buttons and guide components have initialized.
     void Start() { if (beginAfterDelay && Phase == TutorialPhase.Idle) Begin(); }
 
+    /// <summary>Lvl 3 state machine: skip auto Begin and/or final logo when this level drives the ending.</summary>
+    public void ConfigureForExternalSequence(bool suppressAutoBegin, bool suppressFinalLogo)
+    {
+        beginAfterDelay = !suppressAutoBegin;
+        showFinalLogo = !suppressFinalLogo;
+    }
+
     [ContextMenu("Test/Begin or Restart Tutorial (Play Mode)")]
     public void Begin()
     {

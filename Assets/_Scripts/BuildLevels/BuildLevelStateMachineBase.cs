@@ -15,14 +15,20 @@ public abstract class BuildLevelStateMachineBase : MonoBehaviour
 
     protected abstract string[] StepNames { get; }
 
-    protected void SetStep(int index)
+    protected void SetStep(int index) => ApplyStep(index, invokeEnter: true);
+
+    /// <summary>Updates displayed step from gameplay without firing test actions in <see cref="OnEnterStep"/>.</summary>
+    protected void TrackStep(int index) => ApplyStep(index, invokeEnter: false);
+
+    void ApplyStep(int index, bool invokeEnter)
     {
         if (index < 0 || index >= StepCount) return;
+        if (index == StepIndex && !invokeEnter) return;
         StepIndex = index;
         var name = StepNames[index];
         if (logStepChanges) Debug.Log($"[{GetType().Name}] Step {index}: {name}", this);
         StepEntered?.Invoke(index, name);
-        OnEnterStep(index);
+        if (invokeEnter) OnEnterStep(index);
     }
 
     protected abstract void OnEnterStep(int index);

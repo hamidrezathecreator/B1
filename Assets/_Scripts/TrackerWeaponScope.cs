@@ -1,15 +1,18 @@
+using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.XR;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 /// <summary>
-/// Grabbable laser weapon with a zoom scope: a camera just past the front of the weapon looks
-/// where it aims, and its picture is shown on the weapon's white screen through a render texture.
-/// Added at runtime to the "LaserWeapon" object by the level setup, or add it by hand to tune it.
+/// Grabbable tracker weapon with a zoom scope: a camera just past the front looks where you aim,
+/// shows the view on the weapon screen, tracks a naive lock on the drone, then fires a homing missile.
+/// Added at runtime on TrackerWeapon by level setup, or add manually to tune.
 /// </summary>
-[AddComponentMenu("B1/Laser Weapon Scope")]
-public sealed class LaserWeaponScope : MonoBehaviour
+[AddComponentMenu("B1/Tracker Weapon Scope")]
+public sealed class TrackerWeaponScope : MonoBehaviour
 {
     public enum Axis { Auto, PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ }
 
@@ -24,7 +27,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [Min(0f)] [SerializeField] float cameraAhead = 0.3f;
     [Tooltip("Direction the weapon fires in its own space. Auto = its long axis, away from the screen.")]
     [SerializeField] Axis aimAxis = Axis.Auto;
-    [Tooltip("Extra yaw on the scope aim, degrees. Positive = turn right. SM_LaserWeapon needs +90.")]
+    [Tooltip("Extra yaw on the scope aim, degrees. Positive = turn right. TrackerWeapon mesh often needs +90.")]
     [SerializeField] float aimYawOffset = 90f;
     [Min(1f)] [SerializeField] float farClip = 3000f;
     [Tooltip("Render texture height in pixels; the width follows the screen's shape.")]
@@ -63,6 +66,18 @@ public sealed class LaserWeaponScope : MonoBehaviour
     [SerializeField] AudioClip missileImpactSound;
     [Range(0f, 1f)] [SerializeField] float missileImpactVolume = 1f;
 
+    [Header("Scope thermal")]
+    [Tooltip("FLIR-style view on the weapon screen camera only (HMD stays normal).")]
+    [SerializeField] bool scopeThermalView = true;
+    [Tooltip("Keep Camera Lase rendering to the weapon screen even when not held (needed to see the feed).")]
+    [SerializeField] bool keepScopeFeedLive = true;
+    [Tooltip("Quest context button (B / Y) toggles scope thermal. Does not require holding the weapon.")]
+    [SerializeField] bool thermalToggledByContextButton = true;
+    [SerializeField] bool thermalContextButtonRequiresHeld;
+    [SerializeField] Material scopeThermalPostMaterial;
+    [SerializeField] Material thermalReplacementMaterial;
+    [SerializeField] Material droneHeatmapMaterial;
+
     [Header("Kill feedback")]
     [Tooltip("Shown above the right controller after SM_Shahed149 is destroyed.")]
     [SerializeField] string killMessage = "پهباد جاسوسی رو زدی\nآفرین";
@@ -78,12 +93,23 @@ public sealed class LaserWeaponScope : MonoBehaviour
     float lockTimer;
     bool missileAway;
     bool targetDown;
+    public bool TargetDestroyed => targetDown;
+    public bool IsHeld => grab != null && grab.isSelected;
+    public event System.Action TargetEliminated;
     RenderTexture texture;
+    MeshRenderer weaponRenderer;
     Renderer screenRenderer;
     XRGrabInteractable grab;
     Rigidbody body;
     Vector3 homePosition;
     Quaternion homeRotation;
+    TrackerScopeThermalVision scopeThermalDriver;
+    bool thermalEngaged;
+    bool scopeReady;
+    bool wasContextButton;
+    readonly List<InputDevice> contextInputDevices = new List<InputDevice>();
+
+    public bool ThermalEngaged => thermalEngaged;
 
     /// <summary>Sets up the first object found with one of the names (once).</summary>
     public static void SetupByName(AudioClip launchSound, TMPro.TMP_FontAsset font, params string[] names)
@@ -91,19 +117,40 @@ public sealed class LaserWeaponScope : MonoBehaviour
         SetupByName(launchSound, null, font, names);
     }
 
-    public static void SetupByName(AudioClip launchSound, AudioClip impactSound, TMPro.TMP_FontAsset font, params string[] names)
+    public static void SetupByName(AudioClip launchSound, AudioClip impactSound, TMPro.TMP_FontAsset font, params string[] names) =>
+        SetupByName(launchSound, impactSound, font, null, null, null, names);
+
+    public static void SetupByName(
+        AudioClip launchSound,
+        AudioClip impactSound,
+        TMPro.TMP_FontAsset font,
+        Material scopeThermalPost,
+        Material thermalReplacement,
+        Material droneHeatmap,
+        params string[] names)
     {
         foreach (var n in names)
         {
             var go = GameObject.Find(n);
             if (go == null) continue;
-            var scope = go.GetComponent<LaserWeaponScope>();
-            if (scope == null) scope = go.AddComponent<LaserWeaponScope>();
+            var scope = go.GetComponent<TrackerWeaponScope>();
+            if (scope == null) scope = go.AddComponent<TrackerWeaponScope>();
             if (launchSound != null) scope.missileLaunchSound = launchSound;
             if (impactSound != null) scope.missileImpactSound = impactSound;
             if (font != null) scope.killMessageFont = font;
+            scope.AssignThermalMaterials(scopeThermalPost, thermalReplacement, droneHeatmap);
             return;
         }
+    }
+
+    public void AssignThermalMaterials(Material scopeThermalPost, Material droneHeatmap) =>
+        AssignThermalMaterials(scopeThermalPost, null, droneHeatmap);
+
+    public void AssignThermalMaterials(Material scopeThermalPost, Material replacement, Material droneHeatmap)
+    {
+        if (scopeThermalPost != null) scopeThermalPostMaterial = scopeThermalPost;
+        if (replacement != null) thermalReplacementMaterial = replacement;
+        if (droneHeatmap != null) droneHeatmapMaterial = droneHeatmap;
     }
 
     /// <summary>Sets up the first object found with one of the names (once).</summary>
@@ -116,10 +163,10 @@ public sealed class LaserWeaponScope : MonoBehaviour
         homeRotation = transform.rotation;
 
         var filter = GetComponent<MeshFilter>();
-        var meshRenderer = GetComponent<MeshRenderer>();
-        if (filter == null || filter.sharedMesh == null || meshRenderer == null)
+        weaponRenderer = GetComponent<MeshRenderer>();
+        if (filter == null || filter.sharedMesh == null || weaponRenderer == null)
         {
-            Debug.LogWarning(name + ": Laser Weapon Scope needs the weapon's MeshFilter and MeshRenderer on this object.", this);
+            Debug.LogWarning(name + ": Tracker Weapon Scope needs the weapon's MeshFilter and MeshRenderer on this object.", this);
             return;
         }
 
@@ -138,12 +185,96 @@ public sealed class LaserWeaponScope : MonoBehaviour
         if (!UseSceneCamera(bodyBounds, aimLocal, screenUp)) CreateCamera(bodyBounds, aimLocal, screenUp);
         if (hasScreen)
         {
-            CreateScreen(meshRenderer, screenBounds, screenNormal, screenUp);
+            CreateScreen(weaponRenderer, screenBounds, screenNormal, screenUp);
+            ApplyTrackerScreenTexture(weaponRenderer);
             CreateCrosshair(screenBounds, screenNormal, screenUp);
         }
         if (grabbable) MakeGrabbable(whole);
         FindTarget();
         FindMissileLaunchOrigin();
+        scopeReady = true;
+        SetupScopeThermal();
+        WakeScopeCamera();
+    }
+
+    void SetupScopeThermal()
+    {
+        if (scopeCamera == null) return;
+        if (scopeThermalView && target != null && droneHeatmapMaterial != null)
+            ThermalDroneHeatmap.Apply(target, droneHeatmapMaterial);
+        WakeScopeCamera();
+    }
+
+    public void SetThermalEngaged(bool engaged)
+    {
+        thermalEngaged = engaged && scopeThermalView;
+        scopeThermalDriver?.SetUserThermalEnabled(thermalEngaged);
+        if (thermalEngaged && scopeCamera != null)
+            ThermalDroneHeatmap.Apply(target, droneHeatmapMaterial);
+        WakeScopeCamera();
+        Debug.Log(
+            name + ": tracker scope thermal " + (thermalEngaged ? "ON" : "OFF") +
+            (scopeCamera != null ? " (camera: " + scopeCamera.name + ", enabled=" + scopeCamera.enabled + ")" : " (no scope camera)"),
+            this);
+    }
+
+    /// <summary>Called after XR headset camera setup so scope cameras keep their render texture.</summary>
+    public void WakeScopeCamera()
+    {
+        if (!scopeReady || scopeCamera == null || texture == null) return;
+        scopeCamera.gameObject.SetActive(true);
+        scopeCamera.targetTexture = texture;
+        scopeCamera.rect = new Rect(0f, 0f, 1f, 1f);
+        ConfigureScopeUrpCamera(scopeCamera.GetComponent<UniversalAdditionalCameraData>(), scopeCamera);
+        UpdateScopeCameraEnabled();
+        RefreshScopeDisplays();
+        if (scopeThermalView && scopeThermalPostMaterial != null)
+        {
+            scopeThermalDriver = TrackerScopeThermalVision.Bind(
+                scopeCamera, scopeThermalPostMaterial, thermalReplacementMaterial);
+        }
+        scopeThermalDriver?.SetUserThermalEnabled(thermalEngaged);
+    }
+
+    void UpdateScopeCameraEnabled()
+    {
+        if (scopeCamera == null) return;
+        var held = grab != null && grab.isSelected;
+        scopeCamera.enabled = keepScopeFeedLive || held || thermalEngaged;
+    }
+
+    void RefreshScopeDisplays()
+    {
+        if (texture == null) return;
+        if (weaponRenderer != null) ApplyTrackerScreenTexture(weaponRenderer);
+        if (screenRenderer == null) return;
+        var mat = screenRenderer.material;
+        if (mat == null) return;
+        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", texture);
+        mat.mainTexture = texture;
+    }
+
+    public void ToggleThermalEngaged() => SetThermalEngaged(!thermalEngaged);
+
+    [ContextMenu("Enable Thermal Vision (Play Mode)")]
+    void ContextEnableThermal()
+    {
+        if (!Application.isPlaying) return;
+        SetThermalEngaged(true);
+    }
+
+    [ContextMenu("Disable Thermal Vision (Play Mode)")]
+    void ContextDisableThermal()
+    {
+        if (!Application.isPlaying) return;
+        SetThermalEngaged(false);
+    }
+
+    [ContextMenu("Toggle Thermal Vision (Play Mode)")]
+    void ContextToggleThermal()
+    {
+        if (!Application.isPlaying) return;
+        ToggleThermalEngaged();
     }
 
     /// <summary>Renders the scope with the scene's laser camera, if there is one.</summary>
@@ -164,14 +295,13 @@ public sealed class LaserWeaponScope : MonoBehaviour
         if (listener != null) listener.enabled = false;
 
         scopeCamera.gameObject.SetActive(true);
-        scopeCamera.enabled = true;
-        scopeCamera.stereoTargetEye = StereoTargetEyeMask.None;
         scopeCamera.targetTexture = texture;
+        scopeCamera.rect = new Rect(0f, 0f, 1f, 1f);
         scopeCamera.depth = -10f;
-        var data = scopeCamera.GetComponent<UniversalAdditionalCameraData>();
-        if (data != null) data.allowXRRendering = false;
+        ConfigureScopeUrpCamera(scopeCamera.GetComponent<UniversalAdditionalCameraData>(), scopeCamera);
         farClip = Mathf.Max(farClip, scopeCamera.farClipPlane);
         scopeCamera.farClipPlane = farClip;
+        UpdateScopeCameraEnabled();
 
         // Extra laser cameras under the weapon must not also render into the headset.
         foreach (var cam in GetComponentsInChildren<Camera>(true))
@@ -179,11 +309,9 @@ public sealed class LaserWeaponScope : MonoBehaviour
             if (cam == scopeCamera) continue;
             if (!MatchesLaserName(cam.name)) continue;
             cam.enabled = false;
-            cam.stereoTargetEye = StereoTargetEyeMask.None;
             var otherListener = cam.GetComponent<AudioListener>();
             if (otherListener != null) otherListener.enabled = false;
-            var otherData = cam.GetComponent<UniversalAdditionalCameraData>();
-            if (otherData != null) otherData.allowXRRendering = false;
+            ConfigureScopeUrpCamera(cam.GetComponent<UniversalAdditionalCameraData>(), cam);
         }
 
         Debug.Log(name + ": scope uses the scene camera '" + scopeCamera.name + "' along aim " + aimLocal + ".", this);
@@ -344,7 +472,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         }
 
         // Barrel = longest local axis that stays mostly horizontal in the world.
-        // SM_LaserWeapon's mesh is taller in Y, so "longest = Y" wrongly aimed the scope at the sky.
+        // The tracker weapon mesh is taller in Y, so "longest = Y" wrongly aimed the scope at the sky.
         var size = bodyBounds.size;
         var axis = Vector3.forward;
         var bestScore = float.NegativeInfinity;
@@ -414,7 +542,7 @@ public sealed class LaserWeaponScope : MonoBehaviour
         }
         var rt = new RenderTexture(Mathf.RoundToInt(textureHeight * aspect), textureHeight, 24)
         {
-            name = "Laser Weapon Scope",
+            name = "Tracker Weapon Scope",
             antiAliasing = 1,
         };
         rt.Create();
@@ -428,18 +556,47 @@ public sealed class LaserWeaponScope : MonoBehaviour
         AlignScopeCamera(go.transform, bodyBounds, aimLocal, upLocal);
 
         scopeCamera = go.AddComponent<Camera>();
-        scopeCamera.stereoTargetEye = StereoTargetEyeMask.None;
         scopeCamera.targetTexture = texture;
         scopeCamera.fieldOfView = fieldOfView;
         scopeCamera.nearClipPlane = 0.1f;
         scopeCamera.farClipPlane = farClip;
         scopeCamera.depth = -10f;
 
-        var data = go.AddComponent<UniversalAdditionalCameraData>();
-        data.renderShadows = false;
-        data.renderPostProcessing = false;
+        ConfigureScopeUrpCamera(go.GetComponent<UniversalAdditionalCameraData>(), scopeCamera);
+    }
+
+    static void ConfigureScopeUrpCamera(UniversalAdditionalCameraData data, Camera cam)
+    {
+        if (cam == null) return;
+        if (data != null)
+            data.allowXRRendering = false;
+        else if (GraphicsSettings.currentRenderPipeline == null)
+            cam.stereoTargetEye = StereoTargetEyeMask.None;
+
+        if (data == null) return;
+        data.requiresColorOption = CameraOverrideOption.On;
+        data.requiresDepthOption = CameraOverrideOption.On;
+        data.renderShadows = true;
+        data.renderPostProcessing = true;
         data.antialiasing = AntialiasingMode.None;
-        data.allowXRRendering = false;
+        cam.forceIntoRenderTexture = true;
+        cam.clearFlags = CameraClearFlags.Skybox;
+        cam.nearClipPlane = Mathf.Min(cam.nearClipPlane, 0.1f);
+    }
+
+    void ApplyTrackerScreenTexture(MeshRenderer weaponRenderer)
+    {
+        if (texture == null || weaponRenderer == null || screenMaterialIndex >= weaponRenderer.sharedMaterials.Length)
+            return;
+        var mats = weaponRenderer.materials;
+        var mat = mats[screenMaterialIndex];
+        if (mat == null) return;
+        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", texture);
+        if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", texture);
+        mat.mainTexture = texture;
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+        mats[screenMaterialIndex] = mat;
+        weaponRenderer.materials = mats;
     }
 
     void CreateScreen(MeshRenderer weaponRenderer, Bounds screen, Vector3 normal, Vector3 up)
@@ -521,9 +678,9 @@ public sealed class LaserWeaponScope : MonoBehaviour
     {
         if (scopeCamera == null) return;
         if (createdCamera) scopeCamera.fieldOfView = fieldOfView;
-        // Only render while someone can see the screen (or it is in hand).
+        UpdateScopeCameraEnabled();
         var held = grab != null && grab.isSelected;
-        scopeCamera.enabled = held || screenRenderer == null || screenRenderer.isVisible;
+        UpdateThermalContextButton(held); // B/Y works without grab unless thermalContextButtonRequiresHeld
         UpdateLock(held);
 
         // Dropped through the ground or thrown far away: back to where it started.
@@ -533,6 +690,32 @@ public sealed class LaserWeaponScope : MonoBehaviour
             body.useGravity = false;
             transform.SetPositionAndRotation(homePosition, homeRotation);
         }
+    }
+
+    void UpdateThermalContextButton(bool held)
+    {
+        if (!thermalToggledByContextButton || !scopeThermalView) return;
+        if (thermalContextButtonRequiresHeld && !held)
+        {
+            wasContextButton = false;
+            return;
+        }
+
+        var pressed = false;
+        contextInputDevices.Clear();
+        InputDevices.GetDevicesWithCharacteristics(InputDeviceCharacteristics.Controller, contextInputDevices);
+        foreach (var device in contextInputDevices)
+        {
+            if (device.TryGetFeatureValue(CommonUsages.secondaryButton, out var down) && down)
+            {
+                pressed = true;
+                break;
+            }
+        }
+
+        if (pressed && !wasContextButton)
+            ToggleThermalEngaged();
+        wasContextButton = pressed;
     }
 
     void UpdateLock(bool held)
@@ -676,7 +859,25 @@ public sealed class LaserWeaponScope : MonoBehaviour
         targetDown = true;
         missileAway = false;
         SetCrosshairColor(crosshairColor);
+        TargetEliminated?.Invoke();
         StartCoroutine(ShowKillMessage());
+    }
+
+    /// <summary>Level script can point the scope at the circling drone after pickup.</summary>
+    public void AssignTarget(Transform newTarget)
+    {
+        target = newTarget;
+        targetDown = false;
+        lockTimer = 0f;
+        missileAway = false;
+        if (target != null)
+            targetRenderers = target.GetComponentsInChildren<Renderer>();
+    }
+
+    public void EditorTestForceTargetKill()
+    {
+        if (!Application.isPlaying || target == null) return;
+        DestroyTarget(target.position);
     }
 
     void FreezeAndHideTarget()
