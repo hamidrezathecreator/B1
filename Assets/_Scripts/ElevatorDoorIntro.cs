@@ -115,8 +115,13 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     Vector3 elevatorRestPosition;
     bool started;
     bool floorPressed;
+    bool doorsOpenForPlayer;
     AudioSource elevatorAudio;
     AudioSource tunnelAudio;
+
+    public bool IsFloorPressed => floorPressed;
+    public bool IsLoadingNextScene => loadingNextScene;
+    public bool AreDoorsOpenForPlayer => doorsOpenForPlayer;
 
     void Start()
     {
@@ -1266,6 +1271,19 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         RestoreTunnelFloors(groundLayer < 0 ? 0 : groundLayer);
         ApplyGroundOnlyTeleportRays();
         ShowPathToTable();
+        doorsOpenForPlayer = true;
+    }
+
+    public void EditorTestPressElevatorButton()
+    {
+        if (!Application.isPlaying) return;
+        TryOpenDoors();
+    }
+
+    public void EditorTestLoadNextSceneNow()
+    {
+        if (!Application.isPlaying || loadingNextScene) return;
+        nextSceneRoutine = StartCoroutine(LoadNextSceneAfterClicks());
     }
 
     void ShowPathToTable()

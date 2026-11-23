@@ -162,6 +162,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     void OnStartPressed()
     {
         if (step != Step.WaitingForStart) return;
+        var sm = FindAnyObjectByType<Lvl1BuildLevelStateMachine>();
+        sm?.NotifyTutorialStartPressed();
         BeginTeleportStep();
     }
 
@@ -260,6 +262,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     {
         var firstTime = step != Step.Carry;
         step = Step.Carry;
+        FindAnyObjectByType<Lvl1BuildLevelStateMachine>()?.NotifyTutorialCasePhase();
 
         if (firstTime)
         {
@@ -305,6 +308,15 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ClearButtonHighlight();
 
         ShowBanner(doneMessage);
+
+        var stateMachine = FindAnyObjectByType<Lvl1BuildLevelStateMachine>();
+        if (stateMachine != null && stateMachine.ReplaceTimeline)
+        {
+            if (doneMessageSeconds > 0f) yield return new WaitForSeconds(doneMessageSeconds);
+            HideBanner();
+            yield return stateMachine.RunPostPlacementSequence();
+            yield break;
+        }
 
         var director = FindDirector();
         // A Timeline fall signal (Player And Plane Fall) decides when the player drops.
@@ -834,6 +846,32 @@ public sealed class Lvl1Tutorial : MonoBehaviour
             best = grab;
         }
         return best;
+    }
+
+    public string EditorTutorialStepName => step.ToString();
+
+    public void EditorTestPressStart()
+    {
+        if (!Application.isPlaying) return;
+        OnStartPressed();
+    }
+
+    public void EditorTestAdvanceTutorialStep()
+    {
+        if (!Application.isPlaying) return;
+        switch (step)
+        {
+            case Step.WaitingForStart:
+                OnStartPressed();
+                break;
+            case Step.Teleport:
+                BeginGrabStep();
+                break;
+            case Step.Grab:
+            case Step.Carry:
+                StartCoroutine(Finish());
+                break;
+        }
     }
 
     void OnDestroy()
