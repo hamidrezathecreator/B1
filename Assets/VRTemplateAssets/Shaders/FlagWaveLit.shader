@@ -18,9 +18,13 @@ Shader "VRTemplate/Flag Wave Lit"
         _NoiseStrength("Noise Strength", Range(0, 1)) = 0.45
 
         [Header(Attachment)]
+        [Toggle] _DualSidePoles("Dual Side Poles (Left + Right)", Float) = 0
         [Toggle] _PoleAtMaxU("Side Pole At UV U = 1", Float) = 0
+        [Toggle] _UseTopPole("Use Top Pole", Float) = 1
         [Toggle] _TopAtMaxV("Top Pole At UV V = 1", Float) = 1
         _TetherPower("Tether Falloff Power", Range(1, 4)) = 2
+        _TopExcludeDistance("Rigid Band From Top (UV)", Range(0, 1)) = 0
+        _TopExcludeSoftness("Rigid Band Blend (UV)", Range(0.001, 0.35)) = 0.04
 
         [Header(Wind Direction Object Space)]
         _WindDir("Wind Direction", Vector) = (0, 0, 1, 0)

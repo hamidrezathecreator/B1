@@ -86,6 +86,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _Cutoff: 0.5
+    - _DualSidePoles: 0
     - _NoiseScale: 3.5
     - _NoiseStrength: 0.667
     - _PoleAtMaxU: 1
@@ -95,6 +96,9 @@ Material:
     - _Smoothness: 0
     - _TetherPower: 2.18
     - _TopAtMaxV: 1
+    - _TopExcludeDistance: 0
+    - _TopExcludeSoftness: 0.04
+    - _UseTopPole: 1
     - _WaveAmplitude: 0.33
     - _WaveFrequency: 9.26
     - _WindSpeed: 5.11

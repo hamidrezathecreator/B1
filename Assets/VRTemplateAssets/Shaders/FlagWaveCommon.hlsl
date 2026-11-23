@@ -14,9 +14,13 @@ CBUFFER_START(UnityPerMaterial)
     half _RippleFrequency;
     half _NoiseScale;
     half _NoiseStrength;
+    half _DualSidePoles;
     half _PoleAtMaxU;
+    half _UseTopPole;
     half _TopAtMaxV;
     half _TetherPower;
+    half _TopExcludeDistance;
+    half _TopExcludeSoftness;
     half4 _WindDir;
     half4 _RippleDir;
     half _Smoothness;
@@ -49,14 +53,37 @@ float FlagValueNoise(float2 p)
     return lerp(x1, x2, f.y);
 }
 
+float FlagTopExclusionMask(float2 uv)
+{
+    if (_TopExcludeDistance <= 1e-5)
+        return 1.0;
+
+    float distFromTop = (_TopAtMaxV > 0.5) ? (1.0 - uv.y) : uv.y;
+    return saturate((distFromTop - _TopExcludeDistance) / max(_TopExcludeSoftness, 1e-4));
+}
+
 float FlagTetherMask(float2 uv)
 {
-    float fromSidePole = (_PoleAtMaxU > 0.5) ? (1.0 - uv.x) : uv.x;
-    float fromTopPole = (_TopAtMaxV > 0.5) ? (1.0 - uv.y) : uv.y;
+    float tetherU;
+    if (_DualSidePoles > 0.5)
+    {
+        float fromCenter = min(uv.x, 1.0 - uv.x) * 2.0;
+        tetherU = pow(saturate(fromCenter), _TetherPower);
+    }
+    else
+    {
+        float fromSidePole = (_PoleAtMaxU > 0.5) ? (1.0 - uv.x) : uv.x;
+        tetherU = pow(saturate(fromSidePole), _TetherPower);
+    }
 
-    float tetherU = pow(saturate(fromSidePole), _TetherPower);
-    float tetherV = pow(saturate(fromTopPole), _TetherPower);
-    return tetherU * tetherV;
+    float tetherV = 1.0;
+    if (_UseTopPole > 0.5)
+    {
+        float fromTopPole = (_TopAtMaxV > 0.5) ? (1.0 - uv.y) : uv.y;
+        tetherV = pow(saturate(fromTopPole), _TetherPower);
+    }
+
+    return tetherU * tetherV * FlagTopExclusionMask(uv);
 }
 
 void FlagWaveComponents(float2 uv, float time, out float windDisp, out float rippleDisp)
