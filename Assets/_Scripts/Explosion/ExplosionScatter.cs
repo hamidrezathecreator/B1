@@ -39,14 +39,14 @@ public sealed class ExplosionScatter : MonoBehaviour
         public readonly Vector3 apex;
         public readonly Vector3 landing;
         public readonly Vector3 flatOut;
-        public readonly Quaternion endRotation;
+        public readonly Quaternion tumbleDelta;
 
-        public ScatterPath(Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion endRotation)
+        public ScatterPath(Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion tumbleDelta)
         {
             this.apex = apex;
             this.landing = landing;
             this.flatOut = flatOut;
-            this.endRotation = endRotation;
+            this.tumbleDelta = tumbleDelta;
         }
     }
 
@@ -82,11 +82,11 @@ public sealed class ExplosionScatter : MonoBehaviour
         public readonly Vector3 apex;
         public readonly Vector3 landing;
         public readonly Vector3 flatOut;
-        public readonly Quaternion endRotation;
+        public readonly Quaternion tumbleDelta;
         public readonly float totalDuration;
 
         public PreparedDriverAnim(Transform driver, FollowerStart[] followers, Vector3 start, Quaternion startRotation,
-            Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion endRotation, float totalDuration)
+            Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion tumbleDelta, float totalDuration)
         {
             this.driver = driver;
             this.followers = followers;
@@ -95,7 +95,7 @@ public sealed class ExplosionScatter : MonoBehaviour
             this.apex = apex;
             this.landing = landing;
             this.flatOut = flatOut;
-            this.endRotation = endRotation;
+            this.tumbleDelta = tumbleDelta;
             this.totalDuration = totalDuration;
         }
     }
@@ -476,7 +476,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         float total = rise + fall;
 
         prepared = new PreparedDriverAnim(driver, followerStarts, start, startRotation, path.apex, path.landing,
-            path.flatOut, path.endRotation, total);
+            path.flatOut, path.tumbleDelta, total);
         return true;
     }
 
@@ -485,7 +485,9 @@ public sealed class ExplosionScatter : MonoBehaviour
         if (driver == null) return;
         float curveT = ArcTimeToParameter(Mathf.Clamp01(timelineU));
         Vector3 pos = EvaluateScatterArc(prepared.start, prepared.apex, prepared.landing, curveT);
-        Quaternion rot = Quaternion.SlerpUnclamped(prepared.startRotation, prepared.endRotation, curveT);
+        float rotT = Mathf.Clamp01(timelineU);
+        Quaternion rot = prepared.startRotation *
+            Quaternion.SlerpUnclamped(Quaternion.identity, prepared.tumbleDelta, rotT);
         driver.SetPositionAndRotation(pos, rot);
         ApplyFollowers(driver, rot, prepared.start, prepared.startRotation, prepared.followers);
     }
@@ -533,19 +535,39 @@ public sealed class ExplosionScatter : MonoBehaviour
             apex.y = minPeakY;
         var landing = SnapLandingY(LandingSpot(start, seed, flatOut, apex), start.y);
         landing = PushOutOfExclusion(landing, flatOut);
-        var endRotation = SampleEndRotation(startRotation, seed);
-        return new ScatterPath(apex, landing, flatOut, endRotation);
+        var tumbleDelta = SampleTumbleDelta(startRotation, seed);
+        return new ScatterPath(apex, landing, flatOut, tumbleDelta);
     }
 
-    Quaternion SampleEndRotation(Quaternion startRotation, int seed)
+    /// <summary>Local-space rotation from rest to landing — multiplied onto startRotation each frame.</summary>
+    Quaternion SampleTumbleDelta(Quaternion startRotation, int seed)
     {
-        if (rotationVariance < 0.01f) return startRotation;
+        if (rotationVariance < 0.01f) return Quaternion.identity;
         float maxAngle = rotationVariance * HeightVariationMultiplier(seed + 91, rotationVarianceVariation);
         maxAngle = Mathf.Max(1f, maxAngle);
         float Ex(int s) => Application.isPlaying
             ? UnityEngine.Random.Range(-maxAngle, maxAngle)
             : Mathf.Lerp(-maxAngle, maxAngle, Hash01(s));
-        return startRotation * Quaternion.Euler(Ex(seed + 92), Ex(seed + 93), Ex(seed + 94));
+        Quaternion eulerTumble = Quaternion.Euler(Ex(seed + 92), Ex(seed + 93), Ex(seed + 94));
+
+        float chaosBlend = Mathf.Clamp01(rotationVariance / 180f);
+        if (chaosBlend < 0.02f) return eulerTumble;
+
+        Quaternion randomDelta = Application.isPlaying
+            ? Quaternion.Inverse(startRotation) * UnityEngine.Random.rotationUniform
+            : Quaternion.Inverse(startRotation) * HashRotationUniform(seed + 95);
+        return Quaternion.SlerpUnclamped(eulerTumble, randomDelta, chaosBlend);
+    }
+
+    static Quaternion HashRotationUniform(int seed)
+    {
+        float u1 = Hash01(seed);
+        float u2 = Hash01(seed + 1);
+        float sqrtOneMinusU1 = Mathf.Sqrt(1f - u1);
+        float sqrtU1 = Mathf.Sqrt(u1);
+        float t = 2f * Mathf.PI * u2;
+        return new Quaternion(sqrtOneMinusU1 * Mathf.Sin(t), sqrtOneMinusU1 * Mathf.Cos(t),
+            sqrtU1 * Mathf.Sin(t), sqrtU1 * Mathf.Cos(t));
     }
 
     Vector3 ApexSpot(Vector3 start, int seed, Vector3 flatOut)
@@ -1151,6 +1173,14 @@ public sealed class ExplosionScatter : MonoBehaviour
                 Vector3 p = EvaluateScatterArc(start, path.apex, path.landing, curveT);
                 Gizmos.DrawLine(prev, p);
                 prev = p;
+            }
+
+            if (rotationVariance >= 0.01f)
+            {
+                var endRot = startRotation * path.tumbleDelta;
+                Vector3 tip = path.landing + endRot * Vector3.forward * gizmoCubeSize * 4f;
+                Gizmos.color = new Color(0.75f, 0.5f, 1f, 0.7f);
+                Gizmos.DrawLine(path.landing, tip);
             }
 
             var origin = BlastOrigin;

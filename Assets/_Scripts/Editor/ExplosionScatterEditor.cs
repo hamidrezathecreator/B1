@@ -74,7 +74,10 @@ public sealed class ExplosionScatterEditor : Editor
             EditorGUILayout.HelpBox("In Play Mode these run the real PrimeTween explosion.", MessageType.None);
             GUI.backgroundColor = new Color(1f, 0.55f, 0.25f);
             if (GUILayout.Button("▶  Explode all pieces", big))
+            {
+                serializedObject.ApplyModifiedProperties();
                 scatter.Explode();
+            }
             GUI.backgroundColor = old;
             if (GUILayout.Button("Reset to rest positions"))
                 scatter.ResetExplosion();

@@ -78,6 +78,13 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [SerializeField, Min(0f)] private float impactEndTimeScale = 1f;
     [SerializeField, Min(0f)] private float impactTimeScaleRampDuration = 0.15f;
 
+    [Header("Explosion shake (PrimeTween)")]
+    [Tooltip("Transforms get a short local shake on each impact (e.g. bridge props). Headset shake is driven by CondensationCloudSystem engulfment.")]
+    [SerializeField] private Transform[] shakeOnImpactTargets = new Transform[0];
+    [SerializeField] private Vector3 shakeStrength = new Vector3(0.012f, 0.008f, 0.01f);
+    [SerializeField, Min(0.05f)] private float shakeDuration = 0.22f;
+    [SerializeField, Min(1f)] private float shakeFrequency = 14f;
+
     [Header("Presentation")]
     [SerializeField] private ExplosionFacing facing = ExplosionFacing.FaceCamera;
     [SerializeField] private Camera targetCamera;
@@ -323,6 +330,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     private void HandleArrival(Vector3 impactPosition)
     {
         MissileImpacted?.Invoke(this, impactPosition);
+        ShakeImpactTargets();
         if (!ValidatePrefab()) return;
 
         // Anchor to the captured endpoint, then apply the quad's world-space height adjustment.
@@ -354,6 +362,16 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime, impactTimeScale);
 
         onImpact.Invoke(impactPosition);
+    }
+
+    void ShakeImpactTargets()
+    {
+        if (shakeOnImpactTargets == null || shakeOnImpactTargets.Length == 0) return;
+        foreach (var target in shakeOnImpactTargets)
+        {
+            if (target == null || !target.gameObject.activeInHierarchy) continue;
+            Tween.ShakeLocalPosition(target, shakeStrength, shakeDuration, shakeFrequency);
+        }
     }
 
     private bool HasExplosionMaterial()

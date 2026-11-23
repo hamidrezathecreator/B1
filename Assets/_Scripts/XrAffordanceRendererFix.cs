@@ -1,16 +1,26 @@
 using UnityEngine;
+#pragma warning disable CS0618
 using UnityEngine.XR.Interaction.Toolkit.AffordanceSystem.Rendering;
+#pragma warning restore CS0618
 
 /// <summary>
-/// XRI affordances expect a renderer on a parent mesh. Controller poke affordances and hidden
-/// controller visuals break that; bind a renderer or switch the affordance off before OnEnable.
+/// XRI affordances expect a renderer on a parent mesh. Uses deprecated XRI affordance types until the
+/// interaction feedback migration; controller poke affordances and hidden visuals are fixed before OnEnable.
+/// Place <see cref="XrAffordanceSceneBootstrap"/> in the scene so fixes run in early Awake.
 /// </summary>
+[DefaultExecutionOrder(-32000)]
+public sealed class XrAffordanceSceneBootstrap : MonoBehaviour
+{
+    void Awake() => XrAffordanceUtility.FixSceneAffordances();
+}
+
 [DefaultExecutionOrder(-10000)]
 public sealed class XrAffordanceRendererFix : MonoBehaviour
 {
     void Awake() => XrAffordanceUtility.FixAffordances(transform);
 }
 
+#pragma warning disable CS0618
 public static class XrAffordanceUtility
 {
     public static void FixAffordances(Transform root)
@@ -31,11 +41,12 @@ public static class XrAffordanceUtility
     {
         if (helper == null) return;
 
-        if (helper.rendererTarget == null)
+        if (helper.rendererTarget == null || !IsUsableRenderer(helper.rendererTarget))
             helper.rendererTarget = ResolveRenderer(helper.transform);
 
-        if (helper.rendererTarget == null)
+        if (!IsUsableRenderer(helper.rendererTarget))
         {
+            helper.enabled = false;
             SetAffordanceBranchOff(helper.gameObject);
             return;
         }
@@ -44,6 +55,9 @@ public static class XrAffordanceUtility
         helper.enabled = false;
         helper.enabled = true;
     }
+
+    static bool IsUsableRenderer(Renderer renderer) =>
+        renderer != null && renderer.gameObject != null && renderer.sharedMaterials.Length > 0;
 
     static void SetAffordanceBranchOff(GameObject affordanceRoot)
     {
@@ -92,8 +106,24 @@ public static class XrAffordanceUtility
                 return r;
         }
 
+        var interactionAffordance = affordanceTransform.parent;
+        if (interactionAffordance != null)
+        {
+            var interactableRoot = interactionAffordance.parent;
+            if (interactableRoot != null)
+            {
+                foreach (var r in interactableRoot.GetComponents<Renderer>())
+                    if (IsUsableRenderer(r)) return r;
+                foreach (var r in interactableRoot.GetComponentsInChildren<Renderer>(true))
+                    if (IsUsableRenderer(r)) return r;
+            }
+        }
+
         foreach (var r in affordanceTransform.GetComponentsInParent<Renderer>(true))
-            return r;
+            if (IsUsableRenderer(r)) return r;
+
+        foreach (var r in affordanceTransform.GetComponentsInChildren<Renderer>(true))
+            if (IsUsableRenderer(r)) return r;
 
         return null;
     }
@@ -109,3 +139,4 @@ public static class XrAffordanceUtility
         return null;
     }
 }
+#pragma warning restore CS0618

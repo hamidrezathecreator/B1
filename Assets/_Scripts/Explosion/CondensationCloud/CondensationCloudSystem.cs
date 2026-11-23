@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.Pool;
 
 /// <summary>
@@ -31,6 +33,18 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField, Min(0f)] private float endTimeScale = 1f;
     [Tooltip("Wall-clock seconds to ramp from Start to End time scale.")]
     [SerializeField, Min(0f)] private float timeScaleRampDuration = 0.15f;
+
+    [Header("Player engulfment")]
+    [Tooltip("Expanding cloud radius is tested against this point (usually the headset). Empty = XR Origin camera in the cloud's scene.")]
+    [SerializeField] private Transform playerListener;
+    [SerializeField] private bool notifyWhenCloudReachesPlayer = true;
+    public UnityEvent<Vector3> onPlayerEngulfed = new UnityEvent<Vector3>();
+
+    /// <summary>Fired once per cloud when the listener enters the expanding sphere (world center + radius).</summary>
+    public static event Action<Vector3, float> PlayerEngulfed;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ResetEngulfEvent() => PlayerEngulfed = null;
 
     private ObjectPool<GameObject> _pool;
     private int activeCloudCount;
@@ -109,6 +123,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         float attack = Mathf.Clamp(seconds * attackFraction, 0.01f, seconds);
         float wallPlayback = 0f;
         float virtualElapsed = 0f;
+        bool engulfNotified = false;
         while (virtualElapsed < seconds && cloud != null)
         {
             float dt = Time.deltaTime;
@@ -133,6 +148,8 @@ public sealed class CondensationCloudSystem : MonoBehaviour
 
             cloud.transform.localScale = Vector3.one * (diameter * scale);
             SetCloudAlpha(renderer, alpha);
+            float worldRadius = diameter * scale * 0.5f;
+            TryNotifyPlayerEngulfed(cloud, cloud.transform.position, worldRadius, ref engulfNotified);
             yield return null;
         }
 
@@ -144,6 +161,28 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         if (cloud != null && cloud.activeSelf && _pool != null)
             _pool.Release(cloud);
         activeCloudCount--;
+    }
+
+    void TryNotifyPlayerEngulfed(GameObject cloud, Vector3 center, float worldRadius, ref bool fired)
+    {
+        if (!notifyWhenCloudReachesPlayer || fired || cloud == null || worldRadius <= 0.0001f) return;
+        Transform listener = ResolveListener(cloud);
+        if (listener == null) return;
+        if (Vector3.Distance(listener.position, center) > worldRadius) return;
+        fired = true;
+        PlayerEngulfed?.Invoke(center, worldRadius);
+        onPlayerEngulfed.Invoke(center);
+    }
+
+    Transform ResolveListener(GameObject cloud)
+    {
+        if (playerListener != null) return playerListener;
+        foreach (var origin in FindObjectsByType<Unity.XR.CoreUtils.XROrigin>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (origin.Camera == null || origin.gameObject.scene != cloud.scene) continue;
+            return origin.Camera.transform;
+        }
+        return null;
     }
 
     private static void SetCloudAlpha(Renderer renderer, float alpha)
