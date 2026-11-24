@@ -53,11 +53,6 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     [SerializeField] AudioClip missileLaunchSound;
     [SerializeField] AudioClip missileImpactSound;
 
-    [Header("Tracker scope (Lvl 3 only)")]
-    [SerializeField] Material trackerScopeThermalPost;
-    [SerializeField] Material trackerThermalReplacement;
-    [SerializeField] Material trackerDroneHeatmap;
-
     XROrigin origin;
     HandHintBanner launchHint;
 
@@ -97,20 +92,16 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             jet.ConfigureMissileLaunchSound(missileLaunchSound);
         foreach (var strike in FindObjectsByType<ExplodeAndSwap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             strike.SetImpactSound(missileImpactSound);
+
         TrackerWeaponScope.SetupByName(
             missileLaunchSound,
             missileImpactSound,
             handHintFont,
-            trackerScopeThermalPost,
-            trackerThermalReplacement,
-            trackerDroneHeatmap,
             "TrackerWeapon",
             "TrackerDevice",
             "SM_TrackerWeapon",
             "LaserWeapon",
             "SM_LaserWeapon");
-
-        StartCoroutine(WakeTrackerScopesAfterInit());
 
         if (beaconObjectNames != null)
         {
@@ -250,13 +241,6 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             else if (GraphicsSettings.currentRenderPipeline == null)
                 cam.stereoTargetEye = StereoTargetEyeMask.None;
         }
-    }
-
-    static IEnumerator WakeTrackerScopesAfterInit()
-    {
-        yield return null;
-        foreach (var scope in FindObjectsByType<TrackerWeaponScope>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            scope.WakeScopeCamera();
     }
 
     static void DemoteToRenderTextureCamera(Camera cam)

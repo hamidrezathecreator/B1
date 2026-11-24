@@ -15,6 +15,9 @@ public static class ThermalDroneHeatmap
         foreach (var r in root.GetComponentsInChildren<Renderer>(true))
         {
             if (r == null || Originals.ContainsKey(r)) continue;
+            var sh = r.sharedMaterial != null ? r.sharedMaterial.shader : null;
+            if (sh != null && sh.name.Contains("HeatmapObject"))
+                continue;
             Originals[r] = r.sharedMaterials;
             var next = new Material[r.sharedMaterials.Length];
             for (var i = 0; i < next.Length; i++)

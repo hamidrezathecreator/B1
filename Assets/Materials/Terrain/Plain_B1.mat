@@ -38,6 +38,10 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _BaseNormalMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BaseTexture:
         m_Texture: {fileID: 2800000, guid: 1b9038d19b143d34dacb6e7b1fb07b01, type: 3}
         m_Scale: {x: 400, y: 400}
@@ -85,6 +89,14 @@ Material:
     - _HeatMap:
         m_Texture: {fileID: 2800000, guid: f6a46420528e511499a0a0d94e56d3e3, type: 3}
         m_Scale: {x: 9.69, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MainBaseNormalMap:
+        m_Texture: {fileID: 2800000, guid: 7b07f8db75294f6439cc9278b66c4dc1, type: 3}
+        m_Scale: {x: 10, y: 10}
+        m_Offset: {x: 0, y: 0}
+    - _MainBaseTexture:
+        m_Texture: {fileID: 2800000, guid: 96c6aa5905a202547be3c50a862a5b52, type: 3}
+        m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MainTex:
         m_Texture: {fileID: 2800000, guid: 96c6aa5905a202547be3c50a862a5b52, type: 3}
@@ -179,6 +191,7 @@ Material:
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _HeatIntensity: 1.755
+    - _MainBaseStrength: 3
     - _Mask1Tiling: 2.34
     - _Mask2Tiling: 1.79
     - _Mask3Tiling: 7.2
@@ -207,7 +220,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
-    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Color: {r: 0.6603774, g: 0.6603774, b: 0.6603774, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
     - _ThermalLayerHeats: {r: 0.08, g: 0.1, b: 0.38, a: 0.1}

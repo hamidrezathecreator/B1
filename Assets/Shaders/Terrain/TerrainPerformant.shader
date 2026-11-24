@@ -2,14 +2,21 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
 {
     Properties
     {
-        // --- Mask Texture (Optimized: R=M1, G=M2, B=M3, A=M4) ---
+        // --- Main terrain base: lit albedo + normal; not in mask stack; no rotation ---
+        _MainBaseTexture ("Main Base Texture (Albedo)", 2D) = "gray" {}
+        [Normal] _MainBaseNormalMap ("Main Base Normal Map", 2D) = "bump" {}
+        [Range(0f, 2f)] _MainBaseStrength ("Main Base Strength", Range(0, 3)) = 1.0
         
-        [Toggle(BASE_LAYER_ON)] _BaseLayerToggle ("Base Layer", Float) = 1.0
-        _BaseTexture ("Base Texture", 2D) = "gray" {}
-        _BaseRotation ("Base Rotation (Degrees)", Range(0, 360)) = 0.0
-        _BaseRandomRotation ("Base Random Rotation Factor", Range(0, 1)) = 0.0
-        [Range(0f,2f)]
-        _BaseStrength ("Base Strength", Range(0, 3)) = 1.0
+        [Space]
+        [Space]
+        
+        // --- Mask stack foundation (your existing overlay base; not masked itself) ---
+        [Toggle(BASE_LAYER_ON)] _BaseLayerToggle ("Overlay Base Layer", Float) = 1.0
+        _BaseTexture ("Overlay Base Texture", 2D) = "gray" {}
+        _BaseRotation ("Overlay Base Rotation (Degrees)", Range(0, 360)) = 0.0
+        _BaseRandomRotation ("Overlay Base Random Rotation Factor", Range(0, 1)) = 0.0
+        [Range(0f, 2f)]
+        _BaseStrength ("Overlay Base Strength", Range(0, 3)) = 1.0
         
         [Space]
         [Space]
@@ -120,7 +127,12 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             // Global tint
             float4 _Color;
 
-            // Base layer
+            // Main terrain base (lit; no rotation)
+            float4 _MainBaseTexture_ST;
+            float4 _MainBaseNormalMap_ST;
+            float  _MainBaseStrength;
+
+            // Overlay base (mask-stack foundation; rotation supported)
             float4 _BaseTexture_ST;
             float  _BaseRotation;
             float  _BaseRandomRotation;
@@ -234,11 +246,14 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
 
             // Core.hlsl and the CBuffer are already included via HLSLINCLUDE above.
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/SurfaceInput.hlsl"
 
-            TEXTURE2D(_MasksTexture);   SAMPLER(sampler_MasksTexture);
+            TEXTURE2D(_MasksTexture);       SAMPLER(sampler_MasksTexture);
+            TEXTURE2D(_MainBaseTexture);    SAMPLER(sampler_MainBaseTexture);
+            TEXTURE2D(_MainBaseNormalMap);  SAMPLER(sampler_MainBaseNormalMap);
 
             #if defined(BASE_LAYER_ON)
-            TEXTURE2D(_BaseTexture);    SAMPLER(sampler_BaseTexture);
+            TEXTURE2D(_BaseTexture);        SAMPLER(sampler_BaseTexture);
             #endif
             
             #if defined(DETAIL_LAYER_1_ON)
@@ -300,6 +315,7 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             {
                 float4 positionOS : POSITION;
                 float3 normalOS   : NORMAL;
+                float4 tangentOS  : TANGENT;
                 float2 uv         : TEXCOORD0;
                 float2 lightmapUV : TEXCOORD1;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
@@ -308,11 +324,14 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float2 uvMain     : TEXCOORD0;
-
+                float2 uvMain       : TEXCOORD0;
+                float2 mainBaseUV     : TEXCOORD6;
+                float2 mainNormalUV   : TEXCOORD13;
                 #if defined(BASE_LAYER_ON)
-                float2 base       : TEXCOORD6;
+                float2 overlayBaseUV : TEXCOORD12;
                 #endif
+                half3 tangentWS     : TEXCOORD10;
+                half3 bitangentWS   : TEXCOORD11;
                 
                 #if defined(DETAIL_LAYER_1_ON)
                 float2 uvDetail1  : TEXCOORD1;
@@ -344,15 +363,19 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
                 VertexPositionInputs vertexPos = GetVertexPositionInputs(input.positionOS.xyz);
+                VertexNormalInputs normalInput = GetVertexNormalInputs(input.normalOS, input.tangentOS);
                 output.positionCS = vertexPos.positionCS;
                 output.positionWS = vertexPos.positionWS;
-                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                output.normalWS = normalInput.normalWS;
+                output.tangentWS = normalInput.tangentWS;
+                output.bitangentWS = normalInput.bitangentWS;
                 OUTPUT_LIGHTMAP_UV(input.lightmapUV, unity_LightmapST, output.lightmapUV);
                 OUTPUT_SH(output.normalWS, output.vertexSH);
-                output.uvMain     = input.uv;
-
+                output.uvMain = input.uv;
+                output.mainBaseUV = TRANSFORM_TEX(input.uv, _MainBaseTexture);
+                output.mainNormalUV = TRANSFORM_TEX(input.uv, _MainBaseNormalMap);
                 #if defined(BASE_LAYER_ON)
-                output.base = TRANSFORM_TEX(input.uv, _BaseTexture);
+                output.overlayBaseUV = TRANSFORM_TEX(input.uv, _BaseTexture);
                 #endif
                 
                 #if defined(DETAIL_LAYER_1_ON)
@@ -399,12 +422,14 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 
                 const float DEG_TO_RAD = 0.01745329251;
                 
+                half3 mainAlbedo = SAMPLE_TEXTURE2D(_MainBaseTexture, sampler_MainBaseTexture, input.mainBaseUV).rgb * _MainBaseStrength;
+
                 half3 result;
                 #if defined(BASE_LAYER_ON)
-                    float2 finalBaseUV = applyRotation(input.base, _BaseRotation * DEG_TO_RAD, _BaseRandomRotation);
-                    result = SAMPLE_TEXTURE2D(_BaseTexture, sampler_BaseTexture, finalBaseUV).rgb * _BaseStrength;
+                    float2 finalOverlayBaseUV = applyRotation(input.overlayBaseUV, _BaseRotation * DEG_TO_RAD, _BaseRandomRotation);
+                    result = SAMPLE_TEXTURE2D(_BaseTexture, sampler_BaseTexture, finalOverlayBaseUV).rgb * _BaseStrength;
                 #else
-                    result = half3(0.5, 0.5, 0.5);
+                    result = half3(1.0, 1.0, 1.0);
                 #endif
                 
                 #if defined(DETAIL_LAYER_1_ON)
@@ -439,9 +464,16 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 result *= _Color.rgb;
                 #endif
                 
+                half3 albedo = mainAlbedo * result;
+                
+                half3 normalTS = UnpackNormal(
+                    SAMPLE_TEXTURE2D(_MainBaseNormalMap, sampler_MainBaseNormalMap, input.mainNormalUV));
+                half3x3 tangentToWorld = half3x3(input.tangentWS, input.bitangentWS, input.normalWS);
+                half3 normalWS = NormalizeNormalPerPixel(TransformTangentToWorld(normalTS, tangentToWorld));
+                
                 InputData inputData = (InputData)0;
                 inputData.positionWS = input.positionWS;
-                inputData.normalWS = NormalizeNormalPerPixel(input.normalWS);
+                inputData.normalWS = normalWS;
                 inputData.viewDirectionWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
                 #if defined(_MAIN_LIGHT_SHADOWS_SCREEN)
                 inputData.shadowCoord = ComputeScreenPos(TransformWorldToHClip(input.positionWS));
@@ -455,9 +487,11 @@ Shader "Universal Render Pipeline/Custom/UnlitToggleQuadMasks_Fog_Mobile"
                 inputData.shadowMask = SAMPLE_SHADOWMASK(input.lightmapUV);
 
                 SurfaceData surfaceData = (SurfaceData)0;
-                surfaceData.albedo = result;
+                surfaceData.albedo = albedo;
                 surfaceData.alpha = 1.0h;
-                surfaceData.normalTS = half3(0, 0, 1);
+                surfaceData.normalTS = normalTS;
+                surfaceData.specular = half3(0.2h, 0.2h, 0.2h);
+                surfaceData.smoothness = 0.15h;
                 surfaceData.occlusion = 1.0h;
 
                 half4 color = UniversalFragmentBlinnPhong(inputData, surfaceData);

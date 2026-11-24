@@ -205,6 +205,24 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         WakeScopeCamera();
     }
 
+    void LinkScopeThermalDriver()
+    {
+        scopeThermalDriver = null;
+        if (!scopeThermalView || scopeCamera == null) return;
+
+        scopeThermalDriver = scopeCamera.GetComponent<TrackerScopeThermalVision>();
+        if (scopeThermalDriver == null)
+        {
+            Debug.LogError(
+                name + ": Assign TrackerScopeThermalVision + ThermalMonitorCamera on the scope camera (e.g. Camera Lase).",
+                this);
+            return;
+        }
+
+        scopeThermalDriver.Prepare(texture, thermalReplacementMaterial);
+        scopeThermalDriver.SetUserThermalEnabled(thermalEngaged);
+    }
+
     public void SetThermalEngaged(bool engaged)
     {
         thermalEngaged = engaged && scopeThermalView;
@@ -228,12 +246,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         ConfigureScopeUrpCamera(scopeCamera.GetComponent<UniversalAdditionalCameraData>(), scopeCamera);
         UpdateScopeCameraEnabled();
         RefreshScopeDisplays();
-        if (scopeThermalView && scopeThermalPostMaterial != null)
-        {
-            scopeThermalDriver = TrackerScopeThermalVision.Bind(
-                scopeCamera, scopeThermalPostMaterial, thermalReplacementMaterial);
-        }
-        scopeThermalDriver?.SetUserThermalEnabled(thermalEngaged);
+        LinkScopeThermalDriver();
     }
 
     void UpdateScopeCameraEnabled()
@@ -844,12 +857,15 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     void DestroyTarget(Vector3 at)
     {
         if (target == null || !target.gameObject.activeInHierarchy) { missileAway = false; return; }
-        var size = TargetBounds(out var bounds)
+        var hasBounds = TargetBounds(out var bounds);
+        var size = hasBounds
             ? Mathf.Clamp(bounds.size.magnitude / 4f, 0.8f, 6f) * killExplosionScale
             : 2f * killExplosionScale;
-        var center = TargetBounds(out bounds) ? bounds.center : at;
+        var center = hasBounds ? bounds.center : at;
 
         // Blast stays in world space so it is not dragged by the drone before it disappears.
+        if (hasBounds)
+            ThermalExplosionHeat.Spawn(center, bounds, killExplosionScale);
         LaunchSmoke.CreateExplosionBurst(center, size);
         LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
         if (missileImpactSound != null)

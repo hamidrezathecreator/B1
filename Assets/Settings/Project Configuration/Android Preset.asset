@@ -67,23 +67,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c9e8f7a6b5d4c3e2f1a0b9c8d7e6f5a4, type: 3}
   m_Name: LVL3 Tracker Scope Thermal
   m_EditorClassIdentifier: 
-  m_Active: 0
-  settings:
-    thermalPostProcessMaterial: {fileID: 2100000, guid: e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9, type: 2}
-    thermalReplacementShader: {fileID: 4800000, guid: 9d30da7d3849325449baf269ccf4c4d0, type: 3}
-    thermalOpaqueNativeLayers:
-      serializedVersion: 2
-      m_Bits: 4294967295
-    thermalAmbientLayers:
-      serializedVersion: 2
-      m_Bits: 4294967295
-    thermalTransparentLayers:
-      serializedVersion: 2
-      m_Bits: 4294967295
-    renderScale: 1
-    useR8Format: 0
-    minResolution: 320
-    maxResolution: 1920
-    batterySaveMode: 0
-    batterySaveFPS: 30
-    showDebugStats: 0
+  m_Active: 1

@@ -254,6 +254,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         if (droneRoot != null && hideDroneUntilEngagement)
             droneRoot.SetActive(true);
 
+
         if (delayBeforeDroneAppears > 0f)
             yield return new WaitForSeconds(delayBeforeDroneAppears);
 

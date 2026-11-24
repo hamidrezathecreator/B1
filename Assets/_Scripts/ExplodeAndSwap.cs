@@ -209,6 +209,8 @@ public sealed class ExplodeAndSwap : MonoBehaviour
 
     void SpawnHitEffects(Vector3 center, Bounds bounds)
     {
+        ThermalExplosionHeat.Spawn(center, bounds, explosionScale);
+
         if (impactSound != null)
             AudioSource.PlayClipAtPoint(impactSound, center, impactVolume);
 
