@@ -84,9 +84,11 @@ public sealed class ExplosionScatter : MonoBehaviour
         public readonly Vector3 flatOut;
         public readonly Quaternion tumbleDelta;
         public readonly float totalDuration;
+        public readonly Vector3 tumbleAxis;
+        public readonly float tumbleDegrees;
 
         public PreparedDriverAnim(Transform driver, FollowerStart[] followers, Vector3 start, Quaternion startRotation,
-            Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion tumbleDelta, float totalDuration)
+            Vector3 apex, Vector3 landing, Vector3 flatOut, Quaternion tumbleDelta, float totalDuration, float extraTurns)
         {
             this.driver = driver;
             this.followers = followers;
@@ -97,6 +99,9 @@ public sealed class ExplosionScatter : MonoBehaviour
             this.flatOut = flatOut;
             this.tumbleDelta = tumbleDelta;
             this.totalDuration = totalDuration;
+            tumbleDelta.ToAngleAxis(out float angle, out Vector3 axis);
+            tumbleAxis = axis.sqrMagnitude > 0.0001f ? axis : Vector3.right;
+            tumbleDegrees = angle + 360f * extraTurns;
         }
     }
 
@@ -129,9 +134,11 @@ public sealed class ExplosionScatter : MonoBehaviour
     [Range(0.25f, 2f)] [SerializeField] float highVerticalDotImpulse = 1.12f;
     [Tooltip("Closer pieces get a stronger push.")]
     [Min(0f)] [SerializeField] float distanceFalloff = 0.08f;
-    [Tooltip("Max tumble in degrees from rest rotation (per axis), applied over the whole arc through landing.")]
+    [Tooltip("Variation in landing rotation (per axis). Extra Rotation Turns controls the tumbling during flight.")]
     [Range(0f, 180f)] [SerializeField] float rotationVariance = 55f;
     [Range(0.05f, 0.85f)] [SerializeField] float rotationVarianceVariation = 0.45f;
+    [Tooltip("Extra full rotations during each scatter arc. Zero rotation variance disables all tumbling.")]
+    [Min(0)] [SerializeField] int extraRotationTurns = 2;
     [Tooltip("Off: land near each piece's outward skid from rest. On: snap landing under that piece's apex (Ground Point only drives ground height / raycasts).")]
     [SerializeField] bool gatherAtGroundPoint;
     [SerializeField] LayerMask groundLayers = ~0;
@@ -168,6 +175,11 @@ public sealed class ExplosionScatter : MonoBehaviour
     readonly Dictionary<Transform, RestPose> restPoses = new Dictionary<Transform, RestPose>();
     readonly Dictionary<Transform, FollowerStart[]> followerStartsByDriver = new Dictionary<Transform, FollowerStart[]>();
     readonly HashSet<Transform> groupedFollowers = new HashSet<Transform>();
+
+    // Shared between scatters: overlapping lists must never relaunch fallen debris.
+    static readonly Dictionary<Transform, ExplosionScatter> launchedPieces = new Dictionary<Transform, ExplosionScatter>();
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void ClearLaunchedPieces() => launchedPieces.Clear();
 
     int partialExplosionStep;
     int nextPieceIndex;
@@ -354,9 +366,7 @@ public sealed class ExplosionScatter : MonoBehaviour
     public void Explode()
     {
         SanitizeOwnedReferences();
-        StopActiveTweens();
         EnsureStartCached();
-        RestoreStartState();
         if (!HasSetup()) return;
 
         partialExplosionStep = 4;
@@ -432,7 +442,17 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     void ExplodeDriver(Transform driver, Transform[] followers, int seed)
     {
+        if (driver == null || StaysStill(driver)) return;
+        if (Application.isPlaying && launchedPieces.ContainsKey(driver)) return;
+        if (followers != null)
+            followers = Array.FindAll(followers, f => f != null && !StaysStill(f) &&
+                (!Application.isPlaying || !launchedPieces.ContainsKey(f)));
         if (!TryPrepareDriverAnim(driver, followers, seed, out var prepared)) return;
+        if (Application.isPlaying)
+        {
+            launchedPieces[driver] = this;
+            if (followers != null) foreach (var follower in followers) launchedPieces[follower] = this;
+        }
 
         if (prepared.followers != null)
             followerStartsByDriver[driver] = prepared.followers;
@@ -476,7 +496,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         float total = rise + fall;
 
         prepared = new PreparedDriverAnim(driver, followerStarts, start, startRotation, path.apex, path.landing,
-            path.flatOut, path.tumbleDelta, total);
+            path.flatOut, path.tumbleDelta, total, rotationVariance >= 0.01f ? Mathf.Max(0f, extraRotationTurns) : 0f);
         return true;
     }
 
@@ -487,7 +507,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         Vector3 pos = EvaluateScatterArc(prepared.start, prepared.apex, prepared.landing, curveT);
         float rotT = Mathf.Clamp01(timelineU);
         Quaternion rot = prepared.startRotation *
-            Quaternion.SlerpUnclamped(Quaternion.identity, prepared.tumbleDelta, rotT);
+            Quaternion.AngleAxis(prepared.tumbleDegrees * rotT, prepared.tumbleAxis);
         driver.SetPositionAndRotation(pos, rot);
         ApplyFollowers(driver, rot, prepared.start, prepared.startRotation, prepared.followers);
     }
@@ -764,6 +784,9 @@ public sealed class ExplosionScatter : MonoBehaviour
 #endif
         EnsureStartCached();
         RestoreStartState();
+        var owned = new List<Transform>();
+        foreach (var pair in launchedPieces) if (pair.Value == this) owned.Add(pair.Key);
+        foreach (var piece in owned) launchedPieces.Remove(piece);
         partialExplosionStep = 0;
         nextPieceIndex = 0;
     }
@@ -911,9 +934,18 @@ public sealed class ExplosionScatter : MonoBehaviour
     float FindGroundHeight(Vector3 landing, float startHeight)
     {
         Ray ray = new Ray(landing + Vector3.up * raycastHeight, Vector3.down);
-        if (Physics.Raycast(ray, out RaycastHit hit, raycastHeight * 2f, groundLayers, QueryTriggerInteraction.Ignore))
-            return hit.point.y;
         var ground = GroundReference;
+        var hits = Physics.RaycastAll(ray, raycastHeight * 2f, groundLayers, QueryTriggerInteraction.Ignore);
+        Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        foreach (var hit in hits)
+        {
+            // Do not land on the bridge deck or another piece above the authored ground.
+            if (ground != null && hit.point.y > ground.position.y + groundClearance) continue;
+            bool debris = false;
+            foreach (var piece in pieces)
+                if (piece != null && (hit.transform == piece || hit.transform.IsChildOf(piece))) { debris = true; break; }
+            if (!debris) return hit.point.y;
+        }
         return ground != null ? ground.position.y : startHeight;
     }
 

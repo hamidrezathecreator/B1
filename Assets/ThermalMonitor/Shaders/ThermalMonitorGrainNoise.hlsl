@@ -56,4 +56,19 @@ float TMGrainFlickerScreen(float2 screenPx, float scale, float speed, float grai
     return saturate(n0 * 0.5 + n1 * 0.3 + n2 * 0.2);
 }
 
+// Tall vertical stripe field (like a high-resolution scanline texture), scrolled downward.
+half TMScanlineShade(float2 uv, float vertScale, float scrollSpeed, float lineWidth, float intensity, float time)
+{
+    if (intensity < 0.001)
+        return 1.0;
+
+    float v = uv.y * max(vertScale, 1.0) - time * scrollSpeed;
+    float stripe = frac(v);
+
+    float dist = abs(stripe - 0.5) * 2.0;
+    half  line = smoothstep(1.0, saturate(1.0 - lineWidth), dist);
+
+    return lerp(1.0 - intensity, 1.0, line);
+}
+
 #endif

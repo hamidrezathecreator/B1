@@ -128,7 +128,8 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (destroyedBridge == null)
             Debug.LogWarning("Lvl1Tutorial: no destroyed bridge named " + destroyedBridgeName + ".", this);
         SetBridgeDestroyed(false);
-        if (GetComponentInChildren<SecondMissileStrike>() == null) SecondMissileStrike.Create(transform);
+        if (FindAnyObjectByType<Lvl1BuildLevelStateMachine>() == null &&
+            GetComponentInChildren<SecondMissileStrike>() == null) SecondMissileStrike.Create(transform);
 
         // Let the first-scene setup (floor, body) finish first.
         yield return null;
@@ -310,11 +311,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         ShowBanner(doneMessage);
 
         var stateMachine = FindAnyObjectByType<Lvl1BuildLevelStateMachine>();
-        if (stateMachine != null && stateMachine.ReplaceTimeline)
+        if (stateMachine != null)
         {
-            if (doneMessageSeconds > 0f) yield return new WaitForSeconds(doneMessageSeconds);
+            stateMachine.NotifyTutorialCasePlaced(doneMessageSeconds);
+            if (doneMessageSeconds > 0f) yield return new WaitForSecondsRealtime(doneMessageSeconds);
             HideBanner();
-            yield return stateMachine.RunPostPlacementSequence();
             yield break;
         }
 

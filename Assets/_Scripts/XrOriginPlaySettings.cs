@@ -5,18 +5,18 @@ using UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets;
 
 /// <summary>
 /// Designer-tunable height and locomotion defaults for the XR Origin prefab.
-/// Floor tracking supplies real eye height on headset builds; offsets stay at zero so scenes do not stack extra lift.
+/// Device tracking uses the designer's standing eye height and preserves relative headset movement.
 /// </summary>
 [DisallowMultipleComponent]
 [RequireComponent(typeof(XROrigin))]
 public sealed class XrOriginPlaySettings : MonoBehaviour
 {
     [Header("Height")]
-    [Tooltip("Standing eye height in meters (reference for designers; not added on top of floor tracking in VR builds).")]
-    [SerializeField] float eyeHeightMeters = 1.65f;
+    [Tooltip("Standing eye height in meters above the rig floor. Device tracking preserves head movement relative to the initial headset pose.")]
+    [Min(0.1f)] [SerializeField] float eyeHeightMeters = 1.8f;
 
     [Tooltip("CharacterController capsule height in meters.")]
-    [SerializeField] float bodyHeightMeters = 1.75f;
+    [Min(0.1f)] [SerializeField] float bodyHeightMeters = 1.8f;
 
     [SerializeField] float bodyRadius = 0.2f;
 
@@ -42,14 +42,8 @@ public sealed class XrOriginPlaySettings : MonoBehaviour
         var origin = GetComponent<XROrigin>();
         if (origin == null) return;
 
-        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Floor;
-        origin.CameraYOffset = 0f;
-        if (origin.CameraFloorOffsetObject != null)
-        {
-            var t = origin.CameraFloorOffsetObject.transform;
-            var local = t.localPosition;
-            t.localPosition = new Vector3(local.x, 0f, local.z);
-        }
+        origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Device;
+        ApplyCameraHeight();
 
         var body = origin.GetComponent<CharacterController>();
         if (body != null)
@@ -70,4 +64,20 @@ public sealed class XrOriginPlaySettings : MonoBehaviour
         move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
         move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
     }
+
+    public void ApplyCameraHeight()
+    {
+        var origin = GetComponent<XROrigin>();
+        if (origin == null) return;
+
+        if (!Mathf.Approximately(origin.CameraYOffset, eyeHeightMeters))
+            origin.CameraYOffset = eyeHeightMeters;
+
+        if (origin.CameraFloorOffsetObject == null) return;
+        var offset = origin.CameraFloorOffsetObject.transform;
+        var local = offset.localPosition;
+        offset.localPosition = new Vector3(local.x, eyeHeightMeters, local.z);
+    }
+
+    void LateUpdate() => ApplyCameraHeight();
 }

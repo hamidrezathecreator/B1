@@ -121,6 +121,14 @@ public class ThermalMonitorCamera : MonoBehaviour
     [SerializeField, Range(0f, 20f)]   private float grainAnimationSpeed = 1f;
     [SerializeField] private GrainMode grainMode = GrainMode.Additive;
 
+    [Header("Scanlines")]
+    [SerializeField, Range(0f, 1f)]    private float scanlineIntensity  = 0.35f;
+    [Tooltip("Line count scale (taller field = more lines on screen).")]
+    [SerializeField, Range(20f, 1200f)] private float scanlineVertScale = 280f;
+    [Tooltip("Scroll speed downward (UV/s).")]
+    [SerializeField, Range(0f, 80f)]   private float scanlineScrollSpeed = 2f;
+    [SerializeField, Range(0.02f, 0.95f)] private float scanlineWidth = 0.2f;
+
     [Header("Sky (thermal data has no sky geometry)")]
     [Tooltip("Maps skybox luminance into thermal heat when depth marks a sky pixel.")]
     [SerializeField, Range(0.1f, 2f)] private float skyHeatMultiplier = 0.85f;
@@ -187,6 +195,10 @@ public class ThermalMonitorCamera : MonoBehaviour
     private static readonly int ID_GrainAnimSpeed = Shader.PropertyToID("_GrainAnimSpeed");
     private static readonly int ID_ThermalGrainTime = Shader.PropertyToID("_ThermalGrainTime");
     private static readonly int ID_GrainMode   = Shader.PropertyToID("_GrainMode");
+    private static readonly int ID_ScanInt     = Shader.PropertyToID("_ScanlineIntensity");
+    private static readonly int ID_ScanScale   = Shader.PropertyToID("_ScanlineVertScale");
+    private static readonly int ID_ScanSpeed   = Shader.PropertyToID("_ScanlineScrollSpeed");
+    private static readonly int ID_ScanWidth   = Shader.PropertyToID("_ScanlineWidth");
     private static readonly int ID_TM_SkyCube     = Shader.PropertyToID("_TM_SkyboxCube");
     private static readonly int ID_TM_Sky2D       = Shader.PropertyToID("_TM_Skybox2D");
     private static readonly int ID_TM_SkyPanoramic = Shader.PropertyToID("_TM_SkyPanoramic");
@@ -513,6 +525,11 @@ public class ThermalMonitorCamera : MonoBehaviour
         m.SetFloat(ID_GrainScale, grainScale);
         m.SetFloat(ID_GrainAnimSpeed, grainAnimationSpeed);
         m.SetFloat(ID_GrainMode,  (float)(int)grainMode);
+
+        m.SetFloat(ID_ScanInt,   scanlineIntensity);
+        m.SetFloat(ID_ScanScale, scanlineVertScale);
+        m.SetFloat(ID_ScanSpeed, scanlineScrollSpeed);
+        m.SetFloat(ID_ScanWidth, scanlineWidth);
 
         m.SetFloat(ID_HaloRadius, haloRadius);
         m.SetColor(ID_HaloColor,  haloColor);

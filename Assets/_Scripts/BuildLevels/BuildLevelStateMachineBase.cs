@@ -33,12 +33,16 @@ public abstract class BuildLevelStateMachineBase : MonoBehaviour
 
     protected abstract void OnEnterStep(int index);
 
+    /// <summary>Stops timed sequences so inspector jump/advance can fire the step immediately.</summary>
+    protected virtual void PrepareForEditorStepEnter() { }
+
     /// <summary>Play Mode: run the next step's enter logic (or start at 0).</summary>
     public bool EditorTestAdvanceStep()
     {
         if (!Application.isPlaying) return false;
-        var next = StepIndex + 1;
-        if (next >= StepCount) return false;
+        var next = NextEditorStep(StepIndex);
+        if (next < 0 || next >= StepCount) return false;
+        PrepareForEditorStepEnter();
         SetStep(next);
         return true;
     }
@@ -47,9 +51,12 @@ public abstract class BuildLevelStateMachineBase : MonoBehaviour
     {
         if (!Application.isPlaying) return false;
         if (index < 0 || index >= StepCount) return false;
+        PrepareForEditorStepEnter();
         SetStep(index);
         return true;
     }
+
+    protected virtual int NextEditorStep(int current) => current + 1;
 
     public void EditorTestJumpToStepByName(string stepName)
     {
@@ -58,6 +65,7 @@ public abstract class BuildLevelStateMachineBase : MonoBehaviour
         {
             if (string.Equals(StepNames[i], stepName, StringComparison.OrdinalIgnoreCase))
             {
+                PrepareForEditorStepEnter();
                 SetStep(i);
                 return;
             }

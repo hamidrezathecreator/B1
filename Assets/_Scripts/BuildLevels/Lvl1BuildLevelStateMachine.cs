@@ -1,10 +1,12 @@
 using System.Collections;
+using PrimeTween;
+using UnityEngine.Serialization;
 using UnityEngine;
-using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Lvl_1 post-tutorial sequence mirroring B1_V2.playable beats via scene receivers (no Director).
+/// Lvl_1 post-tutorial sequence. Assign scene refs. No Director, no timeline clocks.
+/// Missile arrival owns each strike; launch never triggers an explosion.
 /// </summary>
 [AddComponentMenu("B1/Lvl1 Build Level State Machine")]
 public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
@@ -13,75 +15,77 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         "Await Start (tutorial)",
         "Await Case Placement (tutorial)",
-        "B1_V2: Missile 1 + Swaps + Explosion 13",
-        "B1_V2: Bridge Collapse (scatter waves)",
-        "B1_V2: Half / Full Blink",
-        "B1_V2: Missile 2 + Explosion Two",
-        "Fall + Fog Shock",
-        "Close Eyes + Load Lvl 2"
+        "Missile 1 + Explosion 1 + Bridge scatter",
+        "Missile 2 + Explosion 2",
+        "Fall + Fade Out",
+        "Load Lvl 2"
     };
 
     [Header("Sequence")]
-    [SerializeField] bool replaceTimeline = true;
-    [Tooltip("Keeps the Director component off while this level runs.")]
-    [SerializeField] bool disableDirectorOnLoad = true;
-    [SerializeField] string directorObjectName = "Director";
     [SerializeField] string nextSceneName = BuildLevelScenes.Lvl2;
 
-    [Header("B1_V2 timing (seconds from sequence start)")]
-    [SerializeField] float tExplosion13 = 2.55f;
-    [SerializeField] float tMissile1 = 2.867f;
-    [SerializeField] float tModelSwap = 3.367f;
-    [SerializeField] float tSwapBridge = 3.633f;
-    [SerializeField] float tSwapSprites = 4f;
-    [SerializeField] float tBridgeFallTwo = 3.633f;
-    [SerializeField] float tBridgeFallOne = 4.383f;
-    [SerializeField] float tOthersBridgeFall = 4.933f;
-    [SerializeField] float tHalfBlink = 8.45f;
-    [SerializeField] float tFullBlink = 10.7f;
-    [SerializeField] float tMissile2 = 12.567f;
-    [SerializeField] float tExplosionTwo = 12.567f;
-    [SerializeField] float tSlowEyeClose = 13.1f;
-    [SerializeField] float fallAfterExplosionTwoSeconds = 3f;
+    [Header("Strike timing (real seconds)")]
+    [FormerlySerializedAs("tExplosion13")]
+    [SerializeField] float tFirstStrike = 2.55f;
+    [Tooltip("Real seconds after the first impact before launching the second salvo. Slow motion finishes before launch.")]
+    [SerializeField, Min(0f)] float secondStrikeDelay = 10f;
 
-    [Header("Explosion object names")]
-    [SerializeField] string explosionOneName = "Explosion 13";
-    [SerializeField] string explosionTwoName = "Explosion_Two";
-    [SerializeField] string[] intactBridgeNames = { "BridgMain", "BridgeMain", "Bridge Main" };
-    [SerializeField] string destroyedBridgeName = "BridgeDestroyed";
+    [FormerlySerializedAs("fallAfterExplosionTwoSeconds")]
+    [SerializeField, Min(0f)] float fallAfterSecondStrikeSeconds = 1f;
+
+    [Header("Refs")]
+    [SerializeField] GameObject explosionOne;
+    [SerializeField] GameObject explosionTwo;
+    [SerializeField] MissileLauncherSystem missiles1;
+    [SerializeField] MissileLauncherSystem missiles2;
+    [SerializeField] SceneObjectSwapper swapBridge;
+    [SerializeField] GameObject intactBridge;
+    [SerializeField] GameObject destroyedBridge;
+    [SerializeField] ExplosionScatter scatterOne;
+    [SerializeField] ExplosionScatter scatterTwo;
+    [SerializeField] ExplosionScatter scatterObjects;
+    [SerializeField] XrShockFallSequence shockFall;
+
+    [Header("Condensation cloud")]
+    [SerializeField] bool spawnCondensationCloud = true;
+    [SerializeField, Min(0.01f)] float condensationCloudRadius = 400f;
+    [SerializeField] float condensationCloudLifetime = 5f;
+
+    [Header("First strike global slow motion: frozen impact to full speed")]
+    [SerializeField, Min(0.05f)] float explosionTimeScaleRampSeconds = 6f;
+    [Tooltip("Higher holds near frozen longer, then accelerates sharply.")]
+    [SerializeField, Range(1f, 16f)] float slowMotionExponent = 8f;
+    [Header("Building shake on every strike")]
+    [SerializeField] Transform buildingShakeTarget;
+    [SerializeField] Vector3 buildingShakeStrength = new Vector3(0.12f, 0.08f, 0.12f);
+    [SerializeField, Min(0.01f)] float buildingShakeSeconds = 0.8f;
+    [SerializeField, Min(1f)] float buildingShakeFrequency = 18f;
 
     [Header("Glass shard UI (after 2nd explosion)")]
-    [Tooltip("Optional existing overlay component. Created at runtime on this object if empty.")]
     [SerializeField] VrFullscreenSpriteOverlay glassShardOverlay;
-    [Tooltip("Assign your glass shard PNG here when ready.")]
     [SerializeField] Texture2D glassShardTexture;
     [Min(0f)] [SerializeField] float glassShardFadeInSeconds = 0.35f;
     [SerializeField] bool hideGlassShardOnSceneLoad = true;
 
     [Header("Fall")]
-    [SerializeField] XrShockFallSequence shockFall;
     [SerializeField] bool preferShockFall = true;
-    [Min(0.1f)] [SerializeField] float maxEyeCloseSeconds = 2.5f;
     [Min(0f)] [SerializeField] float fadeOutSeconds = 1f;
 
-    MissileLauncherSystem missiles1;
-    MissileLauncherSystem missiles2;
-    SceneObjectSwapper swapBridge;
-    ModelCrossfadeController modelSwap;
-    SpriteCrossfadeController spriteSwap;
-    ExplosionScatter scatterObjects;
-    ExplosionScatter scatterOne;
-    ExplosionScatter scatterTwo;
-    VrBlinkEffect blink;
-    GameObject explosionOne;
-
+    [SerializeField, Min(0f)] float fadeAfterFallSeconds = 0.65f;
+    Coroutine slowMotionRoutine;
+    bool ownsTimeScale;
+    float savedFixedDeltaTime;
+    bool firstStrikePlayed, secondStrikePlayed;
+    bool firstStrikeLaunched, secondStrikeLaunched;
+    float firstImpactTime;
+    [SerializeField, Min(1f)] float missileImpactTimeoutSeconds = 30f;
+    System.Func<Vector3, bool> previousFirstImpactHandler, previousSecondImpactHandler;
+    bool previousFirstPlayback, previousSecondPlayback;
+    Tween buildingShake;
+    Vector3 buildingRestPosition;
     Coroutine sequenceRoutine;
     bool sequenceRunning;
-    float sequenceClock;
-    ExplosionCue fallCue;
-    float fallExplosionShownAt = -1f;
 
-    public bool ReplaceTimeline => replaceTimeline;
 
     protected override string[] StepNames => Steps;
 
@@ -101,294 +105,302 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         go.AddComponent<Lvl1BuildLevelStateMachine>();
     }
 
-    void Awake()
+    void Awake() => TrackStep(0);
+    void OnEnable()
     {
-        ResolveRefs();
-        if (disableDirectorOnLoad) DisableDirector();
-        SetStep(0);
+        if (missiles1 != null)
+        {
+            previousFirstImpactHandler = missiles1.ImpactPresentationOverride;
+            previousFirstPlayback = missiles1.FullSpeedImpactPlayback;
+            missiles1.ImpactPresentationOverride = OnFirstMissileImpact;
+            missiles1.FullSpeedImpactPlayback = true;
+        }
+        if (missiles2 != null)
+        {
+            previousSecondImpactHandler = missiles2.ImpactPresentationOverride;
+            previousSecondPlayback = missiles2.FullSpeedImpactPlayback;
+            missiles2.ImpactPresentationOverride = OnSecondMissileImpact;
+            missiles2.FullSpeedImpactPlayback = true;
+        }
     }
 
-    void ResolveRefs()
+    // Placement hands control to this component immediately; tutorial UI cannot stop the sequence.
+    public void NotifyTutorialCasePlaced(float completionMessageSeconds = 0f)
     {
-        explosionOne = FindByName(explosionOneName);
-        missiles1 = FindComponentOn<MissileLauncherSystem>("Missiles_1");
-        missiles2 = FindComponentOn<MissileLauncherSystem>("Missiles_2");
-        swapBridge = FindComponentOn<SceneObjectSwapper>("SwapBridgeOne");
-        modelSwap = FindComponentOn<ModelCrossfadeController>("CharactersSwapSystem_Two");
-        spriteSwap = FindComponentOn<SpriteCrossfadeController>("SpriteCrossFader");
-        scatterObjects = FindComponentOn<ExplosionScatter>("BridgeFallScatterObjects");
-        scatterOne = FindComponentOn<ExplosionScatter>("BridgeFallScatterOne");
-        scatterTwo = FindComponentOn<ExplosionScatter>("BridgeFallScatterTwo");
-        blink = FindAnyObjectByType<VrBlinkEffect>();
-        if (shockFall == null) shockFall = FindAnyObjectByType<XrShockFallSequence>();
-        if (preferShockFall && shockFall == null)
-        {
-            var host = new GameObject("XR Shock Fall");
-            shockFall = host.AddComponent<XrShockFallSequence>();
-        }
+        BeginAutomaticSequence(2, Mathf.Max(0f, completionMessageSeconds) + Mathf.Max(0f, tFirstStrike));
+    }
+
+    void BeginAutomaticSequence(int firstStep, float initialDelay)
+    {
+        if (sequenceRunning || SequenceComplete) return;
+        sequenceRunning = true;
+        sequenceRoutine = StartCoroutine(RunSequence(firstStep, initialDelay));
     }
 
     public IEnumerator RunPostPlacementSequence()
     {
-        if (sequenceRunning) yield break;
-        sequenceRunning = true;
-        DisableDirector();
-        ResetScatters();
-        WatchFallExplosion();
-        yield return RunB1V2Beats();
+        NotifyTutorialCasePlaced();
+        while (sequenceRunning) yield return null;
+    }
+    IEnumerator RunSequence(int firstStep, float initialDelay)
+    {
+        if (initialDelay > 0f) yield return new WaitForSecondsRealtime(initialDelay);
+        if (firstStep <= 2)
+        {
+            TrackStep(2);
+            LaunchFirstStrike();
+            yield return AwaitImpact(missiles1, true);
+            if (!firstStrikePlayed) { AbortSequence(); yield break; }
+
+            while (Time.unscaledTime - firstImpactTime < secondStrikeDelay || ownsTimeScale)
+                yield return null;
+        }
+        if (firstStep <= 3)
+        {
+            TrackStep(3);
+            LaunchSecondStrike();
+            yield return AwaitImpact(missiles2, false);
+            if (!secondStrikePlayed) { AbortSequence(); yield break; }
+
+            yield return new WaitForSecondsRealtime(fallAfterSecondStrikeSeconds);
+        }
+        if (firstStep <= 4)
+        {
+            TrackStep(4);
+            yield return RunFallPhase();
+        }
+        TrackStep(5);
+        yield return LoadNextScene();
         sequenceRunning = false;
+        sequenceRoutine = null;
         SequenceComplete = true;
     }
 
-    IEnumerator RunB1V2Beats()
+    IEnumerator AwaitImpact(MissileLauncherSystem launcher, bool first)
     {
-        sequenceClock = 0f;
-        var sequenceStart = Time.time;
-        yield return WaitUntil(tExplosion13);
-        SetStep(2);
-        PlayFirstExplosion();
-
-        yield return WaitUntil(tMissile1);
-        missiles1?.Fire();
-
-        yield return WaitUntil(tModelSwap);
-        modelSwap?.BroadcastToSecond();
-
-        yield return WaitUntil(tSwapBridge);
-        SetBridgeDestroyed(true);
-        swapBridge?.Swap();
-
-        yield return WaitUntil(tBridgeFallTwo);
-        scatterTwo?.ExplodePartly();
-
-        yield return WaitUntil(tSwapSprites);
-        spriteSwap?.BroadcastCrossfade();
-
-        yield return WaitUntil(tBridgeFallOne);
-        SetStep(3);
-        scatterOne?.ExplodePartly();
-
-        yield return WaitUntil(tOthersBridgeFall);
-        scatterObjects?.Explode();
-
-        yield return WaitUntil(tHalfBlink);
-        SetStep(4);
-        blink?.HalfBlink();
-
-        yield return WaitUntil(tFullBlink);
-        blink?.FullBlink();
-
-        yield return WaitUntil(tMissile2);
-        SetStep(5);
-        missiles2?.Fire();
-        PlaySecondExplosion();
-        ShowGlassShardOverlay();
-
-        yield return new WaitForSeconds(fallAfterExplosionTwoSeconds);
-        SetStep(6);
-        yield return RunFallPhase();
-
-        while (Time.time - sequenceStart < tSlowEyeClose) yield return null;
-        SetStep(7);
-        yield return CloseEyesPhase();
-        yield return LoadNextScene();
+        if (launcher == null || !(first ? firstStrikeLaunched : secondStrikeLaunched)) yield break;
+        float deadline = Time.unscaledTime + Mathf.Max(missileImpactTimeoutSeconds, launcher.FlightDuration + 2f);
+        while (!(first ? firstStrikePlayed : secondStrikePlayed) && launcher.isActiveAndEnabled &&
+               Time.unscaledTime < deadline)
+            yield return null;
+        if (!(first ? firstStrikePlayed : secondStrikePlayed))
+            Debug.LogError("Lvl1: missile did not reach its target; stopping the sequence.", this);
     }
 
-    IEnumerator WaitUntil(float targetTime)
+    void AbortSequence()
     {
-        var wait = Mathf.Max(0f, targetTime - sequenceClock);
-        if (wait > 0f) yield return new WaitForSeconds(wait);
-        sequenceClock = targetTime;
+        sequenceRunning = false;
+        sequenceRoutine = null;
+        RestoreTimeScale();
     }
+
+    protected override void PrepareForEditorStepEnter() => StopSequence();
+
+    protected override int NextEditorStep(int current) => current < 2 ? 2 : current + 1;
 
     protected override void OnEnterStep(int index)
     {
-        if (!Application.isPlaying || sequenceRunning) return;
+        if (!Application.isPlaying) return;
         switch (index)
         {
             case 2:
-                if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                sequenceRoutine = StartCoroutine(RunPostPlacementSequence());
-                break;
             case 3:
-                scatterTwo?.ExplodePartly();
-                scatterOne?.ExplodePartly();
-                scatterObjects?.Explode();
-                break;
             case 4:
-                blink?.HalfBlink();
-                blink?.FullBlink();
-                break;
             case 5:
-                missiles2?.Fire();
-                PlaySecondExplosion();
-                ShowGlassShardOverlay();
-                break;
-            case 6:
-                if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                sequenceRoutine = StartCoroutine(RunFallPhase());
-                break;
-            case 7:
-                if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                sequenceRoutine = StartCoroutine(CloseThenLoad());
+                BeginAutomaticSequence(index, 0f);
                 break;
         }
     }
 
-    IEnumerator CloseThenLoad()
+    void StopSequence()
     {
-        yield return CloseEyesPhase();
-        yield return LoadNextScene();
-    }
-
-    void DisableDirector()
-    {
-        var director = FindDirector();
-        if (director == null) return;
-        director.Stop();
-        director.time = 0;
-        director.enabled = false;
-    }
-
-    void PlayFirstExplosion()
-    {
-        if (explosionOne == null) explosionOne = FindByName(explosionOneName);
-        if (explosionOne == null) return;
-        VrExplosionOptimizer.Apply(explosionOne);
-        explosionOne.SetActive(true);
-        foreach (var ps in explosionOne.GetComponentsInChildren<ParticleSystem>(true))
+        if (sequenceRoutine != null)
         {
+            StopCoroutine(sequenceRoutine);
+            sequenceRoutine = null;
+        }
+        sequenceRunning = false;
+        RestoreTimeScale();
+    }
+
+    void LaunchFirstStrike()
+    {
+        if (firstStrikeLaunched || firstStrikePlayed) return;
+        if (missiles1 == null || !missiles1.TryFire())
+        {
+            Debug.LogError("Lvl1: first missile needs an enabled launcher, missile prefab and target.", this);
+            return;
+        }
+        firstStrikeLaunched = true;
+    }
+
+    void LaunchSecondStrike()
+    {
+        if (secondStrikeLaunched || secondStrikePlayed) return;
+        RestoreTimeScale();
+        if (missiles2 == null || !missiles2.TryFire())
+        {
+            Debug.LogError("Lvl1: second missile needs an enabled launcher, missile prefab and target.", this);
+            return;
+        }
+        secondStrikeLaunched = true;
+    }
+
+    bool OnFirstMissileImpact(Vector3 position)
+    {
+        if (!isActiveAndEnabled || !firstStrikeLaunched || firstStrikePlayed) return false;
+        firstStrikePlayed = true;
+        firstImpactTime = Time.unscaledTime;
+        savedFixedDeltaTime = Time.fixedDeltaTime;
+        ownsTimeScale = true;
+        Time.timeScale = 0f;
+        slowMotionRoutine = StartCoroutine(RampGlobalTime());
+        if (explosionOne != null) explosionOne.transform.position = position;
+        PlayExplosionObject(explosionOne, ExplosionTimeScaleSettings.Profile.Identity);
+        SpawnCondensationAt(explosionOne, ExplosionTimeScaleSettings.Profile.Identity);
+        ShakeBuilding();
+        SwapBridgeDestroyed();
+        scatterOne?.Explode();
+        return true; // This impact already has its explosion and cloud.
+    }
+
+    bool OnSecondMissileImpact(Vector3 position)
+    {
+        if (!isActiveAndEnabled || !secondStrikeLaunched || secondStrikePlayed) return false;
+        secondStrikePlayed = true;
+        RestoreTimeScale();
+        if (explosionTwo != null) explosionTwo.transform.position = position;
+        PlayExplosionObject(explosionTwo, ExplosionTimeScaleSettings.Profile.Identity);
+        SpawnCondensationAt(explosionTwo, ExplosionTimeScaleSettings.Profile.Identity);
+        scatterTwo?.Explode();
+        scatterObjects?.Explode();
+        ShakeBuilding();
+        ShowGlassShardOverlay();
+        return true;
+    }
+
+    void PlayExplosionObject(GameObject explosion, ExplosionTimeScaleSettings.Profile timeScale)
+    {
+        if (explosion == null) return;
+        VrExplosionOptimizer.Apply(explosion);
+        var linger = explosion.GetComponent<ExplosionSlowAfterBurst>();
+        if (linger != null) linger.enabled = false;
+
+        explosion.SetActive(true);
+        foreach (var ps in explosion.GetComponentsInChildren<ParticleSystem>(true))
+        {
+            var main = ps.main;
+            main.useUnscaledTime = false;
             ps.Clear(true);
             ps.Play(true);
         }
-        foreach (var audio in explosionOne.GetComponentsInChildren<AudioSource>(true))
+        foreach (var audio in explosion.GetComponentsInChildren<AudioSource>(true))
             if (audio.clip != null && !audio.isPlaying) audio.Play();
+
+        var ramp = explosion.GetComponent<ExplosionPlaybackRamp>();
+        if (ramp == null) ramp = explosion.AddComponent<ExplosionPlaybackRamp>();
+        ramp.Play(timeScale);
     }
 
-    void PlaySecondExplosion()
+    IEnumerator RampGlobalTime()
     {
-        var two = FindByName(explosionTwoName);
-        if (two == null) return;
-        VrExplosionOptimizer.Apply(two);
-        two.SetActive(true);
-        foreach (var ps in two.GetComponentsInChildren<ParticleSystem>(true))
+        float elapsed = 0f;
+        yield return null; // Keep a frozen impact frame.
+        while (elapsed < explosionTimeScaleRampSeconds)
         {
-            ps.Clear(true);
-            ps.Play(true);
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / Mathf.Max(0.05f, explosionTimeScaleRampSeconds));
+            float k = Mathf.Max(1f, slowMotionExponent);
+            float scale = (Mathf.Exp(k * t) - 1f) / (Mathf.Exp(k) - 1f);
+            Time.timeScale = scale;
+            Time.fixedDeltaTime = savedFixedDeltaTime * Mathf.Max(0.01f, scale);
+            yield return null;
         }
-        if (fallExplosionShownAt < 0f) fallExplosionShownAt = Time.time;
+        FinishTimeScale();
+    }
+    void RestoreTimeScale()
+    {
+        if (slowMotionRoutine != null) StopCoroutine(slowMotionRoutine);
+        FinishTimeScale();
+    }
+    void FinishTimeScale()
+    {
+        if (ownsTimeScale) { Time.timeScale = 1f; Time.fixedDeltaTime = savedFixedDeltaTime; }
+        ownsTimeScale = false;
+        slowMotionRoutine = null;
+    }
+    void ShakeBuilding()
+    {
+        if (buildingShakeTarget == null) return;
+        if (buildingShake.isAlive) { buildingShake.Stop(); buildingShakeTarget.localPosition = buildingRestPosition; }
+        buildingRestPosition = buildingShakeTarget.localPosition;
+        buildingShake = Tween.ShakeLocalPosition(buildingShakeTarget, buildingShakeStrength,
+            buildingShakeSeconds, buildingShakeFrequency, useUnscaledTime: false);
+    }
+    void OnDisable()
+    {
+        StopSequence();
+        if (missiles1 != null && missiles1.ImpactPresentationOverride == OnFirstMissileImpact)
+        {
+            missiles1.ImpactPresentationOverride = previousFirstImpactHandler;
+            missiles1.FullSpeedImpactPlayback = previousFirstPlayback;
+        }
+        if (missiles2 != null && missiles2.ImpactPresentationOverride == OnSecondMissileImpact)
+        {
+            missiles2.ImpactPresentationOverride = previousSecondImpactHandler;
+            missiles2.FullSpeedImpactPlayback = previousSecondPlayback;
+        }
+        if (buildingShake.isAlive)
+        {
+            buildingShake.Stop();
+            if (buildingShakeTarget != null) buildingShakeTarget.localPosition = buildingRestPosition;
+        }
+    }
+
+    void SpawnCondensationAt(GameObject explosion, ExplosionTimeScaleSettings.Profile timeScale)
+    {
+        if (!spawnCondensationCloud || explosion == null) return;
+        if (CondensationCloudSystem.Instance == null) return;
+        CondensationCloudSystem.SpawnAt(
+            explosion.transform.position, condensationCloudRadius, condensationCloudLifetime, timeScale);
+    }
+
+    void SwapBridgeDestroyed()
+    {
+        if (intactBridge != null) intactBridge.SetActive(false);
+        if (destroyedBridge != null) destroyedBridge.SetActive(true);
+        swapBridge?.Swap();
     }
 
     IEnumerator RunFallPhase()
     {
-        if (preferShockFall && shockFall != null)
-        {
-            shockFall.BeginFall();
-            while (shockFall.IsRunning) yield return null;
-        }
-    }
-
-    IEnumerator CloseEyesPhase()
-    {
-        blink ??= FindAnyObjectByType<VrBlinkEffect>();
-        if (blink == null) blink = new GameObject("Eye Blink").AddComponent<VrBlinkEffect>();
-        blink.CloseSlowly();
-        var waited = 0f;
-        while (blink != null && blink.Amount < 0.99f && waited < maxEyeCloseSeconds)
-        {
-            waited += Time.unscaledDeltaTime;
-            yield return null;
-        }
+        if (preferShockFall && shockFall != null) shockFall.BeginFall();
+        yield return new WaitForSecondsRealtime(fadeAfterFallSeconds);
+        // The drop continues through the scene transition fade.
     }
 
     void ShowGlassShardOverlay()
     {
-        if (glassShardTexture == null) return;
-        EnsureGlassShardOverlay();
-        if (glassShardOverlay == null) return;
-        glassShardOverlay.SetTexture(glassShardTexture);
-        glassShardOverlay.Show(glassShardFadeInSeconds);
-    }
 
-    void EnsureGlassShardOverlay()
-    {
-        if (glassShardOverlay != null) return;
-        glassShardOverlay = GetComponent<VrFullscreenSpriteOverlay>();
         if (glassShardOverlay == null)
-            glassShardOverlay = gameObject.AddComponent<VrFullscreenSpriteOverlay>();
+        {
+            var overlay = new GameObject("Glass Shard Overlay");
+            overlay.transform.SetParent(transform, false);
+            glassShardOverlay = overlay.AddComponent<VrFullscreenSpriteOverlay>();
+        }
+        if (glassShardTexture != null) glassShardOverlay.SetTexture(glassShardTexture);
+        glassShardOverlay.Show(glassShardFadeInSeconds);
     }
 
     IEnumerator LoadNextScene()
     {
-        if (hideGlassShardOnSceneLoad && glassShardOverlay != null)
-            glassShardOverlay.Hide(0.15f);
-        if (shockFall != null) shockFall.RestoreFog();
+        RestoreTimeScale();
         if (string.IsNullOrWhiteSpace(nextSceneName) || !Application.CanStreamedLevelBeLoaded(nextSceneName))
-        {
-            Debug.LogWarning("Lvl1 state machine: next scene not in build settings.", this);
             yield break;
-        }
 
-        SceneTransitionRunner.Begin(nextSceneName, true, 0f, Mathf.Min(0.3f, fadeOutSeconds), 0.4f, 0.6f);
-    }
-
-    void WatchFallExplosion()
-    {
-        fallExplosionShownAt = -1f;
-        var go = FindByName(explosionTwoName);
-        if (go == null) { fallCue = null; return; }
-        VrExplosionOptimizer.Apply(go);
-        fallCue = ExplosionCue.AddTo(go);
-        fallCue.Shown -= OnFallExplosionShown;
-        fallCue.Shown += OnFallExplosionShown;
-    }
-
-    void OnFallExplosionShown(ExplosionCue _) => fallExplosionShownAt = Time.time;
-
-    void SetBridgeDestroyed(bool destroyed)
-    {
-        var intact = FindByName(intactBridgeNames);
-        var broken = FindByName(destroyedBridgeName);
-        if (intact != null) intact.SetActive(!destroyed);
-        if (broken != null) broken.SetActive(destroyed);
-    }
-
-    static void ResetScatters()
-    {
-        foreach (var scatter in FindObjectsByType<ExplosionScatter>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (scatter.gameObject.scene.IsValid()) scatter.ResetExplosion();
-    }
-
-    PlayableDirector FindDirector()
-    {
-        if (string.IsNullOrWhiteSpace(directorObjectName)) return null;
-        var go = GameObject.Find(directorObjectName);
-        return go != null ? go.GetComponent<PlayableDirector>() : null;
-    }
-
-    static GameObject FindByName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return null;
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (t.name == name && t.gameObject.scene.IsValid()) return t.gameObject;
-        return null;
-    }
-
-    static GameObject FindByName(string[] names)
-    {
-        if (names == null) return null;
-        foreach (var n in names)
-        {
-            var go = FindByName(n);
-            if (go != null) return go;
-        }
-        return null;
-    }
-
-    static T FindComponentOn<T>(string objectName) where T : Component
-    {
-        var go = FindByName(objectName);
-        return go != null ? go.GetComponent<T>() : null;
+        SceneTransitionRunner.Begin(nextSceneName, true, 0f, fadeOutSeconds, 0.4f, 0.6f);
+        yield return new WaitForSecondsRealtime(fadeOutSeconds);
+        if (hideGlassShardOnSceneLoad && glassShardOverlay != null) glassShardOverlay.Hide(0f);
     }
 
     public void NotifyTutorialStartPressed() => SetStep(0);
@@ -397,8 +409,22 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     public void EditorTestRunFullPostPlacement()
     {
         if (!Application.isPlaying) return;
-        if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-        sequenceRoutine = StartCoroutine(RunPostPlacementSequence());
+        if (sequenceRunning || SequenceComplete) return;
+        StartCoroutine(RunPostPlacementSequence());
+    }
+
+    public void EditorTestPlayExplosionOne()
+    {
+        if (!Application.isPlaying) return;
+        StopSequence();
+        BeginAutomaticSequence(2, 0f);
+    }
+
+    public void EditorTestPlayExplosionTwo()
+    {
+        if (!Application.isPlaying) return;
+        StopSequence();
+        BeginAutomaticSequence(3, 0f);
     }
 
     public void EditorTestShowGlassShard() => ShowGlassShardOverlay();

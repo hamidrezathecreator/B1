@@ -29,6 +29,11 @@ Shader "Hidden/ThermalMonitor/PostProcess"
         _ThermalGrainTime ("Grain time (set by pass)", Float) = 0
         _GrainMode      ("Grain Mode (0 Add, 1 Mul, 2 Overlay)", Float) = 0
 
+        _ScanlineIntensity  ("Scanline Intensity", Float) = 0.35
+        _ScanlineVertScale  ("Scanline Vertical Scale", Float) = 280
+        _ScanlineScrollSpeed ("Scanline Scroll Speed", Float) = 2
+        _ScanlineWidth      ("Scanline Band Width", Float) = 0.2
+
         _InvertBlurRadius ("Halo Radius (texels)", Float) = 2
         _HaloColor        ("Halo Color", Color) = (1,1,1,1)
         _HaloIntensity    ("Halo Intensity", Float) = 0.5
@@ -74,6 +79,10 @@ Shader "Hidden/ThermalMonitor/PostProcess"
                 float  _GrainAnimSpeed;
                 float  _ThermalGrainTime;
                 float  _GrainMode;
+                float  _ScanlineIntensity;
+                float  _ScanlineVertScale;
+                float  _ScanlineScrollSpeed;
+                float  _ScanlineWidth;
                 float  _InvertBlurRadius;
                 float4 _HaloColor;
                 float  _HaloIntensity;
@@ -172,6 +181,13 @@ Shader "Hidden/ThermalMonitor/PostProcess"
                 return result;
             }
 
+            half3 ApplyScanlines(half3 color, float2 uv)
+            {
+                half shade = TMScanlineShade(uv, _ScanlineVertScale, _ScanlineScrollSpeed, _ScanlineWidth,
+                    _ScanlineIntensity, _ThermalGrainTime);
+                return color * shade;
+            }
+
             half4 frag(Varyings input) : SV_Target
             {
                 float2 uv = input.texcoord;
@@ -214,8 +230,11 @@ Shader "Hidden/ThermalMonitor/PostProcess"
                 // Pre-grain colour (palette + halo + bloom); grain is the only step after this.
                 half3 finalColor = saturate(thermalColor);
 
-                // 7. Film grain — strictly last
+                // 7. Film grain
                 finalColor = ApplyFilmGrain(finalColor, input.positionCS);
+
+                // 8. Scanlines — on top of grain (tall vertical field, scrolls down)
+                finalColor = ApplyScanlines(finalColor, uv);
 
                 return half4(saturate(finalColor), 1.0);
             }

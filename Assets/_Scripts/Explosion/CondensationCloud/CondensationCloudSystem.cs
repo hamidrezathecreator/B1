@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using PrimeTween;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Pool;
@@ -71,7 +72,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
             startTimeScale, endTimeScale, timeScaleRampDuration));
 
     public GameObject Spawn(Vector3 position, float radius, float lifetime = -1f,
-        ExplosionTimeScaleSettings.Profile? timeScale = null)
+        ExplosionTimeScaleSettings.Profile? timeScale = null, bool useUnscaledTime = false)
     {
         if (_pool == null || activeCloudCount >= Mathf.Max(1, maxSimultaneousClouds)) return null;
         var cloud = _pool.Get();
@@ -83,13 +84,13 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         var renderer = cloud.GetComponentInChildren<Renderer>();
         SetCloudAlpha(renderer, 0f);
         var scale = timeScale ?? ExplosionTimeScaleSettings.Current;
-        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer, scale));
+        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer, scale, useUnscaledTime));
         return cloud;
     }
 
     public static GameObject SpawnAt(Vector3 position, float radius, float lifetime = -1f,
-        ExplosionTimeScaleSettings.Profile? timeScale = null)
-        => Instance != null ? Instance.Spawn(position, radius, lifetime, timeScale) : null;
+        ExplosionTimeScaleSettings.Profile? timeScale = null, bool useUnscaledTime = false)
+        => Instance != null ? Instance.Spawn(position, radius, lifetime, timeScale, useUnscaledTime) : null;
 
     private GameObject Create()
     {
@@ -103,11 +104,19 @@ public sealed class CondensationCloudSystem : MonoBehaviour
             instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             instance.name = "CondensationCloud_Fallback";
             instance.transform.SetParent(transform, false);
-            var collider = instance.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
+
             if (fallbackMaterial != null)
                 instance.GetComponent<Renderer>().sharedMaterial = fallbackMaterial;
         }
+        var sphere = instance.GetComponent<SphereCollider>();
+        if (sphere == null) sphere = instance.AddComponent<SphereCollider>();
+        sphere.center = Vector3.zero;
+        sphere.radius = 0.5f;
+        sphere.isTrigger = true;
+        var body = instance.GetComponent<Rigidbody>();
+        if (body == null) body = instance.AddComponent<Rigidbody>();
+        body.isKinematic = true;
+        body.useGravity = false;
         instance.name = "CondensationCloud";
         return instance;
     }
@@ -117,41 +126,62 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     private static void OnDestroy(GameObject cloud) { if (cloud != null) Destroy(cloud); }
 
     private IEnumerator AnimateAndRelease(float delay, float seconds, float diameter, GameObject cloud, Renderer renderer,
-        ExplosionTimeScaleSettings.Profile timeScale)
+        ExplosionTimeScaleSettings.Profile timeScale, bool useUnscaledTime)
     {
-        if (delay > 0f) yield return new WaitForSeconds(delay);
+        if (delay > 0f)
+        {
+            if (useUnscaledTime) yield return new WaitForSecondsRealtime(delay);
+            else yield return new WaitForSeconds(delay);
+        }
         float attack = Mathf.Clamp(seconds * attackFraction, 0.01f, seconds);
         float wallPlayback = 0f;
         float virtualElapsed = 0f;
         bool engulfNotified = false;
+        // PrimeTween uses the same global scaled clock as particles and bridge debris.
+        var expansion = Tween.Scale(cloud.transform, 0f, diameter, attack, ease: Ease.OutCubic, useUnscaledTime: useUnscaledTime);
+        Tween contraction = default;
+        bool contracting = false;
+        // The frame before spawning is not part of this cloud's lifetime.
+        yield return null;
         while (virtualElapsed < seconds && cloud != null)
         {
-            float dt = Time.deltaTime;
+            float dt = useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
             wallPlayback += dt;
-            virtualElapsed += dt * timeScale.Evaluate(wallPlayback);
+            float playbackScale = timeScale.Evaluate(wallPlayback);
+            virtualElapsed += dt * playbackScale;
+            if (expansion.isAlive) expansion.timeScale = playbackScale;
             float alpha;
-            float scale;
             if (virtualElapsed <= attack)
             {
-                float rise = Mathf.Clamp01(virtualElapsed / attack);
-                rise = 1f - Mathf.Pow(1f - rise, 3f);
+                float rise = 1f - Mathf.Pow(1f - Mathf.Clamp01(virtualElapsed / attack), 3f);
                 alpha = rise * peakAlpha;
-                scale = rise;
             }
             else
             {
+                if (!contracting)
+                {
+                    contracting = true;
+                    if (expansion.isAlive) expansion.Complete();
+                    contraction = Tween.Scale(cloud.transform, diameter, diameter * 0.88f,
+                        Mathf.Max(0.001f, seconds - attack), ease: Ease.InOutSine, useUnscaledTime: useUnscaledTime);
+                }
+                if (contraction.isAlive) contraction.timeScale = playbackScale;
                 float fall = Mathf.Clamp01((virtualElapsed - attack) / Mathf.Max(0.001f, seconds - attack));
                 fall = fall * fall * (3f - 2f * fall);
                 alpha = (1f - fall) * peakAlpha;
-                scale = Mathf.Lerp(1f, 0.88f, fall);
             }
-
-            cloud.transform.localScale = Vector3.one * (diameter * scale);
             SetCloudAlpha(renderer, alpha);
-            float worldRadius = diameter * scale * 0.5f;
-            TryNotifyPlayerEngulfed(cloud, cloud.transform.position, worldRadius, ref engulfNotified);
+            // Test the actual sphere each rendered frame. XR headsets need no collider,
+            // and this remains accurate while fixed-step physics is frozen.
+            var sphere = cloud.GetComponent<SphereCollider>();
+            Vector3 center = sphere.transform.TransformPoint(sphere.center);
+            Vector3 lossy = sphere.transform.lossyScale;
+            float worldRadius = sphere.radius * Mathf.Max(Mathf.Abs(lossy.x), Mathf.Abs(lossy.y), Mathf.Abs(lossy.z));
+            TryNotifyPlayerEngulfed(cloud, center, worldRadius, ref engulfNotified);
             yield return null;
         }
+        if (expansion.isAlive) expansion.Stop();
+        if (contraction.isAlive) contraction.Stop();
 
         if (cloud != null)
         {

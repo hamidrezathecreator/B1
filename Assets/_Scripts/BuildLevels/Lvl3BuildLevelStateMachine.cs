@@ -36,10 +36,14 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     [Min(1f)] [SerializeField] float maxWaitTutorialFireSeconds = 180f;
 
     [Header("Auto launchers (MissileLauncherSystem in scene)")]
+    [Tooltip("Fired only from physical buttons / tutorial; auto salvo never calls Fire on these.")]
+    [SerializeField] MissileLauncherSystem[] buttonOnlyLaunchers;
     [Min(0)] [SerializeField] int autoLauncherCount = 4;
     [Min(0f)] [SerializeField] float delayAfterTutorialBeforeSalvo = 3f;
-    [Min(0f)] [SerializeField] float delayBetweenAutoLaunches = 0.45f;
-    [Tooltip("Empty = all MissileLauncherSystem in scene, sorted by name (up to count).")]
+    [Tooltip("Random wait between each auto Fire(). Set min = max for a fixed gap.")]
+    [Min(0f)] [SerializeField] float minDelayBetweenAutoLaunches = 0.35f;
+    [Min(0f)] [SerializeField] float maxDelayBetweenAutoLaunches = 1.1f;
+    [Tooltip("Explicit order for auto salvo. Empty = all MissileLauncherSystem in scene except button-only, sorted by name (up to count).")]
     [SerializeField] MissileLauncherSystem[] autoLaunchers;
 
     [Header("Drone")]
@@ -223,12 +227,22 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
         var systems = GatherAutoLaunchers();
         var count = Mathf.Min(autoLauncherCount, systems.Count);
+        var gapMin = Mathf.Min(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches);
+        var gapMax = Mathf.Max(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches);
         for (var i = 0; i < count; i++)
         {
             if (systems[i] != null) systems[i].Fire();
-            if (i < count - 1 && delayBetweenAutoLaunches > 0f)
-                yield return new WaitForSeconds(delayBetweenAutoLaunches);
+            if (i < count - 1 && gapMax > 0f)
+                yield return new WaitForSeconds(Random.Range(gapMin, gapMax));
         }
+    }
+
+    bool IsButtonOnlyLauncher(MissileLauncherSystem system)
+    {
+        if (system == null || buttonOnlyLaunchers == null) return false;
+        foreach (var manual in buttonOnlyLaunchers)
+            if (manual == system) return true;
+        return false;
     }
 
     List<MissileLauncherSystem> GatherAutoLaunchers()
@@ -237,12 +251,15 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         if (autoLaunchers != null && autoLaunchers.Length > 0)
         {
             foreach (var s in autoLaunchers)
-                if (s != null && s.gameObject.scene.IsValid()) list.Add(s);
+                if (s != null && s.gameObject.scene.IsValid() && !IsButtonOnlyLauncher(s)) list.Add(s);
             return list;
         }
 
         foreach (var s in FindObjectsByType<MissileLauncherSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-            if (s.gameObject.scene.IsValid()) list.Add(s);
+        {
+            if (!s.gameObject.scene.IsValid() || IsButtonOnlyLauncher(s)) continue;
+            list.Add(s);
+        }
         list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
         return list;
     }
@@ -377,6 +394,16 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
             yield return null;
     }
 
+    protected override void PrepareForEditorStepEnter()
+    {
+        if (sequenceRoutine != null)
+        {
+            StopCoroutine(sequenceRoutine);
+            sequenceRoutine = null;
+        }
+        sequenceRunning = false;
+    }
+
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying || sequenceRunning) return;
@@ -431,7 +458,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     public void EditorTestBeginSequence()
     {
         if (!Application.isPlaying) return;
-        if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
+        PrepareForEditorStepEnter();
         sequenceRoutine = StartCoroutine(RunFullSequence());
     }
 

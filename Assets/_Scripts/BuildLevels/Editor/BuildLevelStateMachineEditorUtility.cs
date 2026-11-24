@@ -8,13 +8,15 @@ static class BuildLevelStateMachineEditorUtility
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Build level tester", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Enter Play Mode, then use the buttons below to jump steps or advance one step at a time.",
+            "Play Mode only. Assign refs on this component (Lvl 1 no longer searches by name). Steps 0–1 are tutorial waits — Advance skips to explosion 1.",
             MessageType.Info);
 
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
         {
             EditorGUILayout.LabelField("Current", $"{machine.StepIndex}: {machine.StepName}");
-            if (GUILayout.Button("Advance One Step")) machine.EditorTestAdvanceStep();
+            if (GUILayout.Button(machine is Lvl1BuildLevelStateMachine
+                    ? "Skip to next state (continues automatically)" : "Advance One Step"))
+                machine.EditorTestAdvanceStep();
         }
 
         EditorGUILayout.Space(4);
@@ -48,12 +50,10 @@ static class BuildLevelStateMachineEditorExtensions
     {
         0 => "Await Start (tutorial)",
         1 => "Await Case Placement (tutorial)",
-        2 => "B1_V2: Missile 1 + Swaps + Explosion 13",
-        3 => "B1_V2: Bridge Collapse (scatter waves)",
-        4 => "B1_V2: Half / Full Blink",
-        5 => "B1_V2: Missile 2 + Explosion Two",
-        6 => "Fall + Fog Shock",
-        7 => "Close Eyes + Load Lvl 2",
+        2 => "Missile 1 + Explosion 1 + Bridge scatter",
+        3 => "Missile 2 + Explosion 2",
+        4 => "Fall + Fade Out",
+        5 => "Load Lvl 2",
         _ => "?"
     };
 
@@ -99,12 +99,48 @@ public abstract class BuildLevelStateMachineBaseEditor : Editor
     protected virtual void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine) { }
 }
 
+static class Lvl1StateMachinePlayModeMenus
+{
+    [MenuItem("B1/Lvl1/Play Explosion 1 + Condensation")]
+    static void PlayExplosion1() => Run(sm => sm.EditorTestPlayExplosionOne());
+
+    [MenuItem("B1/Lvl1/Play Explosion 2 + Condensation")]
+    static void PlayExplosion2() => Run(sm => sm.EditorTestPlayExplosionTwo());
+
+    static void Run(System.Action<Lvl1BuildLevelStateMachine> action)
+    {
+        if (!Application.isPlaying)
+        {
+            EditorUtility.DisplayDialog("Lvl 1", "Enter Play Mode in Lvl_1 first.", "OK");
+            return;
+        }
+
+        var sm = Object.FindAnyObjectByType<Lvl1BuildLevelStateMachine>();
+        if (sm == null)
+        {
+            EditorUtility.DisplayDialog("Lvl 1", "No Lvl1 Build Level State Machine in the loaded scene.", "OK");
+            return;
+        }
+
+        action(sm);
+        Selection.activeGameObject = sm.gameObject;
+    }
+}
+
 [CustomEditor(typeof(Lvl1BuildLevelStateMachine))]
 sealed class Lvl1BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
 {
     protected override void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine)
     {
         var lvl1 = (Lvl1BuildLevelStateMachine)machine;
+        var so = new SerializedObject(lvl1);
+        bool missingRefs = so.FindProperty("explosionOne").objectReferenceValue == null
+            || so.FindProperty("missiles1").objectReferenceValue == null
+            || so.FindProperty("scatterOne").objectReferenceValue == null;
+        if (missingRefs)
+            EditorGUILayout.HelpBox(
+                "Assign Explosion / Missiles / Scatter refs on this component. Nothing is found by name anymore.",
+                MessageType.Warning);
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Lvl 1 shortcuts", EditorStyles.boldLabel);
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
@@ -119,6 +155,10 @@ sealed class Lvl1BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
                 if (GUILayout.Button("Tutorial: advance one tutorial step")) tutorial.EditorTestAdvanceTutorialStep();
             }
 
+            if (GUILayout.Button("Play explosion 1 + scatter now"))
+                lvl1.EditorTestPlayExplosionOne();
+            if (GUILayout.Button("Play explosion 2 + condensation"))
+                lvl1.EditorTestPlayExplosionTwo();
             if (GUILayout.Button("Run full B1_V2 parity sequence (no Director)"))
                 lvl1.EditorTestRunFullPostPlacement();
             if (GUILayout.Button("Show glass shard overlay"))

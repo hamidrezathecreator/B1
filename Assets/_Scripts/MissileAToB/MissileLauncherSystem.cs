@@ -97,6 +97,11 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     public UnityEvent onCompleted = new UnityEvent();
     public UnityEvent onReset = new UnityEvent();
 
+    /// <summary>Return true when a sequence supplied the impact visual and cloud itself.</summary>
+    public System.Func<Vector3, bool> ImpactPresentationOverride { get; set; }
+    /// <summary>Secondary impacts can stay full speed during a cinematic global slowdown.</summary>
+    public bool FullSpeedImpactPlayback { get; set; }
+
     private readonly List<Tween> flights = new List<Tween>();
     private readonly Dictionary<GameObject, Vector3> spawnedMissiles = new Dictionary<GameObject, Vector3>();
     private int runId;
@@ -132,14 +137,16 @@ public sealed class MissileLauncherSystem : MonoBehaviour
 
     /// <summary>Starts an additional salvo without cancelling earlier launches or flights.</summary>
     [ContextMenu("Fire Missiles")]
-    public void Fire()
+    public void Fire() => TryFire();
+
+    public bool TryFire()
     {
         if (isActiveAndEnabled) FireRequested?.Invoke(this);
-        if (!isActiveAndEnabled || !ValidatePrefab()) return;
+        if (!isActiveAndEnabled) return false;
         if (pointB == null || missilePrefabs == null || missilePrefabs.Length == 0)
         {
             Debug.LogWarning("MissileLauncherSystem needs missile prefabs and Point B.", this);
-            return;
+            return false;
         }
         var availablePrefabs = new List<GameObject>();
         foreach (var prefab in missilePrefabs)
@@ -147,7 +154,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         if (availablePrefabs.Count == 0)
         {
             Debug.LogWarning("MissileLauncherSystem needs at least one assigned missile prefab.", this);
-            return;
+            return false;
         }
         flights.RemoveAll(flight => !flight.isAlive);
         Vector3 endCenter = pointB.position;
@@ -155,8 +162,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         int currentRun = runId;
         BeginSalvoTimeScale();
         onStarted.Invoke();
-        if (currentRun != runId) return;
+        if (currentRun != runId) return false;
         StartCoroutine(LaunchRoutine(availablePrefabs, endCenter, count, currentRun, null));
+        return true;
     }
 
     /// <summary>Flight time of one missile, from launch to impact.</summary>
@@ -316,25 +324,35 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         spawnedMissiles.Clear();
     }
 
-    private bool ValidatePrefab()
+    private bool TryGetQuadPrefab(out GameObject prefab, out QuadSequncerController sequence, out Renderer renderer)
     {
-        var sequence = quadSequencerPrefab != null
-            ? quadSequencerPrefab.GetComponentInChildren<QuadSequncerController>(true)
-            : null;
-        var renderer = sequence != null ? sequence.GetComponent<Renderer>() : null;
-        if (renderer != null && (HasExplosionMaterial() || renderer.sharedMaterial != null)) return true;
-        Debug.LogWarning("MissileLauncherSystem needs a quad prefab with a QuadSequncerController, a Renderer on that same object, and a sequence material.", this);
-        return false;
+        prefab = quadSequencerPrefab;
+        sequence = prefab != null ? prefab.GetComponentInChildren<QuadSequncerController>(true) : null;
+        renderer = sequence != null ? sequence.GetComponent<Renderer>() : null;
+        return renderer != null && (HasExplosionMaterial() || renderer.sharedMaterial != null);
     }
 
     private void HandleArrival(Vector3 impactPosition)
     {
         MissileImpacted?.Invoke(this, impactPosition);
+        if (ImpactPresentationOverride?.Invoke(impactPosition) == true)
+        {
+            onImpact.Invoke(impactPosition);
+            return;
+        }
         ShakeImpactTargets();
-        if (!ValidatePrefab()) return;
+        var impactTimeScale = FullSpeedImpactPlayback
+            ? ExplosionTimeScaleSettings.Profile.Identity : ConsumeImpactTimeScaleProfile();
+        if (TryGetQuadPrefab(out var prefab, out _, out _))
+            SpawnImpactQuad(prefab, impactPosition, impactTimeScale);
+        if (spawnCondensationCloud)
+            CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime, impactTimeScale, FullSpeedImpactPlayback);
+        onImpact.Invoke(impactPosition);
+    }
 
-        // Anchor to the captured endpoint, then apply the quad's world-space height adjustment.
-        var instance = Instantiate(quadSequencerPrefab, impactPosition, quadSequencerPrefab.transform.rotation);
+    void SpawnImpactQuad(GameObject prefab, Vector3 impactPosition, ExplosionTimeScaleSettings.Profile impactTimeScale)
+    {
+        var instance = Instantiate(prefab, impactPosition, prefab.transform.rotation);
         float minimumSize = Mathf.Max(0.01f, Mathf.Min(minQuadSize, maxQuadSize));
         float maximumSize = Mathf.Max(0.01f, Mathf.Max(minQuadSize, maxQuadSize));
         instance.transform.localScale *= Random.Range(minimumSize, maximumSize);
@@ -346,9 +364,8 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         instance.transform.position += Vector3.up * sequence.WorldYOffset;
         sequence.gameObject.SetActive(true);
         instance.SetActive(true);
-        var impactTimeScale = ConsumeImpactTimeScaleProfile();
         sequence.Initialize(PickExplosionMaterial(renderer.sharedMaterial));
-        sequence.SetPlaybackTimeScale(impactTimeScale);
+        sequence.SetPlaybackTimeScale(impactTimeScale, FullSpeedImpactPlayback);
         sequence.Play();
 
         var billboard = instance.GetComponent<ExplosionQuadBillboard>();
@@ -358,10 +375,6 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             billboard.Configure(targetCamera != null ? targetCamera : Camera.main, facing, flipFacing, true, sequence.FacingAxis);
 
         StartCoroutine(DestroyQuadWhenFinished(instance, sequence));
-        if (spawnCondensationCloud)
-            CondensationCloudSystem.SpawnAt(impactPosition, condensationCloudRadius, condensationCloudLifetime, impactTimeScale);
-
-        onImpact.Invoke(impactPosition);
     }
 
     void ShakeImpactTargets()
@@ -407,7 +420,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
         float wall = 0f;
         while (instance != null && sequence.IsPlaying() && wall < wallLimit)
         {
-            wall += Time.deltaTime;
+            wall += Time.unscaledDeltaTime;
             yield return null;
         }
         if (instance != null) Destroy(instance);

@@ -1847,7 +1847,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 2754875758274178580, guid: 26f2f318eb6735348bd9021f79677c85, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 193.9
+      value: 383.8
       objectReference: {fileID: 0}
     - target: {fileID: 2754875758274178580, guid: 26f2f318eb6735348bd9021f79677c85, type: 3}
       propertyPath: m_LocalPosition.y
@@ -1855,7 +1855,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2754875758274178580, guid: 26f2f318eb6735348bd9021f79677c85, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 158.5
+      value: 200.7
       objectReference: {fileID: 0}
     - target: {fileID: 2754875758274178580, guid: 26f2f318eb6735348bd9021f79677c85, type: 3}
       propertyPath: m_LocalRotation.w
@@ -7234,7 +7234,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.2450861
+      value: 0.099657215
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalRotation.x
@@ -7242,7 +7242,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0.9695013
+      value: -0.9950218
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalRotation.z
@@ -7254,7 +7254,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: -151.626
+      value: -168.561
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: e18c3511f429a6f49a18b42145f50df1, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
@@ -8115,6 +8115,10 @@ MonoBehaviour:
   grainScale: 6.02
   grainAnimationSpeed: 1.38
   grainMode: 0
+  scanlineIntensity: 0.35
+  scanlineVertScale: 280
+  scanlineScrollSpeed: 2
+  scanlineWidth: 0.2
   skyHeatMultiplier: 0.40923998
   haloRadius: 2.15
   haloColor: {r: 1, g: 1, b: 1, a: 1}

@@ -62,7 +62,7 @@ static class BridgeXrPlaySetup
     }
 
     /// <summary>
-    /// Elevator cabin: floor tracking without stacking CameraYOffset, and no world-Y lock
+    /// Elevator cabin: designer eye height, and no world-Y lock
     /// so the player can ride with the cabin when it starts below the tunnel.
     /// </summary>
     public static void PrepareElevatorPlaySpace(XROrigin origin)
@@ -397,6 +397,12 @@ sealed class CameraLiftKeeper : MonoBehaviour
     void LateUpdate()
     {
         if (origin == null) return;
+        var settings = origin.GetComponent<XrOriginPlaySettings>();
+        if (settings != null)
+        {
+            settings.ApplyCameraHeight();
+            return;
+        }
         if (origin.CameraYOffset != 0f)
             origin.CameraYOffset = 0f;
         if (origin.CameraFloorOffsetObject == null) return;
@@ -423,6 +429,13 @@ sealed class BridgeDeckLock : MonoBehaviour
 
         if (origin == null)
             return;
+
+        var settings = origin.GetComponent<XrOriginPlaySettings>();
+        if (settings != null)
+        {
+            settings.ApplyCameraHeight();
+            return;
+        }
 
         if (origin.CameraYOffset != 0f)
             origin.CameraYOffset = 0f;

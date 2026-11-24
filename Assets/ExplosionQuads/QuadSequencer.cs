@@ -54,7 +54,12 @@ public class QuadSequncerController : MonoBehaviour
 
     public ExplosionTimeScaleSettings.Profile PlaybackProfile => playbackProfile;
 
-    public void SetPlaybackTimeScale(ExplosionTimeScaleSettings.Profile profile) => playbackProfile = profile;
+    bool useUnscaledPlayback;
+    public void SetPlaybackTimeScale(ExplosionTimeScaleSettings.Profile profile, bool useUnscaledTime = false)
+    {
+        playbackProfile = profile;
+        useUnscaledPlayback = useUnscaledTime;
+    }
 
     /// <summary>Frames-per-second this sequence plays at, as read from the material.</summary>
     public float FrameRate { get; private set; }
@@ -145,13 +150,14 @@ public class QuadSequncerController : MonoBehaviour
 
     private void Update()
     {
-        if (!isPlaying || mat == null || !useScriptedPlayback) return;
+        if (!isPlaying || mat == null || (!useScriptedPlayback && !useUnscaledPlayback)) return;
 
-        float dt = Time.deltaTime;
+        float dt = useUnscaledPlayback ? Time.unscaledDeltaTime : Time.deltaTime;
         playbackWallTime += dt;
         float scale = playbackProfile.Evaluate(playbackWallTime);
         playbackVirtualTime += dt * scale;
-        mat.SetFloat(PlaybackTimeId, playbackVirtualTime);
+        if (useScriptedPlayback) mat.SetFloat(PlaybackTimeId, playbackVirtualTime);
+        else mat.SetFloat(StartTimeId, Time.time - playbackVirtualTime);
         if (playbackVirtualTime >= lifetime)
             isPlaying = false;
     }
@@ -166,7 +172,7 @@ public class QuadSequncerController : MonoBehaviour
     public bool IsPlaying()
     {
         if (!isPlaying) return false;
-        if (useScriptedPlayback) return playbackVirtualTime < lifetime;
+        if (useScriptedPlayback || useUnscaledPlayback) return playbackVirtualTime < lifetime;
         return (Time.time - startTime) < lifetime;
     }
 
