@@ -17,10 +17,12 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     public const int OptionCount = 3;
 
     public static event Action<bool> ChecklistChanged;
+    public event Action<bool> ChecklistUpdated;
+    public event Action<int, bool> OptionChanged;
     /// <summary>Fired when an option is toggled (index 0–2, new checked state).</summary>
     public static event Action<int, bool> OptionToggled;
 
-    [Header("UI refs (auto-found by name if empty)")]
+    [Header("Scene UI references")]
     [SerializeField] RawImage option1Image;
     [SerializeField] RawImage option2Image;
     [SerializeField] RawImage option3Image;
@@ -86,16 +88,13 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
 
     void Start()
     {
-        ResolveOptionImages();
+        InitializeOptions();
         ShowInactiveDefaults();
         WireTouchTargets();
     }
 
-    void ResolveOptionImages()
+    void InitializeOptions()
     {
-        if (option1Image == null) option1Image = FindRaw("Option_1");
-        if (option2Image == null) option2Image = FindRaw("Option_2");
-        if (option3Image == null) option3Image = FindRaw("Option_3");
 
         optionImages = new[] { option1Image, option2Image, option3Image };
         inactiveTextures = new[] { option1Inactive, option2Inactive, option3Inactive };
@@ -109,11 +108,6 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
             lastToggleTime[i] = -999f;
     }
 
-    RawImage FindRaw(string name)
-    {
-        var t = transform.Find(name);
-        return t != null ? t.GetComponent<RawImage>() : null;
-    }
 
     void ShowInactiveDefaults()
     {
@@ -129,30 +123,21 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     void WireTouchTargets()
     {
         if (wired) return;
-        wired = true;
-
-        for (var i = 0; i < 3; i++)
+        for (var index = 0; index < OptionCount; index++)
         {
-            var image = optionImages[i];
-            if (image == null) continue;
-
-            var go = image.gameObject;
-            // Old poke setup on these objects fought the tablet grab and never fired.
-            var oldPoke = go.GetComponent<XRPokeFilter>();
-            if (oldPoke != null) Destroy(oldPoke);
-            var oldInteractable = go.GetComponent<XRSimpleInteractable>();
-            if (oldInteractable != null) Destroy(oldInteractable);
-
-            var col = go.GetComponent<BoxCollider>();
-            if (col == null) col = go.AddComponent<BoxCollider>();
-            col.isTrigger = true;
-            FitColliderToOpaqueBar(image, col, i);
-            optionColliders[i] = col;
-
-            var touch = go.GetComponent<TabletOptionTouch>();
-            if (touch == null) touch = go.AddComponent<TabletOptionTouch>();
-            touch.Bind(this, i);
+            var image = optionImages[index];
+            var collider = image != null ? image.GetComponent<BoxCollider>() : null;
+            var touch = image != null ? image.GetComponent<TabletOptionTouch>() : null;
+            if (image == null || collider == null || touch == null || !collider.isTrigger)
+            {
+                Debug.LogError("MilitaryTabletLcdUi: assign all three option images with scene-authored trigger colliders and TabletOptionTouch components.", this);
+                enabled = false;
+                return;
+            }
+            optionColliders[index] = collider;
+            touch.Bind(this, index);
         }
+        wired = true;
     }
 
     void FitColliderToOpaqueBar(RawImage image, BoxCollider col, int index)
@@ -250,8 +235,10 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
             optionImages[index].texture = tex;
 
         OptionToggled?.Invoke(index, optionActive[index]);
+        OptionChanged?.Invoke(index, optionActive[index]);
         var allChecked = optionActive[0] && optionActive[1] && optionActive[2];
         ChecklistChanged?.Invoke(allChecked);
+        ChecklistUpdated?.Invoke(allChecked);
     }
 
     /// <summary>QA / state machine: set one checklist toggle without finger poke.</summary>
@@ -268,7 +255,9 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         }
 
         OptionToggled?.Invoke(index, check);
+        OptionChanged?.Invoke(index, check);
         ChecklistChanged?.Invoke(AllOptionsChecked);
+        ChecklistUpdated?.Invoke(AllOptionsChecked);
     }
 
     /// <summary>Editor / state-machine tester: check all three tablet options.</summary>
@@ -277,31 +266,6 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         if (!Application.isPlaying || optionActive == null) return;
         for (var i = 0; i < optionActive.Length; i++)
             EditorTestSetOptionChecked(i, true);
-    }
-}
-
-/// <summary>Trigger relay on each option bar; forwards finger contacts to the tablet UI.</summary>
-public sealed class TabletOptionTouch : MonoBehaviour
-{
-    MilitaryTabletLcdUi owner;
-    int index;
-
-    public void Bind(MilitaryTabletLcdUi ui, int optionIndex)
-    {
-        owner = ui;
-        index = optionIndex;
-    }
-
-    void OnTriggerEnter(Collider other)
-    {
-        if (owner != null && other.GetComponent<TabletFingerTip>() != null)
-            owner.FingerEnter(index);
-    }
-
-    void OnTriggerExit(Collider other)
-    {
-        if (owner != null && other.GetComponent<TabletFingerTip>() != null)
-            owner.FingerExit(index);
     }
 }
 

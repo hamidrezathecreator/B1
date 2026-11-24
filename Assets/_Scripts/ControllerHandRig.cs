@@ -8,7 +8,7 @@ using UnityEngine.XR.Hands;
 /// - Hand tracking (controllers put down): the rig follows the real hand through XR Hands,
 ///   every finger joint moving like the player's own.
 /// - Controller in hand: the rig sits on the controller; trigger bends the index, grip the
-///   other fingers, the thumb follows the grip halfway.
+///   other fingers, and buttons or thumbstick contact curl the thumb.
 /// The bones move in a hidden skinned rig and the result is baked into a plain MeshRenderer,
 /// because skinned rendering showed nothing on Quest in this project.
 /// </summary>
@@ -39,6 +39,14 @@ public sealed class ControllerHandRig : MonoBehaviour
         public Quaternion rotation;
     }
 
+    struct GrabJoint
+    {
+        public Transform transform;
+        public Quaternion rest;
+        public Quaternion target;
+        public bool animatedByInput;
+    }
+
     readonly List<FingerBone> bones = new List<FingerBone>();
     readonly List<RestPose> restPoses = new List<RestPose>();
     readonly List<InputDevice> devices = new List<InputDevice>();
@@ -50,6 +58,7 @@ public sealed class ControllerHandRig : MonoBehaviour
     bool leftHand;
     float index;
     float grip;
+    float thumb;
     float lastIndex = -1f;
     float lastGrip = -1f;
 
@@ -66,10 +75,49 @@ public sealed class ControllerHandRig : MonoBehaviour
     bool tracked;
     bool preferHandTrackingWhenAvailable;
     float trackingLossTimer;
+    readonly List<GrabJoint> grabJoints = new List<GrabJoint>();
+    ControllerGrabPose grabPoseOwner;
+    ControllerHandPose grabPose;
+    float grabPoseWeight;
 
     public Transform IndexTip { get; private set; }
     public int FingerBoneCount => bones.Count;
     public bool IsHandTracked => tracked;
+    public bool IsLeftHand => leftHand;
+
+    public void SetGrabPose(ControllerGrabPose owner, ControllerHandPose pose)
+    {
+        if (grabPoseOwner == owner && grabPose == pose) return;
+        grabPoseOwner = owner;
+        grabPose = pose;
+        grabJoints.Clear();
+        foreach (var joint in pose.joints)
+        {
+            if (string.IsNullOrEmpty(joint.path)) continue;
+            var jointTransform = rigRoot.Find(joint.path);
+            if (jointTransform == null) continue;
+            var rest = jointTransform.localRotation;
+            foreach (var restPose in restPoses)
+                if (restPose.transform == jointTransform) { rest = restPose.rotation; break; }
+            var animatedByInput = false;
+            foreach (var bone in bones)
+                if (bone.bone == jointTransform) { animatedByInput = true; break; }
+            grabJoints.Add(new GrabJoint
+            {
+                transform = jointTransform,
+                rest = rest,
+                target = joint.rotation,
+                animatedByInput = animatedByInput
+            });
+        }
+    }
+
+    public void ReleaseGrabPose(ControllerGrabPose owner)
+    {
+        if (grabPoseOwner != owner) return;
+        grabPoseOwner = null;
+        grabPose = null;
+    }
 
     public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
 
@@ -280,10 +328,11 @@ public sealed class ControllerHandRig : MonoBehaviour
             wristTransform.localRotation = wristOriginalLocalRotation;
         }
 
-        ReadInput(out var targetIndex, out var targetGrip);
-        var k = 1f - Mathf.Exp(-Smoothing * Time.deltaTime);
+        ReadInput(out var targetIndex, out var targetGrip, out var targetThumb);
+        var k = 1f - Mathf.Exp(-Smoothing * Time.unscaledDeltaTime);
         index = Mathf.Lerp(index, targetIndex, k);
         grip = Mathf.Lerp(grip, targetGrip, k);
+        thumb = Mathf.Lerp(thumb, targetThumb, k);
 
         // BakeMesh is in the skinned object's local space — MeshRenderer must share that pose.
         // Safe only while skinned stays under this ProjectHand anchor (enforced above).
@@ -292,9 +341,18 @@ public sealed class ControllerHandRig : MonoBehaviour
         foreach (var b in bones)
         {
             if (b.bone == null) continue;
-            var amount = b.finger == Finger.Index ? index : b.finger == Finger.Thumb ? grip * 0.5f : grip;
+            var amount = b.finger == Finger.Index ? index : b.finger == Finger.Thumb ? thumb : grip;
             b.bone.localRotation = b.rest * Quaternion.Euler(amount * b.maxDegrees, 0f, 0f);
         }
+        grabPoseWeight = Mathf.Lerp(grabPoseWeight,
+            grabPoseOwner != null && grabPoseOwner.isActiveAndEnabled ? 1f : 0f, k);
+        foreach (var joint in grabJoints)
+        {
+            if (joint.transform == null) continue;
+            var inputRotation = joint.animatedByInput ? joint.transform.localRotation : joint.rest;
+            joint.transform.localRotation = Quaternion.Slerp(inputRotation, joint.target, grabPoseWeight);
+        }
+        if (grabPoseOwner == null && grabPoseWeight < 0.001f) grabJoints.Clear();
         Rebake();
     }
 
@@ -402,10 +460,11 @@ public sealed class ControllerHandRig : MonoBehaviour
         lastGrip = grip;
     }
 
-    void ReadInput(out float trigger, out float squeeze)
+    void ReadInput(out float trigger, out float squeeze, out float thumbContact)
     {
         trigger = 0f;
         squeeze = 0f;
+        thumbContact = 0f;
         InputDevices.GetDevicesWithCharacteristics(
             InputDeviceCharacteristics.Controller |
             (leftHand ? InputDeviceCharacteristics.Left : InputDeviceCharacteristics.Right), devices);
@@ -413,8 +472,16 @@ public sealed class ControllerHandRig : MonoBehaviour
         {
             if (device.TryGetFeatureValue(CommonUsages.trigger, out var t)) trigger = Mathf.Max(trigger, t);
             if (device.TryGetFeatureValue(CommonUsages.grip, out var g)) squeeze = Mathf.Max(squeeze, g);
+            if (IsPressed(device, CommonUsages.primaryTouch) || IsPressed(device, CommonUsages.secondaryTouch) ||
+                IsPressed(device, CommonUsages.primaryButton) || IsPressed(device, CommonUsages.secondaryButton) ||
+                IsPressed(device, CommonUsages.primary2DAxisTouch) || IsPressed(device, CommonUsages.primary2DAxisClick))
+                thumbContact = 1f;
         }
+        thumbContact = Mathf.Max(thumbContact, squeeze * 0.5f);
     }
+
+    static bool IsPressed(InputDevice device, InputFeatureUsage<bool> feature) =>
+        device.TryGetFeatureValue(feature, out var pressed) && pressed;
 
     void OnDestroy()
     {

@@ -17,6 +17,11 @@ public sealed class XrShockFallSequence : MonoBehaviour
     [Min(0f)] [SerializeField] float gravity = 19.62f;
     [Min(0.1f)] [SerializeField] float maxSpeed = 60f;
 
+    [Header("Falling sound")]
+    [Tooltip("Empty uses a generated falling wind sound.")]
+    [SerializeField] AudioClip fallingSound;
+    [SerializeField, Range(0f, 1f)] float fallingSoundVolume = 0.65f;
+
     [Header("Exponential fog (blackout)")]
     [SerializeField] bool driveFog = true;
     [Tooltip("Fog density at the end of the ramp (Exponential mode).")]
@@ -50,6 +55,8 @@ public sealed class XrShockFallSequence : MonoBehaviour
     {
         running = true;
         var origin = FindAnyObjectByType<XROrigin>();
+        if (origin != null) PlayerImpactAudio.PlayFall(fallingSound, fallingSoundVolume);
+        var fallHaptics = origin != null ? ControllerFallHaptics.Begin(this) : null;
         ResolvePlane();
         if (plane != null)
         {
@@ -99,6 +106,8 @@ public sealed class XrShockFallSequence : MonoBehaviour
 
             yield return null;
         }
+
+        if (fallHaptics != null) fallHaptics.StopVibration();
 
         if (driveFog)
         {

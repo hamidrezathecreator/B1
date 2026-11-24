@@ -27,7 +27,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
 
     [Header("Object that travels A → B")]
     [SerializeField] GameObject movingObject;
-    [Tooltip("Start point. Empty = where the object already is.")]
+    [Tooltip("Assigned scene start pose for the moving object.")]
     [SerializeField] Transform pointA;
     [SerializeField] Transform pointB;
     [Tooltip("Flight time from Point A to Point B in seconds. Higher = slower.")]
@@ -69,166 +69,11 @@ public sealed class MissileLaunchButton : MonoBehaviour
     public GameObject MovingObject { get => movingObject; set => movingObject = value; }
     public Transform PointA { get => pointA; set => pointA = value; }
     public Transform PointB { get => pointB; set => pointB = value; }
+    public bool HasLaunched => launched;
 
     public void SetLaunchSound(AudioClip clip)
     {
         if (clip != null) launchSound = clip;
-    }
-
-    // Press positions measured on the ShootMissile panel buttons (panel-local).
-    static readonly Vector3 MissileButtonRest = new Vector3(0.000764f, 0.014691f, 0.00113f);
-    static readonly Vector3 MissileButtonPressed = new Vector3(0.00076f, 0.014605f, 0.000978f);
-    static readonly Vector3 DroneButtonRest = new Vector3(-0.0008622f, 0.014691f, 0.00113f);
-    static readonly Vector3 DroneButtonPressed = new Vector3(-0.0008662f, 0.014605f, 0.000978f);
-
-    /// <summary>
-    /// Wires every "ShootMissile.002" button in the loaded scenes: "ShootMissile.002" launches the
-    /// nearest SM_missile straight up, "ShootMissile.002 (1)" the nearest Shahed forward.
-    /// Also recognizes the Level 3 instance renamed by Unity to "ShootMissile (2)".
-    /// Buttons that already have a Moving Object are left alone.
-    /// </summary>
-    /// <param name="makePoint">Creates a path point (editor passes an Undo-aware version).</param>
-    /// <param name="beforeChange">Called before a component is changed (editor records Undo).</param>
-    /// <returns>Number of buttons wired.</returns>
-    public static int AutoWireScene(Func<string, Vector3, Transform, Transform> makePoint = null,
-        Action<UnityEngine.Object> beforeChange = null)
-    {
-        if (makePoint == null) makePoint = DefaultMakePoint;
-
-        var buttons = new List<Transform>();
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            if (t.name.StartsWith("ShootMissile.002", StringComparison.Ordinal) ||
-                t.name == "ShootMissile (2)")
-                buttons.Add(t);
-        }
-        buttons.Sort((a, b) => string.CompareOrdinal(GetPath(a), GetPath(b)));
-
-        var used = new HashSet<GameObject>();
-        foreach (var existing in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-        {
-            if (existing.movingObject != null) used.Add(existing.movingObject);
-        }
-
-        Transform pathRoot = null;
-        var wired = 0;
-        foreach (var buttonTransform in buttons)
-        {
-            var button = buttonTransform.GetComponent<MissileLaunchButton>();
-            if (button != null && button.movingObject != null) continue;
-
-            var panel = buttonTransform.parent != null ? buttonTransform.parent : buttonTransform;
-            // Old two-button panels: "(1)" is the drone button. One-button panels (the ShootMissile
-            // prefab) launch whichever missile or Shahed stands closest.
-            var twoButtonDrone = buttonTransform.name.Contains("(1)");
-            var target = twoButtonDrone
-                ? Nearest(panel.position, true, used)
-                : NearestAny(panel.position, used);
-            if (target == null) continue;
-            used.Add(target);
-            var isDrone = IsLaunchable(target.transform, true);
-
-            if (button == null)
-            {
-                button = buttonTransform.gameObject.AddComponent<MissileLaunchButton>();
-                // Only a freshly added button gets the measured press positions; a button set up
-                // in the scene or prefab keeps its own.
-                button.restLocalPosition = twoButtonDrone ? DroneButtonRest : MissileButtonRest;
-                button.pressedLocalPosition = twoButtonDrone ? DroneButtonPressed : MissileButtonPressed;
-            }
-            beforeChange?.Invoke(button);
-
-            if (pathRoot == null)
-            {
-                var root = GameObject.Find("Launch Paths");
-                pathRoot = root != null ? root.transform : makePoint("Launch Paths", Vector3.zero, null);
-            }
-
-            var a = target.transform.position;
-            Vector3 b;
-            if (isDrone)
-            {
-                var away = a - panel.position;
-                away.y = 0f;
-                if (away.sqrMagnitude < 0.01f) away = target.transform.forward;
-                away.y = 0f;
-                if (away.sqrMagnitude < 0.0001f) away = Vector3.forward;
-                b = a + away.normalized * 300f + Vector3.up * 40f;
-            }
-            else
-            {
-                b = a + Vector3.up * 250f;
-            }
-
-            button.movingObject = target;
-            button.pointA = makePoint(target.name + " Point A", a, pathRoot);
-            button.pointB = makePoint(target.name + " Point B", b, pathRoot);
-            button.accelerate = true;
-            button.hideAtPointB = true;
-            wired++;
-        }
-
-        return wired;
-    }
-
-    static Transform DefaultMakePoint(string pointName, Vector3 position, Transform parent)
-    {
-        var go = new GameObject(pointName);
-        go.transform.SetParent(parent, false);
-        go.transform.position = position;
-        return go.transform;
-    }
-
-    static GameObject Nearest(Vector3 from, bool drone, HashSet<GameObject> used)
-    {
-        GameObject best = null;
-        var bestDistance = float.MaxValue;
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            var go = t.gameObject;
-            if (used.Contains(go)) continue;
-            if (!IsLaunchable(t, drone)) continue;
-
-            var d = (t.position - from).sqrMagnitude;
-            if (d >= bestDistance) continue;
-            bestDistance = d;
-            best = go;
-        }
-        return best;
-    }
-
-    static GameObject NearestAny(Vector3 from, HashSet<GameObject> used)
-    {
-        var missile = Nearest(from, false, used);
-        var drone = Nearest(from, true, used);
-        if (missile == null) return drone;
-        if (drone == null) return missile;
-        return (missile.transform.position - from).sqrMagnitude <= (drone.transform.position - from).sqrMagnitude
-            ? missile
-            : drone;
-    }
-
-    static bool IsLaunchable(Transform t, bool drone)
-    {
-        var n = t.name;
-        var match = drone
-            ? n.StartsWith("Shahed", StringComparison.Ordinal) || n.StartsWith("SM_Shahed", StringComparison.Ordinal)
-            : n.StartsWith("SM_missile", StringComparison.Ordinal);
-        if (!match) return false;
-        // Top object of the model only, not its mesh children.
-        var parent = t.parent;
-        return parent == null || !IsLaunchable(parent, drone);
-    }
-
-    static string GetPath(Transform t)
-    {
-        var path = t.name;
-        while (t.parent != null)
-        {
-            t = t.parent;
-            path = t.name + "/" + path;
-        }
-        return path;
     }
 
     void Reset()
@@ -249,10 +94,15 @@ public sealed class MissileLaunchButton : MonoBehaviour
         if (hideUntilLaunch && movingObject != null)
             movingObject.SetActive(false);
 
-        EnsureTouchCollider();
+        touchCollider = GetComponent<BoxCollider>();
 
         var interactable = GetComponent<XRSimpleInteractable>();
-        if (interactable == null) interactable = gameObject.AddComponent<XRSimpleInteractable>();
+        if (interactable == null || touchCollider == null)
+        {
+            Debug.LogError("MissileLaunchButton: author the button collider and XRSimpleInteractable in the scene.", this);
+            enabled = false;
+            return;
+        }
         interactable.interactionLayers = -1;
         interactable.selectMode = InteractableSelectMode.Multiple;
         interactable.selectEntered.AddListener(_ => Press());
@@ -261,24 +111,17 @@ public sealed class MissileLaunchButton : MonoBehaviour
         // on a thin cap, which is why Test Launch worked in the editor and VR did not.
         interactable.hoverEntered.AddListener(OnHover);
 
-        var poke = GetComponent<XRPokeFilter>();
-        if (poke == null) poke = gameObject.AddComponent<XRPokeFilter>();
-        poke.pokeInteractable = interactable;
-        poke.pokeCollider = touchCollider;
     }
 
     void OnHover(HoverEnterEventArgs args)
     {
-        if (args.interactorObject == null) return;
-        var n = args.interactorObject.transform.name;
-        if (n.IndexOf("Poke", StringComparison.OrdinalIgnoreCase) < 0 &&
-            n.IndexOf("Finger", StringComparison.OrdinalIgnoreCase) < 0)
-            return;
-        Press();
+        if (args.interactorObject is XRPokeInteractor) Press();
     }
 
-    void EnsureTouchCollider()
+    [ContextMenu("Fit Button Touch Collider")]
+    public void FitTouchCollider()
     {
+        if (Application.isPlaying) return;
         touchCollider = GetComponent<BoxCollider>();
         if (touchCollider == null)
             touchCollider = gameObject.AddComponent<BoxCollider>();
@@ -312,7 +155,7 @@ public sealed class MissileLaunchButton : MonoBehaviour
     /// <summary>Press from code, a UnityEvent, or a Timeline signal.</summary>
     public void Press()
     {
-        if (busy) return;
+        if (!enabled || busy || movingObject == null || pointA == null || pointB == null) return;
         if (launchOnlyOnce && launched) return;
         StartCoroutine(PressAndLaunch());
     }
@@ -373,17 +216,10 @@ public sealed class MissileLaunchButton : MonoBehaviour
 
         var start = pointA != null ? pointA.position : target.position;
         var end = pointB.position;
-        // Point B on ShootMissile (1) was thousands of metres off to the side, so the
-        // drone left the map instead of climbing. A path that far means "go up".
-        var climb = Vector3.Distance(start, end) > 1500f;
-        if (climb)
-            end = start + Vector3.up * 400f;
         target.position = start;
 
         var direction = end - start;
-        if (climb && direction.sqrMagnitude > 0.0001f)
-            target.rotation = Quaternion.LookRotation(direction.normalized, Vector3.forward);
-        else if (faceTravelDirection && direction.sqrMagnitude > 0.0001f)
+        if (faceTravelDirection && direction.sqrMagnitude > 0.0001f)
             target.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
         var travelDir = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector3.up;
 

@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.Events;
+using PrimeTween;
 using System.Collections.Generic;
 
 /// <summary>Missile flight for prefab instances and missiles placed in a scene.</summary>
@@ -20,7 +21,14 @@ public sealed class MissileProjectile : MonoBehaviour
         if (flightAudioSource != null) flightAudioSource.Stop();
     }
 
-    void OnDisable() => EndFlight();
+    void OnDisable()
+    {
+        StopAllCoroutines();
+        if (flightTween.isAlive) flightTween.Stop();
+        EndFlight();
+        StopFlightParticles();
+        ClearFlightLight();
+    }
     void OnDestroy() => EndFlight();
 
     [Header("Flight")]
@@ -30,6 +38,9 @@ public sealed class MissileProjectile : MonoBehaviour
     [SerializeField] float defaultArcHeight = 8f;
     [SerializeField] AnimationCurve defaultFlightCurve;
     [SerializeField] bool pointForwardAlongPath = true;
+    [Tooltip("Keep flying beyond the destination at the final heading and speed until disabled or reset.")]
+    [SerializeField] bool continueBeyondDestination;
+    Tween flightTween;
 
     [Header("Launch effects")]
     [SerializeField] ParticleSystem[] launchParticles;
@@ -125,6 +136,7 @@ public sealed class MissileProjectile : MonoBehaviour
         if (!Application.isPlaying || !poseCaptured) return;
         EndFlight();
         StopAllCoroutines();
+        if (flightTween.isAlive) flightTween.Stop();
         if (launchLightInstance != null) Destroy(launchLightInstance);
         ClearFlightParticles();
         ClearFlightLight();
@@ -175,33 +187,55 @@ public sealed class MissileProjectile : MonoBehaviour
 
     public void Launch(Vector3 target) => Launch(target, defaultArcHeight, defaultFlightCurve);
 
+    public void ConfigureLaunchSound(AudioClip clip)
+    {
+        if (clip != null) initiationSounds = new[] { clip };
+    }
+
     System.Collections.IEnumerator FlightRoutine(Vector3 target, float arcHeight, AnimationCurve curve)
     {
         var start = transform.position;
         var duration = Mathf.Max(0.01f, flightDuration);
         var activeCurve = curve != null && curve.length > 0 ? curve : defaultFlightCurve;
         PlayFlightSound();
-        var elapsed = 0f;
-        while (elapsed < duration)
+        var power = Mathf.Max(1f, accelerationPower);
+        flightTween = Tween.Custom(this, 0f, 1f, duration, (projectile, time) =>
         {
-            elapsed += Time.deltaTime;
-            UpdateFlightEffectPower(elapsed);
-            var t = Mathf.Clamp01(elapsed / duration);
-            var progress = Mathf.Pow(t, Mathf.Max(1f, accelerationPower));
+            projectile.UpdateFlightEffectPower(time * duration);
+            var progress = Mathf.Pow(time, power);
             var position = FlightPosition(start, target, progress, arcHeight, activeCurve);
-            if (pointForwardAlongPath && t < 0.999f)
+            if (projectile.pointForwardAlongPath)
             {
-                var next = FlightPosition(start, target, Mathf.Min(1f, progress + 0.001f), arcHeight, activeCurve);
-                if ((next - position).sqrMagnitude > 0.0001f) transform.rotation = Quaternion.LookRotation(next - position, Vector3.up);
+                var previous = FlightPosition(start, target, Mathf.Max(0f, progress - 0.001f), arcHeight, activeCurve);
+                if ((position - previous).sqrMagnitude > 0.000001f)
+                    projectile.transform.rotation = FlightRotation(position - previous);
             }
-            transform.position = position;
-            yield return null;
-        }
+            projectile.transform.position = position;
+        }, ease: Ease.Linear);
+        yield return flightTween.ToYieldInstruction();
+        if (!IsInFlight) yield break;
         transform.position = target;
+        if (continueBeyondDestination)
+        {
+            var tangent = (target - FlightPosition(start, target, 0.999f, arcHeight, activeCurve)) / 0.001f;
+            var velocity = tangent * (power / duration);
+            if (pointForwardAlongPath && velocity.sqrMagnitude > 0.000001f)
+                transform.rotation = FlightRotation(velocity);
+            flightTween = Tween.Position(transform, target, target + velocity * duration, duration,
+                ease: Ease.Linear, cycles: -1, cycleMode: CycleMode.Incremental);
+            flightCompleted?.Invoke();
+            yield break;
+        }
         EndFlight();
         StopFlightParticles();
         ClearFlightLight();
         flightCompleted?.Invoke();
+    }
+
+    static Quaternion FlightRotation(Vector3 direction)
+    {
+        var forward = direction.normalized;
+        return Quaternion.LookRotation(forward, Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.999f ? Vector3.forward : Vector3.up);
     }
 
     static Vector3 FlightPosition(Vector3 start, Vector3 target, float progress, float arcHeight, AnimationCurve curve)

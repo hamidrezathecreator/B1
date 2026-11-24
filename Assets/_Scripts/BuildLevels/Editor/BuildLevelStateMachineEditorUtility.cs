@@ -8,7 +8,7 @@ static class BuildLevelStateMachineEditorUtility
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Build level tester", EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(
-            "Play Mode only. Assign refs on this component (Lvl 1 no longer searches by name). Steps 0–1 are tutorial waits — Advance skips to explosion 1.",
+            "Play Mode only. Assign scene references on this component. Jump and advance controls are explicit testing shortcuts.",
             MessageType.Info);
 
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
@@ -73,7 +73,7 @@ static class BuildLevelStateMachineEditorExtensions
     static string Lvl3Name(int i) => i switch
     {
         0 => "Idle",
-        1 => "Tutorial Rotate + Fire (2 units)",
+        1 => "Tutorial Launch Buttons",
         2 => "Auto Launcher Salvo",
         3 => "Drone Orbits",
         4 => "Drone Shoots 2 Units",
@@ -134,20 +134,22 @@ sealed class Lvl1BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
     {
         var lvl1 = (Lvl1BuildLevelStateMachine)machine;
         var so = new SerializedObject(lvl1);
-        bool missingRefs = so.FindProperty("explosionOne").objectReferenceValue == null
+        bool missingRefs = lvl1.Tutorial == null || !lvl1.Tutorial.HasValidAssignments
+            || so.FindProperty("explosionOne").objectReferenceValue == null
             || so.FindProperty("missiles1").objectReferenceValue == null
             || so.FindProperty("scatterOne").objectReferenceValue == null;
         if (missingRefs)
             EditorGUILayout.HelpBox(
-                "Assign Explosion / Missiles / Scatter refs on this component. Nothing is found by name anymore.",
+                "Assign the scene Tutorial, its pickup objects and placement zones, and the Explosion / Missiles / Scatter references.",
                 MessageType.Warning);
+        if (lvl1.Tutorial != null && GUILayout.Button("Select tutorial pickup and placement setup"))
+            Selection.activeGameObject = lvl1.Tutorial.gameObject;
+        EditorGUILayout.HelpBox("Gameplay waits for an assigned pickup to finish snapping into an assigned placement zone before launching missile 1. The shortcuts below explicitly bypass this wait for testing.", MessageType.Info);
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Lvl 1 shortcuts", EditorStyles.boldLabel);
         using (new EditorGUI.DisabledScope(!Application.isPlaying))
         {
-            Lvl1Tutorial tutorial = null;
-            if (Application.isPlaying)
-                tutorial = Object.FindAnyObjectByType<Lvl1Tutorial>();
+            var tutorial = lvl1.Tutorial;
             if (tutorial != null)
             {
                 EditorGUILayout.LabelField("Tutorial", tutorial.EditorTutorialStepName);
@@ -173,6 +175,7 @@ sealed class Lvl2BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
     protected override void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine)
     {
         var lvl2 = (Lvl2BuildLevelStateMachine)machine;
+        if (!lvl2.HasValidAssignments) EditorGUILayout.HelpBox("Assign the scene elevator intro and tablet UI.", MessageType.Warning);
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Lvl 2 shortcuts", EditorStyles.boldLabel);
         EditorGUILayout.LabelField("Tablet checked", $"{lvl2.TabletCheckedCount} / 3");
@@ -193,6 +196,7 @@ sealed class Lvl3BuildLevelStateMachineEditor : BuildLevelStateMachineBaseEditor
     protected override void DrawLevelSpecificButtons(BuildLevelStateMachineBase machine)
     {
         var lvl3 = (Lvl3BuildLevelStateMachine)machine;
+        if (!lvl3.HasValidAssignments) EditorGUILayout.HelpBox("Assign the tutorial orchestrator, automatic missile entries, drone, strikes, tracker and path target.", MessageType.Warning);
         EditorGUILayout.Space(8);
         EditorGUILayout.LabelField("Lvl 3 shortcuts", EditorStyles.boldLabel);
         using (new EditorGUI.DisabledScope(!Application.isPlaying))

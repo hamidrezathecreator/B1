@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using PrimeTween;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -9,7 +10,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 /// <summary>
 /// Grabbable tracker weapon with a zoom scope: a camera just past the front looks where you aim,
 /// shows the view on the weapon screen, tracks a naive lock on the drone, then fires a homing missile.
-/// Added at runtime on TrackerWeapon by level setup, or add manually to tune.
+/// Assign the scene camera, target and launch origin in the Inspector.
 /// </summary>
 [AddComponentMenu("B1/Tracker Weapon Scope")]
 public sealed class TrackerWeaponScope : MonoBehaviour
@@ -17,12 +18,10 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     public enum Axis { Auto, PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ }
 
     [Header("Scope camera")]
-    [Tooltip("Scene camera that renders the scope picture and aims the lock ray. Empty = found by name below, " +
-             "or a camera is made in front of the weapon.")]
+    [Tooltip("Assigned scene camera that renders the scope picture and aims the lock ray.")]
     [SerializeField] Camera laserCamera;
-    [SerializeField] string[] laserCameraNames = { "Camera Lase", "Camera Laser", "CameraLaser", "Laser Camera" };
-    [Tooltip("Smaller = more zoom. Only for the camera made by this script; a scene camera keeps its own.")]
-    [Range(1f, 60f)] [SerializeField] float fieldOfView = 8f;
+    [SerializeField] XROrigin origin;
+    [SerializeField] Transform rightController;
     [Tooltip("How far past the front end of the weapon the camera sits, meters.")]
     [Min(0f)] [SerializeField] float cameraAhead = 0.3f;
     [Tooltip("Direction the weapon fires in its own space. Auto = its long axis, away from the screen.")]
@@ -41,9 +40,9 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     [SerializeField] bool grabbable = true;
 
     [Header("Target lock")]
-    [Tooltip("What the scope locks onto. Empty = SM_Shahed149, else the Fighter Jet Flight in the scene.")]
+    [Tooltip("Assigned scene target for the scope lock.")]
     [SerializeField] Transform target;
-    [SerializeField] string targetName = "SM_Shahed149";
+
     [Tooltip("Seconds the target must stay in the crosshair before the missile goes.")]
     [Min(0.1f)] [SerializeField] float lockSeconds = 1f;
     [Tooltip("How far off the camera's line the target may be and still count, degrees. 0 = the ray must hit it.")]
@@ -52,13 +51,25 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     [SerializeField] bool requireHeld = true;
     [SerializeField] Color crosshairColor = Color.white;
     [SerializeField] Color lockedColor = new Color(0.2f, 1f, 0.3f, 1f);
+    [SerializeField] Color fullLockColor = new Color(1f, 0.15f, 0.1f, 1f);
     [Range(0.1f, 1f)] [SerializeField] float crosshairScale = 0.6f;
+
+    [Header("Crosshair feedback")]
+    [SerializeField] Canvas trackerCanvas;
+    [Min(0.2f)] [SerializeField] float breathSeconds = 1.2f;
+    [Range(0.005f, 0.1f)] [SerializeField] float breathAmount = 0.025f;
+    [Range(0f, 2f)] [SerializeField] float acquisitionShake = 0.65f;
+    [Range(0f, 3f)] [SerializeField] float confirmationShake = 1.1f;
+    [Min(0.08f)] [SerializeField] float confirmationShakeSeconds = 0.16f;
+    [SerializeField] AudioClip trackingBeep;
+    [SerializeField] AudioClip lockedBeep;
+    [Range(0f, 1f)] [SerializeField] float beepVolume = 0.25f;
 
     [Header("Missile on lock")]
     [Tooltip("Missile model, nose along +Z. Empty = a simple built-in missile.")]
     [SerializeField] GameObject missilePrefab;
     [Min(0.01f)] [SerializeField] float missileScale = 0.33333334f;
-    [SerializeField] string missileLaunchOriginName = "SM_AirDefense (1)";
+    [SerializeField] Transform missileLaunchOrigin;
     [SerializeField] Vector3 missileLaunchOffset = new Vector3(0f, 0f, 0.5f);
     [Min(0.1f)] [SerializeField] float missileSeconds = 1.2f;
     [SerializeField] AudioClip missileLaunchSound;
@@ -84,12 +95,12 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     [SerializeField] TMPro.TMP_FontAsset killMessageFont;
     [Min(0.5f)] [SerializeField] float killMessageSeconds = 4f;
     [Min(0.5f)] [SerializeField] float killExplosionScale = 1.4f;
+    [SerializeField] GameObject impactParticlePrefab;
+    [Min(1f)] [SerializeField] float impactParticleLifetime = 12f;
 
     Camera scopeCamera;
-    bool createdCamera = true;
     readonly System.Collections.Generic.List<UnityEngine.UI.Image> crosshair = new System.Collections.Generic.List<UnityEngine.UI.Image>();
     Renderer[] targetRenderers;
-    Transform missileLaunchOrigin;
     float lockTimer;
     bool missileAway;
     bool targetDown;
@@ -107,40 +118,29 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     bool thermalEngaged;
     bool scopeReady;
     bool wasContextButton;
+    RectTransform crosshairRoot;
+    RectTransform trackingReticle;
+    RectTransform fullLockReticle;
+    Tween breathTween;
+    Tween shakeTween;
+    Tween missileTween;
+    bool targetVisible;
+    bool confirmingLock;
+    float nextBeep;
+    float nextShake;
+    AudioSource feedbackAudio;
+    AudioClip generatedBeep;
+    GameObject activeMissile;
+    ParticleSystem activeTrail;
     readonly List<InputDevice> contextInputDevices = new List<InputDevice>();
 
     public bool ThermalEngaged => thermalEngaged;
 
-    /// <summary>Sets up the first object found with one of the names (once).</summary>
-    public static void SetupByName(AudioClip launchSound, TMPro.TMP_FontAsset font, params string[] names)
+    public void ConfigureFeedback(AudioClip launchSound, AudioClip impactSound, TMPro.TMP_FontAsset font)
     {
-        SetupByName(launchSound, null, font, names);
-    }
-
-    public static void SetupByName(AudioClip launchSound, AudioClip impactSound, TMPro.TMP_FontAsset font, params string[] names) =>
-        SetupByName(launchSound, impactSound, font, null, null, null, names);
-
-    public static void SetupByName(
-        AudioClip launchSound,
-        AudioClip impactSound,
-        TMPro.TMP_FontAsset font,
-        Material scopeThermalPost,
-        Material thermalReplacement,
-        Material droneHeatmap,
-        params string[] names)
-    {
-        foreach (var n in names)
-        {
-            var go = GameObject.Find(n);
-            if (go == null) continue;
-            var scope = go.GetComponent<TrackerWeaponScope>();
-            if (scope == null) scope = go.AddComponent<TrackerWeaponScope>();
-            if (launchSound != null) scope.missileLaunchSound = launchSound;
-            if (impactSound != null) scope.missileImpactSound = impactSound;
-            if (font != null) scope.killMessageFont = font;
-            scope.AssignThermalMaterials(scopeThermalPost, thermalReplacement, droneHeatmap);
-            return;
-        }
+        if (launchSound != null) missileLaunchSound = launchSound;
+        if (impactSound != null) missileImpactSound = impactSound;
+        if (font != null) killMessageFont = font;
     }
 
     public void AssignThermalMaterials(Material scopeThermalPost, Material droneHeatmap) =>
@@ -153,12 +153,15 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         if (droneHeatmap != null) droneHeatmapMaterial = droneHeatmap;
     }
 
-    /// <summary>Sets up the first object found with one of the names (once).</summary>
-    public static void SetupByName(AudioClip launchSound, params string[] names) =>
-        SetupByName(launchSound, null, names);
-
     void Start()
     {
+        if (laserCamera == null || origin == null || missileLaunchOrigin == null || target == null ||
+            (grabbable && (GetComponent<XRGrabInteractable>() == null || GetComponent<Rigidbody>() == null)))
+        {
+            Debug.LogError("TrackerWeaponScope: assign the scope camera, player, launch origin, target and authored grab components.", this);
+            enabled = false;
+            return;
+        }
         homePosition = transform.position;
         homeRotation = transform.rotation;
 
@@ -182,7 +185,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         var screenUp = ScreenUp(screenNormal, aimLocal);
 
         texture = CreateTexture(screenBounds, screenNormal, screenUp, hasScreen);
-        if (!UseSceneCamera(bodyBounds, aimLocal, screenUp)) CreateCamera(bodyBounds, aimLocal, screenUp);
+        UseSceneCamera(bodyBounds, aimLocal, screenUp);
         if (hasScreen)
         {
             CreateScreen(weaponRenderer, screenBounds, screenNormal, screenUp);
@@ -190,8 +193,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             CreateCrosshair(screenBounds, screenNormal, screenUp);
         }
         if (grabbable) MakeGrabbable(whole);
-        FindTarget();
-        FindMissileLaunchOrigin();
+        CacheTargetRenderers();
         scopeReady = true;
         SetupScopeThermal();
         WakeScopeCamera();
@@ -293,14 +295,11 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     /// <summary>Renders the scope with the scene's laser camera, if there is one.</summary>
     bool UseSceneCamera(Bounds bodyBounds, Vector3 aimLocal, Vector3 upLocal)
     {
-        if (laserCamera == null) laserCamera = FindLaserCamera();
         if (laserCamera == null) return false;
 
-        createdCamera = false;
         scopeCamera = laserCamera;
         // Child of the weapon so it turns with the grip; identity world pose was often +Z, not the barrel.
-        scopeCamera.transform.SetParent(transform, false);
-        AlignScopeCamera(scopeCamera.transform, bodyBounds, aimLocal, upLocal);
+
 
         // Level setup switches off every MainCamera except the headset; this one only draws the scope.
         if (scopeCamera.CompareTag("MainCamera")) scopeCamera.tag = "Untagged";
@@ -320,7 +319,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         foreach (var cam in GetComponentsInChildren<Camera>(true))
         {
             if (cam == scopeCamera) continue;
-            if (!MatchesLaserName(cam.name)) continue;
             cam.enabled = false;
             var otherListener = cam.GetComponent<AudioListener>();
             if (otherListener != null) otherListener.enabled = false;
@@ -348,65 +346,9 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         cam.SetPositionAndRotation(muzzle + aimWorld * cameraAhead, Quaternion.LookRotation(aimWorld, upWorld));
     }
 
-    Camera FindLaserCamera()
+    void CacheTargetRenderers()
     {
-        Camera fallback = null;
-        // Prefer a camera under the weapon named exactly "Camera Lase" over "Camera Lase (1)".
-        foreach (var cam in GetComponentsInChildren<Camera>(true))
-        {
-            if (!MatchesLaserName(cam.name)) continue;
-            if (Normalize(cam.name) == "cameralase") return cam;
-            if (fallback == null) fallback = cam;
-        }
-        foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-        {
-            if (!cam.gameObject.scene.IsValid() || !MatchesLaserName(cam.name)) continue;
-            if (Normalize(cam.name) == "cameralase") return cam;
-            if (fallback == null) fallback = cam;
-        }
-        return fallback;
-    }
-
-    bool MatchesLaserName(string camName)
-    {
-        var n = Normalize(camName);
-        foreach (var wanted in laserCameraNames)
-            if (!string.IsNullOrWhiteSpace(wanted) && n == Normalize(wanted)) return true;
-        return false;
-    }
-
-    static string Normalize(string s) => s.ToLowerInvariant().Replace(" ", "").Replace("_", "").Replace("-", "");
-
-    void FindTarget()
-    {
-        if (target == null && !string.IsNullOrWhiteSpace(targetName))
-        {
-            var named = GameObject.Find(targetName);
-            if (named != null) target = named.transform;
-        }
-        if (target == null)
-        {
-            var jet = FindAnyObjectByType<FighterJetFlight>();
-            if (jet != null) target = jet.transform;
-        }
-        if (target == null) return;
-        targetRenderers = target.GetComponentsInChildren<Renderer>();
-        var targetJet = target.GetComponent<FighterJetFlight>();
-        if (missilePrefab == null && targetJet != null)
-            missilePrefab = targetJet.MissilePrefab;
-
-        // Something for the scope's raycast to hit; a trigger, so it never pushes anything.
-        if (target.GetComponentInChildren<Collider>() == null && TargetBounds(out var bounds))
-        {
-            var box = target.gameObject.AddComponent<BoxCollider>();
-            box.isTrigger = true;
-            box.center = target.InverseTransformPoint(bounds.center);
-            var scale = target.lossyScale;
-            box.size = new Vector3(
-                bounds.size.x / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
-                bounds.size.y / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
-                bounds.size.z / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
-        }
+        targetRenderers = target != null ? target.GetComponentsInChildren<Renderer>(true) : null;
     }
 
     bool TargetBounds(out Bounds bounds)
@@ -434,24 +376,121 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         if (height < 1e-5f) return;
 
         const float canvasHeight = 200f;
-        var go = new GameObject("Scope Crosshair", typeof(RectTransform), typeof(Canvas));
+        if (trackerCanvas == null)
+            foreach (var candidate in GetComponentsInChildren<Canvas>(true))
+                if (candidate.renderMode == RenderMode.WorldSpace)
+                {
+                    trackerCanvas = candidate;
+                    break;
+                }
+        if (trackerCanvas == null)
+        {
+            var canvasObject = new GameObject("Tracker Screen Canvas", typeof(RectTransform), typeof(Canvas));
+            trackerCanvas = canvasObject.GetComponent<Canvas>();
+            trackerCanvas.renderMode = RenderMode.WorldSpace;
+            var canvasRect = canvasObject.GetComponent<RectTransform>();
+            canvasRect.SetParent(transform, false);
+            canvasRect.localPosition = screen.center + normal * (thickness + lift);
+            canvasRect.localRotation = Quaternion.LookRotation(-normal, up);
+            canvasRect.localScale = Vector3.one * (height / canvasHeight);
+            canvasRect.sizeDelta = new Vector2(canvasHeight * width / height, canvasHeight);
+        }
+        var go = new GameObject("Scope Crosshair", typeof(RectTransform));
         var rect = go.GetComponent<RectTransform>();
-        rect.SetParent(transform, false);
-        rect.localPosition = screen.center + normal * (thickness + lift);
-        rect.localRotation = Quaternion.LookRotation(-normal, up);
-        rect.localScale = Vector3.one * (height / canvasHeight * crosshairScale);
-        rect.sizeDelta = new Vector2(canvasHeight * width / height, canvasHeight);
-        go.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+        rect.SetParent(trackerCanvas.transform, false);
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(canvasHeight, canvasHeight);
+        rect.localScale = Vector3.one * (Mathf.Abs(((RectTransform)trackerCanvas.transform).rect.height) / canvasHeight * crosshairScale);
+        crosshairRoot = rect;
+        var motion = new GameObject("Crosshair Motion", typeof(RectTransform)).GetComponent<RectTransform>();
+        motion.SetParent(rect, false);
+        motion.sizeDelta = rect.sizeDelta;
+        trackingReticle = new GameObject("Tracking Reticle", typeof(RectTransform)).GetComponent<RectTransform>();
+        trackingReticle.SetParent(motion, false);
+        fullLockReticle = new GameObject("Full Lock Reticle", typeof(RectTransform)).GetComponent<RectTransform>();
+        fullLockReticle.SetParent(motion, false);
 
         const float gap = 12f;
         const float length = 26f;
         const float bar = 4f;
-        AddBar(rect, new Vector2(0f, gap + length * 0.5f), new Vector2(bar, length));
-        AddBar(rect, new Vector2(0f, -gap - length * 0.5f), new Vector2(bar, length));
-        AddBar(rect, new Vector2(gap + length * 0.5f, 0f), new Vector2(length, bar));
-        AddBar(rect, new Vector2(-gap - length * 0.5f, 0f), new Vector2(length, bar));
-        AddBar(rect, Vector2.zero, new Vector2(bar, bar));
+        AddBar(trackingReticle, new Vector2(0f, gap + length * 0.5f), new Vector2(bar, length));
+        AddBar(trackingReticle, new Vector2(0f, -gap - length * 0.5f), new Vector2(bar, length));
+        AddBar(trackingReticle, new Vector2(gap + length * 0.5f, 0f), new Vector2(length, bar));
+        AddBar(trackingReticle, new Vector2(-gap - length * 0.5f, 0f), new Vector2(length, bar));
+        AddBar(trackingReticle, Vector2.zero, new Vector2(bar, bar));
+        const float corner = 23f;
+        const float bracketLength = 12f;
+        foreach (var horizontalSign in new[] { -1f, 1f })
+            foreach (var verticalSign in new[] { -1f, 1f })
+            {
+                AddBar(fullLockReticle, new Vector2(horizontalSign * (corner - bracketLength * 0.5f), verticalSign * corner),
+                    new Vector2(bracketLength, bar));
+                AddBar(fullLockReticle, new Vector2(horizontalSign * corner, verticalSign * (corner - bracketLength * 0.5f)),
+                    new Vector2(bar, bracketLength));
+            }
+        AddBar(fullLockReticle, Vector2.zero, new Vector2(bar, bar));
+        SetFullLockVisual(false);
         SetCrosshairColor(crosshairColor);
+    }
+
+    void SetFullLockVisual(bool fullLock)
+    {
+        if (trackingReticle != null) trackingReticle.gameObject.SetActive(!fullLock);
+        if (fullLockReticle != null) fullLockReticle.gameObject.SetActive(fullLock);
+    }
+
+    void StartBreathing(bool visible)
+    {
+        if (breathTween.isAlive) breathTween.Stop();
+        if (crosshairRoot == null) return;
+        var motion = crosshairRoot.GetChild(0);
+        motion.localScale = Vector3.one;
+        breathTween = Tween.Scale(motion, 1f - breathAmount, 1f + breathAmount,
+            Mathf.Max(0.1f, breathSeconds) * (visible ? 0.35f : 0.5f),
+            ease: Ease.InOutSine, cycles: -1, cycleMode: CycleMode.Yoyo);
+    }
+
+    void ShakeCrosshair(float strength, float seconds)
+    {
+        if (shakeTween.isAlive) shakeTween.Stop();
+        if (crosshairRoot == null) return;
+        var motion = crosshairRoot.GetChild(0);
+        motion.localPosition = Vector3.zero;
+        shakeTween = Tween.ShakeLocalPosition(motion, new Vector3(strength, strength * 0.7f, 0f), seconds, 24f);
+    }
+
+    void PlayFeedbackBeep(bool locked, float progress)
+    {
+        if (feedbackAudio == null)
+        {
+            feedbackAudio = gameObject.AddComponent<AudioSource>();
+            feedbackAudio.playOnAwake = false;
+            feedbackAudio.spatialBlend = 1f;
+            feedbackAudio.minDistance = 0.5f;
+            feedbackAudio.maxDistance = 8f;
+            feedbackAudio.rolloffMode = AudioRolloffMode.Linear;
+        }
+        var clip = locked ? lockedBeep : trackingBeep;
+        if (clip == null)
+        {
+            if (generatedBeep == null)
+            {
+                const int sampleRate = 24000;
+                var samples = new float[1920];
+                for (var sampleIndex = 0; sampleIndex < samples.Length; sampleIndex++)
+                {
+                    var phase = (float)sampleIndex / (samples.Length - 1);
+                    samples[sampleIndex] = Mathf.Sin(2f * Mathf.PI * 1100f * sampleIndex / sampleRate) *
+                        Mathf.Sin(Mathf.PI * phase) * 0.5f;
+                }
+                generatedBeep = AudioClip.Create("Tracker Beep", samples.Length, 1, sampleRate, false);
+                generatedBeep.SetData(samples, 0);
+            }
+            clip = generatedBeep;
+        }
+        feedbackAudio.pitch = locked ? 1.45f : Mathf.Lerp(0.9f, 1.25f, progress);
+        feedbackAudio.PlayOneShot(clip, beepVolume);
     }
 
     void AddBar(RectTransform parent, Vector2 position, Vector2 size)
@@ -562,21 +601,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         return rt;
     }
 
-    void CreateCamera(Bounds bodyBounds, Vector3 aimLocal, Vector3 upLocal)
-    {
-        var go = new GameObject("Scope Camera");
-        go.transform.SetParent(transform, false);
-        AlignScopeCamera(go.transform, bodyBounds, aimLocal, upLocal);
-
-        scopeCamera = go.AddComponent<Camera>();
-        scopeCamera.targetTexture = texture;
-        scopeCamera.fieldOfView = fieldOfView;
-        scopeCamera.nearClipPlane = 0.1f;
-        scopeCamera.farClipPlane = farClip;
-        scopeCamera.depth = -10f;
-
-        ConfigureScopeUrpCamera(go.GetComponent<UniversalAdditionalCameraData>(), scopeCamera);
-    }
 
     static void ConfigureScopeUrpCamera(UniversalAdditionalCameraData data, Camera cam)
     {
@@ -646,40 +670,13 @@ public sealed class TrackerWeaponScope : MonoBehaviour
 
     void MakeGrabbable(Bounds localBounds)
     {
-        if (GetComponent<XRGrabInteractable>() != null) return;
-
-        gameObject.isStatic = false;
-        foreach (var meshCollider in GetComponents<MeshCollider>()) meshCollider.enabled = false;
-        var box = GetComponent<BoxCollider>();
-        if (box == null) box = gameObject.AddComponent<BoxCollider>();
-        box.center = localBounds.center;
-        box.size = localBounds.size;
-
-        var origin = FindAnyObjectByType<XROrigin>();
-        if (origin != null)
-            foreach (var own in origin.GetComponentsInChildren<Collider>(true))
-                Physics.IgnoreCollision(box, own, true);
-
+        grab = GetComponent<XRGrabInteractable>();
         body = GetComponent<Rigidbody>();
-        if (body == null) body = gameObject.AddComponent<Rigidbody>();
-        body.mass = 2f;
-        // Stays where it lies until picked up.
-        body.isKinematic = true;
-        body.useGravity = false;
-        body.interpolation = RigidbodyInterpolation.Interpolate;
-        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-        grab = gameObject.AddComponent<XRGrabInteractable>();
-        grab.interactionLayers = -1;
-        grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
-        grab.useDynamicAttach = true;
-        grab.throwOnDetach = true;
-        grab.forceGravityOnDetach = true;
-        grab.colliders.Clear();
-        grab.colliders.Add(box);
-        NearOnlyGrabFilter.AddTo(grab);
-        // The grab restores the body's start state on release; it was kinematic, so let it fall instead.
-        grab.selectExited.AddListener(_ =>
+        if (grab == null || body == null) return;
+        foreach (var collider in grab.colliders)
+            foreach (var own in origin.GetComponentsInChildren<Collider>(true))
+                if (collider != null && own != null) Physics.IgnoreCollision(collider, own, true);
+        grab.selectExited.AddListener(args =>
         {
             if (grab.isSelected) return;
             body.isKinematic = false;
@@ -690,7 +687,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     void LateUpdate()
     {
         if (scopeCamera == null) return;
-        if (createdCamera) scopeCamera.fieldOfView = fieldOfView;
         UpdateScopeCameraEnabled();
         var held = grab != null && grab.isSelected;
         UpdateThermalContextButton(held); // B/Y works without grab unless thermalContextButtonRequiresHeld
@@ -733,13 +729,79 @@ public sealed class TrackerWeaponScope : MonoBehaviour
 
     void UpdateLock(bool held)
     {
-        var onTarget = !missileAway && !targetDown && (held || !requireHeld) && IsOnTarget();
+        if (confirmingLock || missileAway) return;
+        SetFullLockVisual(false);
+        var visible = !targetDown && (held || !requireHeld) && IsTargetVisible();
+        if (visible != targetVisible || !breathTween.isAlive)
+        {
+            targetVisible = visible;
+            StartBreathing(visible);
+            nextBeep = 0f;
+        }
+        var onTarget = visible && IsOnTarget();
         lockTimer = onTarget ? lockTimer + Time.deltaTime : 0f;
-        SetCrosshairColor(onTarget ? lockedColor : crosshairColor);
+        var progress = Mathf.Clamp01(lockTimer / Mathf.Max(0.1f, lockSeconds));
+        SetCrosshairColor(Color.Lerp(crosshairColor, lockedColor, progress));
+        if (breathTween.isAlive) breathTween.timeScale = onTarget ? Mathf.Lerp(1f, 1.6f, progress) : 1f;
+        if (visible && Time.time >= nextBeep)
+        {
+            PlayFeedbackBeep(false, progress);
+            nextBeep = Time.time + Mathf.Lerp(breathSeconds * 0.7f, 0.16f, progress);
+        }
+        if (onTarget && Time.time >= nextShake)
+        {
+            ShakeCrosshair(acquisitionShake * progress, 0.14f);
+            nextShake = Time.time + 0.16f;
+        }
+        else if (!onTarget && shakeTween.isAlive)
+        {
+            shakeTween.Stop();
+            if (crosshairRoot != null) crosshairRoot.GetChild(0).localPosition = Vector3.zero;
+        }
 
         if (lockTimer < lockSeconds) return;
         lockTimer = 0f;
-        StartCoroutine(MissileToTarget());
+        confirmingLock = true;
+        StartCoroutine(ConfirmLockAndLaunch());
+    }
+
+    bool IsTargetVisible()
+    {
+        if (scopeCamera == null || !scopeCamera.enabled || target == null ||
+            !target.gameObject.activeInHierarchy || !TargetBounds(out var bounds)) return false;
+        if (!GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(scopeCamera), bounds)) return false;
+        var direction = bounds.center - scopeCamera.transform.position;
+        foreach (var hit in Physics.RaycastAll(scopeCamera.transform.position, direction.normalized,
+            direction.magnitude, scopeCamera.cullingMask, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider.transform.IsChildOf(target) || hit.collider.transform.IsChildOf(transform)) continue;
+            return false;
+        }
+        foreach (var renderer in targetRenderers)
+            if (renderer != null && renderer.enabled && renderer.gameObject.activeInHierarchy &&
+                (scopeCamera.cullingMask & (1 << renderer.gameObject.layer)) != 0) return true;
+        return false;
+    }
+
+    System.Collections.IEnumerator ConfirmLockAndLaunch()
+    {
+        if (breathTween.isAlive) breathTween.Stop();
+        if (crosshairRoot != null) crosshairRoot.GetChild(0).localScale = Vector3.one;
+        SetFullLockVisual(true);
+        SetCrosshairColor(fullLockColor);
+        for (var pulse = 0; pulse < 3; pulse++)
+        {
+            if (targetDown || target == null || !target.gameObject.activeInHierarchy)
+            {
+                confirmingLock = false;
+                yield break;
+            }
+            PlayFeedbackBeep(true, 1f);
+            ShakeCrosshair(confirmationShake * Mathf.Lerp(0.6f, 1f, pulse / 2f), confirmationShakeSeconds);
+            yield return Tween.Delay(Mathf.Max(0.08f, confirmationShakeSeconds) + 0.07f).ToYieldInstruction();
+        }
+        yield return MissileToTarget();
+        confirmingLock = false;
     }
 
     bool IsOnTarget()
@@ -776,8 +838,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     System.Collections.IEnumerator MissileToTarget()
     {
         missileAway = true;
-        if (missileLaunchOrigin == null)
-            FindMissileLaunchOrigin();
         if (missileLaunchOrigin == null || target == null || !target.gameObject.activeInHierarchy)
         {
             Debug.LogWarning(name + ": cannot launch the lock-on missile because its launcher or target is missing.", this);
@@ -803,55 +863,54 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         {
             missile = BuildMissile(start, heading);
         }
+        activeMissile = missile;
         var trail = LaunchSmoke.CreateTrail(0.6f);
+        activeTrail = trail;
         trail.transform.SetPositionAndRotation(start, Quaternion.LookRotation(-heading));
-
-        // Close enough to count as a hit. A 1 m test never fired on this drone, so the
-        // missile stayed beside it and they kept flying together.
-        var hitRadius = 8f;
-        if (TargetBounds(out var openBounds))
-            hitRadius = Mathf.Clamp(openBounds.extents.magnitude * 0.45f, 6f, 30f);
-
-        var elapsed = 0f;
         var position = start;
-        var limit = missileSeconds + 3f;
-        while (missile != null && target != null && target.gameObject.activeInHierarchy && elapsed < limit)
+        var flightTarget = target;
+        var hitTarget = false;
+        missileTween = Tween.Custom(0f, 1f, Mathf.Max(0.1f, missileSeconds), progress =>
         {
-            elapsed += Time.deltaTime;
-            aim = TargetBounds(out var b) ? b.center : target.position;
-            var toAim = aim - position;
-            if (toAim.magnitude <= hitRadius)
+            if (missile == null || target != flightTarget || flightTarget == null ||
+                !flightTarget.gameObject.activeInHierarchy) return;
+            aim = TargetBounds(out var bounds) ? bounds.center : flightTarget.position;
+            var nextPosition = Vector3.Lerp(start, aim, progress);
+            var direction = nextPosition - position;
+            position = nextPosition;
+            var rotation = direction.sqrMagnitude > 0.000001f
+                ? Quaternion.LookRotation(direction) : missile.transform.rotation;
+            missile.transform.SetPositionAndRotation(position, rotation);
+            if (trail != null) trail.transform.SetPositionAndRotation(position, rotation * Quaternion.Euler(0f, 180f, 0f));
+            hitTarget = progress >= 1f;
+        }, ease: Ease.InQuad);
+        while (missileTween.isAlive)
+        {
+            if (missile == null || target != flightTarget || flightTarget == null ||
+                !flightTarget.gameObject.activeInHierarchy)
             {
-                position = aim;
+                missileTween.Stop();
+                hitTarget = false;
                 break;
             }
-
-            // Straight at the drone. The old heading blend made the missile fly alongside it.
-            var direction = toAim.normalized;
-            var step = Mathf.Max(toAim.magnitude / Mathf.Max(0.05f, missileSeconds - elapsed), 80f) * Time.deltaTime;
-            if (step >= toAim.magnitude)
-            {
-                position = aim;
-                break;
-            }
-
-            position += direction * step;
-            missile.transform.SetPositionAndRotation(position, Quaternion.LookRotation(direction));
-            trail.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-direction));
             yield return null;
         }
+        ReleaseMissile();
+        if (hitTarget && target == flightTarget) DestroyTarget(position);
+        else missileAway = false;
+    }
 
-        if (target != null)
-            position = TargetBounds(out var finalBounds) ? finalBounds.center : target.position;
-
-        LaunchSmoke.StopAndRelease(trail);
-        if (missile != null)
+    void ReleaseMissile()
+    {
+        if (missileTween.isAlive) missileTween.Stop();
+        if (activeTrail != null) LaunchSmoke.StopAndRelease(activeTrail);
+        activeTrail = null;
+        if (activeMissile != null)
         {
-            missile.transform.SetParent(null, true);
-            missile.SetActive(false);
-            Destroy(missile);
+            activeMissile.SetActive(false);
+            Destroy(activeMissile);
         }
-        DestroyTarget(position);
+        activeMissile = null;
     }
 
     void DestroyTarget(Vector3 at)
@@ -861,19 +920,31 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         var size = hasBounds
             ? Mathf.Clamp(bounds.size.magnitude / 4f, 0.8f, 6f) * killExplosionScale
             : 2f * killExplosionScale;
-        var center = hasBounds ? bounds.center : at;
+        var center = at;
 
         // Blast stays in world space so it is not dragged by the drone before it disappears.
         if (hasBounds)
             ThermalExplosionHeat.Spawn(center, bounds, killExplosionScale);
-        LaunchSmoke.CreateExplosionBurst(center, size);
-        LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
+        if (impactParticlePrefab != null)
+        {
+            var impact = Instantiate(impactParticlePrefab, center, Quaternion.identity);
+            impact.transform.localScale *= killExplosionScale;
+            foreach (var particles in impact.GetComponentsInChildren<ParticleSystem>(true))
+                particles.Play();
+            Destroy(impact, Mathf.Max(1f, impactParticleLifetime));
+        }
+        else
+        {
+            LaunchSmoke.CreateExplosionBurst(center, size);
+            LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
+        }
         if (missileImpactSound != null)
             AudioSource.PlayClipAtPoint(missileImpactSound, center, missileImpactVolume);
 
         FreezeAndHideTarget();
         targetDown = true;
         missileAway = false;
+        SetFullLockVisual(false);
         SetCrosshairColor(crosshairColor);
         TargetEliminated?.Invoke();
         StartCoroutine(ShowKillMessage());
@@ -882,18 +953,23 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     /// <summary>Level script can point the scope at the circling drone after pickup.</summary>
     public void AssignTarget(Transform newTarget)
     {
+        StopAllCoroutines();
+        ReleaseMissile();
+        ResetCrosshairFeedback();
         target = newTarget;
         targetDown = false;
         lockTimer = 0f;
         missileAway = false;
-        if (target != null)
-            targetRenderers = target.GetComponentsInChildren<Renderer>();
+        targetRenderers = target != null ? target.GetComponentsInChildren<Renderer>() : null;
     }
 
     public void EditorTestForceTargetKill()
     {
         if (!Application.isPlaying || target == null) return;
-        DestroyTarget(target.position);
+        StopAllCoroutines();
+        ReleaseMissile();
+        ResetCrosshairFeedback();
+        DestroyTarget(TargetBounds(out var bounds) ? bounds.center : target.position);
     }
 
     void FreezeAndHideTarget()
@@ -931,9 +1007,8 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     {
         if (string.IsNullOrWhiteSpace(killMessage)) yield break;
 
-        var origin = FindAnyObjectByType<XROrigin>();
         if (origin == null || origin.Camera == null) yield break;
-        var hand = XrHandsRig.FindNamed(origin, "Right Controller");
+        var hand = rightController;
         if (hand == null) hand = origin.Camera.transform;
 
         var banner = HandHintBanner.Create(origin.Camera, killMessageFont, killMessage);
@@ -942,15 +1017,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         if (banner != null) banner.Hide();
     }
 
-    void FindMissileLaunchOrigin()
-    {
-        if (missileLaunchOrigin != null || string.IsNullOrWhiteSpace(missileLaunchOriginName)) return;
-        var launcher = GameObject.Find(missileLaunchOriginName);
-        if (launcher != null)
-            missileLaunchOrigin = launcher.transform;
-        else
-            Debug.LogWarning(name + ": missile launcher '" + missileLaunchOriginName + "' was not found in the scene.", this);
-    }
 
     static GameObject BuildMissile(Vector3 position, Vector3 heading)
     {
@@ -969,8 +1035,36 @@ public sealed class TrackerWeaponScope : MonoBehaviour
 
     static Vector3 Abs(Vector3 v) => new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
 
+    void ResetCrosshairFeedback()
+    {
+        if (breathTween.isAlive) breathTween.Stop();
+        if (shakeTween.isAlive) shakeTween.Stop();
+        if (crosshairRoot != null)
+        {
+            crosshairRoot.GetChild(0).localPosition = Vector3.zero;
+            crosshairRoot.GetChild(0).localScale = Vector3.one;
+        }
+        if (feedbackAudio != null) feedbackAudio.Stop();
+        targetVisible = false;
+        confirmingLock = false;
+        lockTimer = 0f;
+        nextShake = 0f;
+        nextBeep = 0f;
+        SetFullLockVisual(false);
+        SetCrosshairColor(crosshairColor);
+    }
+
+    void OnDisable()
+    {
+        StopAllCoroutines();
+        ReleaseMissile();
+        ResetCrosshairFeedback();
+        missileAway = false;
+    }
+
     void OnDestroy()
     {
+        if (generatedBeep != null) Destroy(generatedBeep);
         if (texture == null) return;
         texture.Release();
         Destroy(texture);

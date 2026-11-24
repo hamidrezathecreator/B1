@@ -2,7 +2,6 @@ using System.Collections;
 using PrimeTween;
 using UnityEngine.Serialization;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Lvl_1 post-tutorial sequence. Assign scene refs. No Director, no timeline clocks.
@@ -22,6 +21,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     };
 
     [Header("Sequence")]
+    [SerializeField] Lvl1Tutorial tutorial;
     [SerializeField] string nextSceneName = BuildLevelScenes.Lvl2;
 
     [Header("Strike timing (real seconds)")]
@@ -89,25 +89,16 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
 
     protected override string[] StepNames => Steps;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    static void Hook()
-    {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-    }
-
-    static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        if (scene.name != BuildLevelScenes.Lvl1) return;
-        if (FindAnyObjectByType<Lvl1BuildLevelStateMachine>() != null) return;
-        var go = new GameObject("Lvl1 Build Level State Machine");
-        SceneManager.MoveGameObjectToScene(go, scene);
-        go.AddComponent<Lvl1BuildLevelStateMachine>();
-    }
-
+    public Lvl1Tutorial Tutorial => tutorial;
     void Awake() => TrackStep(0);
     void OnEnable()
     {
+        if (tutorial != null)
+        {
+            tutorial.Started += NotifyTutorialStartPressed;
+            tutorial.CasePickedUp += NotifyTutorialCasePhase;
+            tutorial.PlacementCompleted += OnTutorialPlacementCompleted;
+        }
         if (missiles1 != null)
         {
             previousFirstImpactHandler = missiles1.ImpactPresentationOverride;
@@ -124,9 +115,11 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         }
     }
 
-    // Placement hands control to this component immediately; tutorial UI cannot stop the sequence.
+    void OnTutorialPlacementCompleted() => NotifyTutorialCasePlaced(tutorial.CompletionMessageSeconds);
+
     public void NotifyTutorialCasePlaced(float completionMessageSeconds = 0f)
     {
+        if (tutorial == null || !tutorial.HasCompletedPlacement) return;
         BeginAutomaticSequence(2, Mathf.Max(0f, completionMessageSeconds) + Mathf.Max(0f, tFirstStrike));
     }
 
@@ -339,6 +332,12 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     }
     void OnDisable()
     {
+        if (tutorial != null)
+        {
+            tutorial.Started -= NotifyTutorialStartPressed;
+            tutorial.CasePickedUp -= NotifyTutorialCasePhase;
+            tutorial.PlacementCompleted -= OnTutorialPlacementCompleted;
+        }
         StopSequence();
         if (missiles1 != null && missiles1.ImpactPresentationOverride == OnFirstMissileImpact)
         {
@@ -403,14 +402,14 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         if (hideGlassShardOnSceneLoad && glassShardOverlay != null) glassShardOverlay.Hide(0f);
     }
 
-    public void NotifyTutorialStartPressed() => SetStep(0);
-    public void NotifyTutorialCasePhase() => SetStep(1);
+    public void NotifyTutorialStartPressed() => TrackStep(1);
+    public void NotifyTutorialCasePhase() => TrackStep(1);
 
     public void EditorTestRunFullPostPlacement()
     {
         if (!Application.isPlaying) return;
         if (sequenceRunning || SequenceComplete) return;
-        StartCoroutine(RunPostPlacementSequence());
+        BeginAutomaticSequence(2, 0f);
     }
 
     public void EditorTestPlayExplosionOne()

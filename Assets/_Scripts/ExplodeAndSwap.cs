@@ -16,36 +16,31 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     {
         [Tooltip("Intact model; switched off when it blows up.")]
         public GameObject intact;
-        [Tooltip("Or the intact model's name in the scene, if not assigned above.")]
-        public string intactName;
         [Tooltip("Destroyed model; hidden at the start, switched on when it blows up.")]
         public GameObject destroyed;
-        [Tooltip("Or the destroyed model's name in the scene, if not assigned above.")]
-        public string destroyedName;
         [Tooltip("Seconds to wait before this shot: first target from the button press, later targets after the previous hit.")]
         [Min(0f)] public float delay;
     }
 
     [Header("Trigger")]
-    [Tooltip("Launch button that starts it. Empty = the launch button under Trigger Object Name.")]
+    [Tooltip("Assigned launch button. Leave empty when the level state machine calls Play.")]
     [SerializeField] MissileLaunchButton triggerButton;
-    [Tooltip("After the first ShootMissile.002 shot, the player presses this panel.")]
-    [SerializeField] string triggerObjectName = "ShootMissile (1)";
+    [SerializeField] bool controlledBySequence;
+    [SerializeField] XRExplosionShake headsetShake;
     [Tooltip("Start when the launched object reaches Point B instead of when the button is pressed.")]
     [SerializeField] bool waitForArrival;
 
     [Header("Targets (in order)")]
     [SerializeField] Target[] targets =
     {
-        new Target { intactName = "SM_AirDefense", destroyedName = "SM_AirDefenseCrash", delay = 3f },
+        new Target { delay = 3f },
         // Delay is after the previous hit finishes (not from the button press).
-        new Target { intactName = "SM_Luncher01 (3)", destroyedName = "SM_LuncherCrash", delay = 3f },
+        new Target { delay = 3f },
     };
 
     [Header("Fighter jet")]
-    [Tooltip("SM_Shahed149's Fighter Jet Flight. Empty = find SM_Shahed149, else any jet in the scene.")]
+    [Tooltip("Assigned flight used for the strikes.")]
     [SerializeField] FighterJetFlight jet;
-    [SerializeField] string jetObjectName = "SM_Shahed149";
 
     [Header("Effects")]
     [Tooltip("Explosion prefab, e.g. DAVFX Explosion 13. Empty = built-in fiery burst.")]
@@ -60,57 +55,40 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     [Range(0f, 1f)] [SerializeField] float impactVolume = 1f;
 
     bool played;
+    public bool IsComplete { get; private set; }
+    public bool HasValidAssignments => jet != null && targets != null && targets.Length > 0 &&
+        Array.TrueForAll(targets, item => item != null && item.intact != null && item.destroyed != null);
 
     public void SetImpactSound(AudioClip clip)
     {
         if (clip != null) impactSound = clip;
     }
 
-    IEnumerator Start()
+    void Start()
     {
-        foreach (var t in targets)
+        if (!HasValidAssignments)
         {
-            if (t == null) continue;
-            if (t.intact == null && !string.IsNullOrWhiteSpace(t.intactName))
-                t.intact = GameObject.Find(t.intactName);
-            if (t.destroyed == null && !string.IsNullOrWhiteSpace(t.destroyedName))
-                t.destroyed = GameObject.Find(t.destroyedName);
-            if (t.destroyed != null) t.destroyed.SetActive(false);
+            Debug.LogError("ExplodeAndSwap: assign the flight and every intact and destroyed target.", this);
+            enabled = false;
+            return;
         }
-
-        // Launch buttons may be added by the level setup in its own Start.
-        yield return null;
-        if (triggerButton == null && !string.IsNullOrWhiteSpace(triggerObjectName))
-        {
-            var panel = GameObject.Find(triggerObjectName);
-            if (panel != null)
-            {
-                triggerButton = panel.GetComponentInChildren<MissileLaunchButton>(true);
-                // ShootMissile (1) only starts this strike — do not AutoWire it to launch the Shahed away.
-                if (triggerButton == null)
-                    triggerButton = panel.gameObject.AddComponent<MissileLaunchButton>();
-            }
-        }
-
-        if (jet == null && !string.IsNullOrWhiteSpace(jetObjectName))
-        {
-            var jetGo = GameObject.Find(jetObjectName);
-            if (jetGo != null) jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
-        }
-
-        if (triggerButton == null)
-        {
-            Debug.LogWarning("ExplodeAndSwap: no launch button found; call Play() from an event instead.", this);
-            yield break;
-        }
+        foreach (var target in targets) target.destroyed.SetActive(false);
+        if (controlledBySequence || triggerButton == null) return;
         if (waitForArrival) triggerButton.onArrived.AddListener(Play);
         else triggerButton.onPressed.AddListener(Play);
+    }
+
+    void OnDestroy()
+    {
+        if (triggerButton == null) return;
+        triggerButton.onArrived.RemoveListener(Play);
+        triggerButton.onPressed.RemoveListener(Play);
     }
 
     /// <summary>Starts the sequence; also usable from a UnityEvent or Timeline signal.</summary>
     public void Play()
     {
-        if (played) return;
+        if (played || !HasValidAssignments) return;
         played = true;
         StartCoroutine(RunAll());
     }
@@ -123,6 +101,7 @@ public sealed class ExplodeAndSwap : MonoBehaviour
             if (t == null) continue;
             yield return Run(t);
         }
+        IsComplete = true;
     }
 
     IEnumerator Run(Target t)
@@ -140,32 +119,6 @@ public sealed class ExplodeAndSwap : MonoBehaviour
 
         var bounds = WorldBounds(t.intact != null ? t.intact : reference);
         var center = bounds.center;
-
-        if (jet == null)
-        {
-            if (!string.IsNullOrWhiteSpace(jetObjectName))
-            {
-                var jetGo = GameObject.Find(jetObjectName);
-                if (jetGo != null) jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
-            }
-            if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
-        }
-
-        if (jet == null || !jet.isActiveAndEnabled)
-        {
-            if (!string.IsNullOrWhiteSpace(jetObjectName))
-            {
-                var jetGo = GameObject.Find(jetObjectName);
-                if (jetGo != null)
-                {
-                    jetGo.SetActive(true);
-                    jet = jetGo.GetComponentInChildren<FighterJetFlight>(true);
-                }
-            }
-            if (jet == null) jet = FindAnyObjectByType<FighterJetFlight>();
-            if (jet != null && !jet.enabled) jet.enabled = true;
-            if (jet != null && !jet.IsFlying) jet.StartFlying();
-        }
 
         if (jet != null && jet.isActiveAndEnabled)
         {
@@ -234,15 +187,11 @@ public sealed class ExplodeAndSwap : MonoBehaviour
         }
     }
 
-    static void ShakeHeadset(Vector3 at)
+    void ShakeHeadset(Vector3 at)
     {
-        var origin = FindAnyObjectByType<XROrigin>();
-        if (origin == null) return;
-        var distance = Vector3.Distance(origin.transform.position, at);
-        if (distance > 150f) return;
-        var shake = origin.GetComponent<XRExplosionShake>();
-        if (shake == null) shake = origin.gameObject.AddComponent<XRExplosionShake>();
-        shake.ShakeFor(0.8f, Mathf.Lerp(0.8f, 0.2f, distance / 150f));
+        if (headsetShake == null) return;
+        var distance = Vector3.Distance(headsetShake.transform.position, at);
+        if (distance <= 150f) headsetShake.ShakeFor(0.8f, Mathf.Lerp(0.8f, 0.2f, distance / 150f));
     }
 
     static Bounds WorldBounds(GameObject go)

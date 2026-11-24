@@ -25,6 +25,8 @@ public sealed class MissileLauncherController : MonoBehaviour
         [InspectorName("Projectile (Prefab or Scene Object)")]
         public MissileProjectile prefab;
         public Transform launchPoint;
+        [Tooltip("Optional heading waypoint. Empty uses the missile nose direction and Sky Distance.")]
+        public Transform destination;
         [Min(0f)] public float extraDelay;
     }
 
@@ -57,6 +59,9 @@ public sealed class MissileLauncherController : MonoBehaviour
     public bool RotationCompleted { get; private set; }
     public bool IsRotating { get; private set; }
     public bool IsLaunching { get; private set; }
+    public bool CanLaunch => isActiveAndEnabled && !IsRotating && !IsLaunching && (!requireRotationPhase || RotationCompleted);
+    public bool HasValidAssignments => container != null && missiles != null && missiles.Length > 0 &&
+        System.Array.TrueForAll(missiles, slot => slot != null && slot.prefab != null);
 
     Quaternion initialLocalRotation;
     Coroutine rotationRoutine;
@@ -153,7 +158,8 @@ public sealed class MissileLauncherController : MonoBehaviour
             if (!isSceneMissile) spawnedMissiles.Add(missile);
             // Scene missiles keep their authored pose, even when a launch point is assigned.
             var direction = missile.transform.TransformDirection(localSkyDirection.sqrMagnitude > 0.0001f ? localSkyDirection.normalized : Vector3.up);
-            missile.Launch(missile.transform.position + direction * skyDistance, arcHeight, flightCurve);
+            var destination = slot.destination != null ? slot.destination.position : missile.transform.position + direction * skyDistance;
+            missile.Launch(destination, arcHeight, flightCurve);
             MissileFired?.Invoke(this);
             missileLaunched?.Invoke(missile);
             var wait = delayBetweenMissiles + slot.extraDelay + Random.Range(-randomDelay, randomDelay);

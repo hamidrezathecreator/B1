@@ -15,6 +15,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     [SerializeField] MissileLauncherButtons buttons;
     [SerializeField] MissileLauncherActions actions;
+    [SerializeField] bool launchButtonsOnly;
     [Header("Existing world-space UI")]
     [Tooltip("CanvasGroup on your already configured rotation card. Only its alpha is changed.")]
     [SerializeField] CanvasGroup rotateCard;
@@ -55,6 +56,10 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     public UnityEvent tutorialCompleted = new UnityEvent();
     public UnityEvent tutorialFailed = new UnityEvent();
     public TutorialPhase Phase { get; private set; }
+    public bool FireAccepted { get; private set; }
+    public bool HasValidAssignments => buttons != null && buttons.IsConfigured && actions != null &&
+        (launchButtonsOnly ? actions.HasTwoTutorialLaunchers : actions.HasValidAssignments) &&
+        rotateCard != null && fireCard != null && rotateCard != fireCard;
     Coroutine cardRoutine;
     Coroutine introRoutine;
     Coroutine beginRoutine;
@@ -127,10 +132,26 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     public void Begin()
     {
         if (!Application.isPlaying || !isActiveAndEnabled) return;
+        FireAccepted = false;
         StopFlightMusicTracking();
         StopBeginDelay();
         StopIntroAudio();
         StopFinalLogo();
+        if (launchButtonsOnly)
+        {
+            if (!HasValidAssignments || !buttons.isActiveAndEnabled || !actions.isActiveAndEnabled)
+            {
+                Fail();
+                return;
+            }
+            actions.ResetAll();
+            StopCardFade();
+            rotateCard.alpha = 1f;
+            fireCard.alpha = 1f;
+            Phase = TutorialPhase.AwaitingRotate;
+            buttons.EnableRotate();
+            return;
+        }
         if (buttons == null || !buttons.isActiveAndEnabled || !buttons.IsConfigured || actions == null || !actions.isActiveAndEnabled ||
             rotateCard == null || fireCard == null || rotateCard == fireCard ||
             !rotateCard.gameObject.activeInHierarchy || !fireCard.gameObject.activeInHierarchy)
@@ -180,6 +201,14 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     void OnRotatePressed()
     {
         if (Phase != TutorialPhase.AwaitingRotate) return;
+        if (launchButtonsOnly)
+        {
+            if (!actions.FireTutorialLauncher(0)) { Fail(); return; }
+            rotateCard.alpha = 0f;
+            Phase = TutorialPhase.AwaitingFire;
+            buttons.EnableFire();
+            return;
+        }
         Phase = TutorialPhase.Rotating;
         buttons.DisableButtons();
         TransitionCards(null);
@@ -250,6 +279,17 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     void OnFirePressed()
     {
         if (Phase != TutorialPhase.AwaitingFire) return;
+        if (launchButtonsOnly)
+        {
+            if (!actions.FireTutorialLauncher(1)) { Fail(); return; }
+            fireCard.alpha = 0f;
+            FireAccepted = true;
+            Phase = TutorialPhase.Completed;
+            buttons.DisableButtons();
+            tutorialCompleted.Invoke();
+            return;
+        }
+        FireAccepted = true;
         Phase = TutorialPhase.Firing;
         buttons.DisableButtons();
         TransitionCards(null);
@@ -551,6 +591,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnDisable()
     {
+        FireAccepted = false;
         Application.onBeforeRender -= PositionFinalLogo;
         StopFinalLogo();
         StopFlightMusicTracking();

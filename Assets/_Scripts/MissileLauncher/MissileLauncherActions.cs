@@ -13,6 +13,9 @@ public sealed class MissileLauncherActions : MonoBehaviour
     public MissileLaunchedEvent missileLaunched = new MissileLaunchedEvent();
 
     public bool IsBusy => handlers.Count > 0;
+    public bool HasValidAssignments => launchers != null && launchers.Length > 0 &&
+        System.Array.TrueForAll(launchers, launcher => launcher != null && launcher.HasValidAssignments);
+    public bool HasTwoTutorialLaunchers => HasValidAssignments && launchers.Length == 2 && launchers[0] != launchers[1];
     readonly Dictionary<MissileLauncherController, UnityAction> handlers = new Dictionary<MissileLauncherController, UnityAction>();
     readonly HashSet<MissileLauncherController> pending = new HashSet<MissileLauncherController>();
     readonly List<MissileLauncherController> participants = new List<MissileLauncherController>();
@@ -23,6 +26,14 @@ public sealed class MissileLauncherActions : MonoBehaviour
     public void RotateAll() => StartPhase(true);
     [ContextMenu("Test/Fire All (Play Mode)")]
     public void FireAll() => StartPhase(false);
+
+    public bool FireTutorialLauncher(int index)
+    {
+        if (!Application.isPlaying || !isActiveAndEnabled || !HasTwoTutorialLaunchers || index < 0 || index >= launchers.Length ||
+            !launchers[index].CanLaunch) return false;
+        launchers[index].LaunchMissiles();
+        return true;
+    }
 
     void StartPhase(bool rotation)
     {

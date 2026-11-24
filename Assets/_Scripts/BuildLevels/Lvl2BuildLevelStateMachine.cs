@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Lvl2: fade → elevator floor button → ride/doors → military tablet 3 toggles → load Lvl 3.
@@ -19,7 +18,7 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
         "Transition To Lvl 3"
     };
 
-    [Header("Refs (auto-found if empty)")]
+    [Header("Scene references")]
     [SerializeField] ElevatorDoorIntro intro;
     [SerializeField] MilitaryTabletLcdUi tablet;
 
@@ -27,52 +26,34 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
     [Tooltip("Unscaled seconds before step 1 is shown. Match ElevatorDoorIntro black hold + fade.")]
     [SerializeField] float fadeCompleteSeconds = 4.5f;
 
-    [Header("Transition (read-only mirror; ElevatorDoorIntro owns the load)")]
-    [SerializeField] string nextSceneName = BuildLevelScenes.Lvl3;
-
     float fadeTimer;
 
     protected override string[] StepNames => Steps;
 
     public int TabletCheckedCount => tablet != null ? tablet.CheckedCount : 0;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    static void Hook()
-    {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-    }
-
-    static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        if (scene.name != BuildLevelScenes.Lvl2) return;
-        if (FindAnyObjectByType<Lvl2BuildLevelStateMachine>() != null) return;
-        var go = new GameObject("Lvl2 Build Level State Machine");
-        SceneManager.MoveGameObjectToScene(go, scene);
-        go.AddComponent<Lvl2BuildLevelStateMachine>();
-    }
-
     void OnEnable()
     {
-        MilitaryTabletLcdUi.OptionToggled += OnTabletOptionToggled;
+        if (tablet != null) tablet.OptionChanged += OnTabletOptionToggled;
     }
 
     void OnDisable()
     {
-        MilitaryTabletLcdUi.OptionToggled -= OnTabletOptionToggled;
+        if (tablet != null) tablet.OptionChanged -= OnTabletOptionToggled;
     }
 
     void Start()
     {
-        ResolveRefs();
+        if (!HasValidAssignments)
+        {
+            Debug.LogError("Lvl2: assign the elevator intro and tablet UI in the scene.", this);
+            enabled = false;
+            return;
+        }
         SetStep(0);
     }
 
-    void ResolveRefs()
-    {
-        if (intro == null) intro = FindAnyObjectByType<ElevatorDoorIntro>();
-        if (tablet == null) tablet = FindAnyObjectByType<MilitaryTabletLcdUi>();
-    }
+    public bool HasValidAssignments => intro != null && tablet != null;
 
     void Update()
     {
@@ -82,7 +63,6 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
 
     void SyncFromScene()
     {
-        ResolveRefs();
         if (intro == null) return;
 
         if (StepIndex <= 0)
@@ -125,14 +105,13 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
 
     void OnTabletOptionToggled(int index, bool on)
     {
-        if (!on || tablet == null) return;
+        if (!on || tablet == null || intro == null || !intro.AreDoorsOpenForPlayer) return;
         TrackTabletProgress();
     }
 
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying) return;
-        ResolveRefs();
         switch (index)
         {
             case 2:

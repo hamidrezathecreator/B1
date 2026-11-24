@@ -27,22 +27,13 @@ static class BridgeXrPlaySetup
         if (origin == null)
             return;
 
-        MakeCasesGrabbable();
+
+        if (origin.gameObject.scene.name == BuildLevelScenes.Lvl2 || origin.gameObject.scene.name == BuildLevelScenes.Lvl3)
+            return;
 
         // Always plant the body/floor/teleport deck. Waiting for button A used to
         // accidentally "fix" height only after a jump pulse; do it on load instead.
         EnsurePlaySpace(origin);
-    }
-
-    /// <summary>Camera cases in the scene become physics objects either hand can pick up.</summary>
-    public static void MakeCasesGrabbable()
-    {
-        foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            if (!transform.name.StartsWith("SM_Hard_Camera_Case"))
-                continue;
-            MakeGrabbable(transform.gameObject);
-        }
     }
 
     /// <summary>Floor height, walk/teleport deck, and eye height for the active XR Origin.</summary>
@@ -295,95 +286,7 @@ static class BridgeXrPlaySetup
             caster.castRadius = 0.25f;
     }
 
-    static void MakeGrabbable(GameObject root)
-    {
-        if (root.GetComponentInParent<XRGrabInteractable>() != null)
-            return;
 
-        var parent = root.transform.parent;
-        while (parent != null)
-        {
-            if (parent.name.StartsWith("SM_Hard_Camera_Case"))
-                return;
-            parent = parent.parent;
-        }
-
-        if (!TryFitBox(root, out var center, out var size))
-            return;
-
-        foreach (var child in root.GetComponentsInChildren<Transform>())
-        {
-            child.gameObject.isStatic = false;
-            child.gameObject.layer = 0;
-        }
-
-        foreach (var meshCollider in root.GetComponentsInChildren<MeshCollider>())
-            meshCollider.enabled = false;
-
-        root.transform.SetParent(null, true);
-
-        var box = root.GetComponent<BoxCollider>();
-        if (box == null)
-            box = root.AddComponent<BoxCollider>();
-        box.isTrigger = false;
-        box.center = center;
-        box.size = size;
-
-        var body = root.GetComponent<Rigidbody>();
-        if (body == null)
-            body = root.AddComponent<Rigidbody>();
-        body.mass = 2f;
-        body.useGravity = true;
-        body.isKinematic = false;
-        body.interpolation = RigidbodyInterpolation.Interpolate;
-        body.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
-
-        var grab = root.AddComponent<XRGrabInteractable>();
-        grab.interactionLayers = -1;
-        grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
-        grab.farAttachMode = InteractableFarAttachMode.Near;
-        grab.trackPosition = true;
-        grab.trackRotation = true;
-        grab.throwOnDetach = true;
-        grab.forceGravityOnDetach = true;
-    }
-
-    static bool TryFitBox(GameObject root, out Vector3 center, out Vector3 size)
-    {
-        center = Vector3.zero;
-        size = Vector3.zero;
-        var min = Vector3.positiveInfinity;
-        var max = Vector3.negativeInfinity;
-        var found = false;
-
-        foreach (var renderer in root.GetComponentsInChildren<Renderer>())
-        {
-            var local = renderer.localBounds;
-            var extents = local.extents;
-            var localCenter = local.center;
-            for (var x = -1; x <= 1; x += 2)
-            {
-                for (var y = -1; y <= 1; y += 2)
-                {
-                    for (var z = -1; z <= 1; z += 2)
-                    {
-                        var corner = renderer.transform.TransformPoint(localCenter + Vector3.Scale(extents, new Vector3(x, y, z)));
-                        var inRoot = root.transform.InverseTransformPoint(corner);
-                        min = Vector3.Min(min, inRoot);
-                        max = Vector3.Max(max, inRoot);
-                        found = true;
-                    }
-                }
-            }
-        }
-
-        if (!found)
-            return false;
-
-        center = (min + max) * 0.5f;
-        size = max - min;
-        return size.sqrMagnitude > 0.0001f;
-    }
 }
 
 /// <summary>

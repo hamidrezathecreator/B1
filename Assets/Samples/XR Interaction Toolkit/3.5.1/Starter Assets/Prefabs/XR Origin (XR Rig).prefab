@@ -953,10 +953,10 @@ GameObject:
   - component: {fileID: 6520291404937146767}
   - component: {fileID: 5826056641483426609}
   - component: {fileID: 5033801203051696737}
-  - component: {fileID: 8326529608922937128}
-  - component: {fileID: 4933883413185516620}
   - component: {fileID: 8642098745632019455}
   - component: {fileID: 8642098745632019456}
+  - component: {fileID: 1739075659830071667}
+  - component: {fileID: 1579491960159202299}
   m_Layer: 2
   m_Name: XR Origin (XR Rig)
   m_TagString: Untagged
@@ -997,7 +997,7 @@ MonoBehaviour:
   m_OriginBaseGameObject: {fileID: 1717954561962503725}
   m_CameraFloorOffsetObject: {fileID: 1680501586}
   m_RequestedTrackingOriginMode: 1
-  m_CameraYOffset: 1.8
+  m_CameraYOffset: 183
 --- !u!143 &6232745470614056090
 CharacterController:
   m_ObjectHideFlags: 0
@@ -1016,13 +1016,13 @@ CharacterController:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Height: 1.8
+  m_Height: 1.75
   m_Radius: 0.2
   m_SlopeLimit: 45
   m_StepOffset: 0.5
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0.9, z: 0}
+  m_Center: {x: 0, y: 0.875, z: 0}
 --- !u!114 &6520291404937146767
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1093,62 +1093,6 @@ MonoBehaviour:
   m_AimAssistRequiredSpeed: 0.25
   m_AimAssistPercent: 0.8
   m_AimAssistMaxSpeedPercent: 10
---- !u!114 &8326529608922937128
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1717954561962503725}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0317534bc83b42c8a5e71a4d6b53e7e1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
-  shakePivot: {fileID: 1767192434}
-  delay: 0
-  strength: {x: 0.003, y: 0.002, z: 0}
-  duration: 0.18
-  frequency: 18
-  useUnscaledTime: 0
-  shakeEnabled: 1
-  shakeOnAToBImpact: 1
-  shakeOnLauncherFire: 1
-  risingShakeEnabled: 1
-  risingIntensity: 0.6
-  risingFullStrengthDistance: 5
-  risingMaxDistance: 60
-  risingFadeTime: 0.15
---- !u!114 &4933883413185516620
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1717954561962503725}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e52de21a22b6dd44c9cc19f810c65059, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Timeline::UnityEngine.Timeline.SignalReceiver
-  m_Events:
-    m_Signals:
-    - {fileID: 11400000, guid: 41a17a6a59889954fac7946734ce4a8c, type: 2}
-    m_Events:
-    - m_PersistentCalls:
-        m_Calls:
-        - m_Target: {fileID: 8326529608922937128}
-          m_TargetAssemblyTypeName: XRExplosionShake, Assembly-CSharp
-          m_MethodName: Shake
-          m_Mode: 1
-          m_Arguments:
-            m_ObjectArgument: {fileID: 0}
-            m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-            m_IntArgument: 0
-            m_FloatArgument: 0
-            m_StringArgument: 
-            m_BoolArgument: 0
-          m_CallState: 2
 --- !u!114 &8642098745632019455
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1178,6 +1122,46 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f1a2b3c4d5e6478990abcdef12345678, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &1739075659830071667
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1717954561962503725}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0317534bc83b42c8a5e71a4d6b53e7e1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::XRExplosionShake
+  shakePivot: {fileID: 0}
+  delay: 0
+  strength: {x: 0.003, y: 0.002, z: 0}
+  duration: 0.18
+  frequency: 18
+  useUnscaledTime: 0
+  shakeEnabled: 1
+  shakeOnAToBImpact: 0
+  shakeOnLauncherFire: 0
+  risingShakeEnabled: 0
+  risingIntensity: 0.6
+  risingFullStrengthDistance: 5
+  risingMaxDistance: 60
+  risingFadeTime: 0.15
+--- !u!114 &1579491960159202299
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1717954561962503725}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b7e4c9a21f3d4e8b9c2d6e0f1a4b5c6d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CondensationCloudXrShakeBridge
+  explosionShake: {fileID: 1739075659830071667}
+  shakeStrength: 0.9
 --- !u!1 &1787516059220952802
 GameObject:
   m_ObjectHideFlags: 0

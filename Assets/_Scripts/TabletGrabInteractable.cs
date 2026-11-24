@@ -17,11 +17,12 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
     [Tooltip("Turns the screen in toward the middle of the body, degrees.")]
     [Range(-60f, 60f)] [SerializeField] float leftHoldTurn = 20f;
 
-    Transform leftAttach;
+    [SerializeField] Transform leftAttach;
+    [SerializeField] Transform leftHandRoot;
 
     protected override void OnSelectEntering(SelectEnterEventArgs args)
     {
-        var left = IsLeftHand(args.interactorObject);
+        var left = leftAttach != null && IsLeftHand(args.interactorObject);
         // Follow the hand directly while held — gravity is off for the grab duration.
         useDynamicAttach = !left;
         movementType = MovementType.Instantaneous;
@@ -32,27 +33,18 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
         base.OnSelectEntering(args);
     }
 
-    static bool IsLeftHand(IXRInteractor interactor)
+    bool IsLeftHand(IXRInteractor interactor)
     {
-        if (interactor == null) return false;
-        // Near-Far / poke / ray under the left controller all count as the left hand.
-        for (var t = interactor.transform; t != null; t = t.parent)
-        {
-            var n = t.name;
-            if (n.IndexOf("Left", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (n.IndexOf("Right", System.StringComparison.OrdinalIgnoreCase) >= 0) return false;
-        }
-        return false;
+        return leftHandRoot != null && interactor != null && interactor.transform.IsChildOf(leftHandRoot);
     }
 
     /// <summary>A point on the tablet that lines up with the left controller when held.</summary>
-    Transform LeftAttach()
+    Transform LeftAttach() => leftAttach;
+
+    [ContextMenu("Capture Left Hold Pose")]
+    void CaptureLeftHoldPose()
     {
-        if (leftAttach == null)
-        {
-            leftAttach = new GameObject("Left Hand Hold").transform;
-            leftAttach.SetParent(transform, false);
-        }
+        if (leftAttach == null) return;
 
         // Screen frame in world space: from the LCD canvas if there is one.
         var lcd = GetComponentInChildren<MilitaryTabletLcdUi>(true);
@@ -90,6 +82,6 @@ public sealed class TabletGrabInteractable : XRGrabInteractable
         var controllerRotation = screenInWorld * Quaternion.Inverse(screenInController);
         var controllerPosition = center - controllerRotation * leftHoldOffset;
         leftAttach.SetPositionAndRotation(controllerPosition, controllerRotation);
-        return leftAttach;
+
     }
 }

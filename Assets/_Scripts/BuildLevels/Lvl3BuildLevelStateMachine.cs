@@ -2,7 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Lvl3: tutorial two-button launch → auto salvo → drone orbit + kills two air units → path to tracker → lock-on kill.
@@ -10,10 +9,17 @@ using UnityEngine.SceneManagement;
 [AddComponentMenu("B1/Lvl3 Build Level State Machine")]
 public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 {
+    [System.Serializable]
+    public sealed class AutomaticLaunch
+    {
+        public MissileProjectile projectile;
+        public Transform destination;
+    }
+
     static readonly string[] Steps =
     {
         "Idle",
-        "Tutorial Rotate + Fire (2 units)",
+        "Tutorial Launch Buttons",
         "Auto Launcher Salvo",
         "Drone Orbits",
         "Drone Shoots 2 Units",
@@ -24,144 +30,120 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         "Complete"
     };
 
+    [Header("Scene references")]
+    [SerializeField] XROrigin origin;
+
     [Header("Flow")]
     [SerializeField] bool autoRunSequence = true;
-    [SerializeField] bool useTutorialOrchestrator = true;
     [SerializeField] bool suppressOrchestratorFinalLogo = true;
 
     [Header("Tutorial")]
     [SerializeField] MissileLauncherTutorialOrchestrator orchestrator;
-    [SerializeField] MissileLauncherButtons buttons;
-    [SerializeField] int airUnitsToTrack = 2;
-    [Min(1f)] [SerializeField] float maxWaitTutorialFireSeconds = 180f;
+    [SerializeField] ExplodeAndSwap droneStrikes;
 
-    [Header("Auto launchers (MissileLauncherSystem in scene)")]
-    [Tooltip("Fired only from physical buttons / tutorial; auto salvo never calls Fire on these.")]
-    [SerializeField] MissileLauncherSystem[] buttonOnlyLaunchers;
-    [Min(0)] [SerializeField] int autoLauncherCount = 4;
+    [Header("Automatic missile launches")]
     [Min(0f)] [SerializeField] float delayAfterTutorialBeforeSalvo = 3f;
-    [Tooltip("Random wait between each auto Fire(). Set min = max for a fixed gap.")]
+    [Tooltip("Random wait between automatic missile launches, after the tutorial fire button is accepted.")]
     [Min(0f)] [SerializeField] float minDelayBetweenAutoLaunches = 0.35f;
     [Min(0f)] [SerializeField] float maxDelayBetweenAutoLaunches = 1.1f;
-    [Tooltip("Explicit order for auto salvo. Empty = all MissileLauncherSystem in scene except button-only, sorted by name (up to count).")]
-    [SerializeField] MissileLauncherSystem[] autoLaunchers;
+    [Tooltip("Scene missiles and their heading waypoints, launched directly by the state machine in this order.")]
+    [SerializeField] AutomaticLaunch[] automaticLaunches;
 
     [Header("Drone")]
-    [SerializeField] string droneObjectName = "SM_Shahed149";
+    [SerializeField] GameObject droneRoot;
     [SerializeField] bool hideDroneUntilEngagement = true;
     [Min(0f)] [SerializeField] float delayBeforeDroneAppears = 2f;
     [Min(0f)] [SerializeField] float orbitBeforeShootingSeconds = 6f;
-    [Min(0.5f)] [SerializeField] float delayBetweenDroneShots = 2f;
     [SerializeField] FighterJetFlight droneFlight;
 
     [Header("Tracker path")]
-    [SerializeField] string[] trackerObjectNames = { "TrackerDevice", "TrackerWeapon", "SM_TrackerWeapon", "LaserWeapon", "SM_LaserWeapon" };
+    [SerializeField] Transform trackerPathTarget;
     [SerializeField] TrackerWeaponScope trackerScope;
     [SerializeField] bool showPathLikeLvl2 = true;
     [Min(0f)] [SerializeField] float pathStopBeforeDevice = 0.6f;
 
-    readonly List<Transform> airUnits = new List<Transform>();
     FloorPathGuide pathGuide;
     Coroutine sequenceRoutine;
     bool sequenceRunning;
-    XROrigin origin;
+    bool automaticSalvoCompleted;
 
     public bool DroneDestroyed { get; private set; }
 
     protected override string[] StepNames => Steps;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    static void Hook()
-    {
-        SceneManager.sceneLoaded -= OnSceneLoaded;
-        SceneManager.sceneLoaded += OnSceneLoaded;
-    }
-
-    static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
-    {
-        if (scene.name != BuildLevelScenes.Lvl3) return;
-        if (FindAnyObjectByType<Lvl3BuildLevelStateMachine>() != null) return;
-        var go = new GameObject("Lvl3 Build Level State Machine");
-        SceneManager.MoveGameObjectToScene(go, scene);
-        go.AddComponent<Lvl3BuildLevelStateMachine>();
-    }
-
     void Awake()
     {
-        ResolveRefs();
-        if (useTutorialOrchestrator && orchestrator != null)
+        if (orchestrator != null)
             orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
     }
 
     void Start()
     {
-        ResolveRefs();
+        if (!HasValidAssignments)
+        {
+            Debug.LogError("Lvl3: assign the player, tutorial, ordered auto launchers, drone, tracker and path target in the scene.", this);
+            enabled = false;
+            return;
+        }
         PrepareDroneHidden();
         SetStep(0);
         if (autoRunSequence && Application.isPlaying)
             sequenceRoutine = StartCoroutine(RunFullSequence());
     }
 
-    void ResolveRefs()
+    public bool HasValidAssignments
     {
-        origin ??= FindAnyObjectByType<XROrigin>();
-        orchestrator ??= FindAnyObjectByType<MissileLauncherTutorialOrchestrator>();
-        buttons ??= FindAnyObjectByType<MissileLauncherButtons>();
-        if (droneFlight == null)
+        get
         {
-            var drone = FindByName(droneObjectName);
-            if (drone != null)
-                droneFlight = drone.GetComponent<FighterJetFlight>() ?? drone.GetComponentInChildren<FighterJetFlight>(true);
-        }
-
-        if (trackerScope == null)
-        {
-            foreach (var name in trackerObjectNames)
-            {
-                var go = FindByName(name);
-                if (go == null) continue;
-                trackerScope = go.GetComponent<TrackerWeaponScope>();
-                if (trackerScope == null) trackerScope = go.GetComponentInChildren<TrackerWeaponScope>(true);
-                if (trackerScope != null) break;
-            }
+            if (origin == null || droneRoot == null || droneFlight == null || trackerScope == null ||
+                trackerPathTarget == null || orchestrator == null || !orchestrator.HasValidAssignments ||
+                droneStrikes == null || !droneStrikes.HasValidAssignments || automaticLaunches == null ||
+                automaticLaunches.Length == 0) return false;
+            var assigned = new HashSet<MissileProjectile>();
+            foreach (var launch in automaticLaunches)
+                if (launch == null || launch.projectile == null || launch.destination == null ||
+                    !launch.projectile.gameObject.scene.IsValid() || !assigned.Add(launch.projectile)) return false;
+            return true;
         }
     }
 
     void PrepareDroneHidden()
     {
         if (!hideDroneUntilEngagement) return;
-        var drone = FindByName(droneObjectName);
-        if (drone != null) drone.SetActive(false);
+        if (droneRoot != null) droneRoot.SetActive(false);
     }
 
     public IEnumerator RunFullSequence()
     {
-        if (sequenceRunning) yield break;
+        if (sequenceRunning || !HasValidAssignments) yield break;
         sequenceRunning = true;
-        airUnits.Clear();
         DroneDestroyed = false;
 
-        ResolveRefs();
-        if (useTutorialOrchestrator && orchestrator != null)
+        orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
+        SetStep(1);
+        orchestrator.Begin();
+        yield return WaitForTutorialFire();
+        if (orchestrator == null || !orchestrator.isActiveAndEnabled || !orchestrator.FireAccepted || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed)
         {
-            orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
-            SetStep(1);
-            orchestrator.Begin();
-            yield return WaitForTutorialFire();
+            sequenceRunning = false;
+            Debug.LogError("Lvl3: the tutorial fire button was not accepted; automatic launches remain blocked.", this);
+            yield break;
         }
-        else
-            TrackStep(1);
 
         SetStep(2);
         yield return RunAutoLauncherSalvo();
-        if (airUnits.Count < airUnitsToTrack)
-            CaptureAirUnitsFromFlights();
+        if (!automaticSalvoCompleted)
+        {
+            sequenceRunning = false;
+            yield break;
+        }
 
         SetStep(3);
         yield return SpawnAndOrbitDrone();
 
         SetStep(4);
-        yield return DroneDestroyAirUnits();
+        droneStrikes.Play();
+        while (!droneStrikes.IsComplete) yield return null;
 
         SetStep(5);
         ShowPathToTracker();
@@ -182,92 +164,43 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     IEnumerator WaitForTutorialFire()
     {
-        var elapsed = 0f;
-        var sawFiring = false;
-        while (elapsed < maxWaitTutorialFireSeconds)
+        while (orchestrator != null && !orchestrator.FireAccepted)
         {
-            orchestrator ??= FindAnyObjectByType<MissileLauncherTutorialOrchestrator>();
-            if (orchestrator == null) yield break;
-
-            var phase = orchestrator.Phase;
-            if (phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Firing)
-                sawFiring = true;
-
-            if (sawFiring && phase != MissileLauncherTutorialOrchestrator.TutorialPhase.Firing &&
-                phase != MissileLauncherTutorialOrchestrator.TutorialPhase.PlayingFireAudio &&
-                phase != MissileLauncherTutorialOrchestrator.TutorialPhase.ShowingFireCard &&
-                phase != MissileLauncherTutorialOrchestrator.TutorialPhase.AwaitingFire)
-            {
-                CaptureAirUnitsFromFlights();
+            if (!orchestrator.isActiveAndEnabled || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed)
                 yield break;
-            }
-
-            CaptureAirUnitsFromFlights();
-            elapsed += Time.deltaTime;
             yield return null;
-        }
-    }
-
-    void CaptureAirUnitsFromFlights()
-    {
-        foreach (var missile in MissileProjectile.ActiveFlights)
-        {
-            if (missile == null) continue;
-            var t = missile.transform;
-            if (airUnits.Contains(t)) continue;
-            airUnits.Add(t);
-            if (airUnits.Count >= airUnitsToTrack) return;
         }
     }
 
     IEnumerator RunAutoLauncherSalvo()
     {
+        automaticSalvoCompleted = false;
         if (delayAfterTutorialBeforeSalvo > 0f)
             yield return new WaitForSeconds(delayAfterTutorialBeforeSalvo);
 
-        var systems = GatherAutoLaunchers();
-        var count = Mathf.Min(autoLauncherCount, systems.Count);
-        var gapMin = Mathf.Min(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches);
-        var gapMax = Mathf.Max(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches);
+        var count = automaticLaunches.Length;
+        var gapMin = Mathf.Max(0f, Mathf.Min(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches));
+        var gapMax = Mathf.Max(0f, Mathf.Max(minDelayBetweenAutoLaunches, maxDelayBetweenAutoLaunches));
         for (var i = 0; i < count; i++)
         {
-            if (systems[i] != null) systems[i].Fire();
+            if (sequenceRunning && (orchestrator == null || !orchestrator.isActiveAndEnabled ||
+                !orchestrator.FireAccepted || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed))
+                yield break;
+            var launch = automaticLaunches[i];
+            if (launch.projectile == null || launch.destination == null || !launch.projectile.gameObject.activeInHierarchy)
+            {
+                Debug.LogError("Lvl3: an automatic missile or its destination became unavailable.", this);
+                yield break;
+            }
+            launch.projectile.Launch(launch.destination.position);
             if (i < count - 1 && gapMax > 0f)
                 yield return new WaitForSeconds(Random.Range(gapMin, gapMax));
         }
-    }
-
-    bool IsButtonOnlyLauncher(MissileLauncherSystem system)
-    {
-        if (system == null || buttonOnlyLaunchers == null) return false;
-        foreach (var manual in buttonOnlyLaunchers)
-            if (manual == system) return true;
-        return false;
-    }
-
-    List<MissileLauncherSystem> GatherAutoLaunchers()
-    {
-        var list = new List<MissileLauncherSystem>();
-        if (autoLaunchers != null && autoLaunchers.Length > 0)
-        {
-            foreach (var s in autoLaunchers)
-                if (s != null && s.gameObject.scene.IsValid() && !IsButtonOnlyLauncher(s)) list.Add(s);
-            return list;
-        }
-
-        foreach (var s in FindObjectsByType<MissileLauncherSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            if (!s.gameObject.scene.IsValid() || IsButtonOnlyLauncher(s)) continue;
-            list.Add(s);
-        }
-        list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        return list;
+        automaticSalvoCompleted = true;
     }
 
     IEnumerator SpawnAndOrbitDrone()
     {
-        ResolveRefs();
-        var droneRoot = FindByName(droneObjectName);
         if (droneRoot != null && hideDroneUntilEngagement)
             droneRoot.SetActive(true);
 
@@ -285,50 +218,10 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
             yield return new WaitForSeconds(orbitBeforeShootingSeconds);
     }
 
-    IEnumerator DroneDestroyAirUnits()
-    {
-        if (droneFlight == null) yield break;
-        if (airUnits.Count < airUnitsToTrack)
-            CaptureAirUnitsFromFlights();
-
-        var shots = Mathf.Min(airUnitsToTrack, airUnits.Count);
-        for (var i = 0; i < shots; i++)
-        {
-            var unit = airUnits[i];
-            if (unit == null) continue;
-            var done = false;
-            droneFlight.FireMissileAt(unit, () =>
-            {
-                DestroyAirUnit(unit);
-                done = true;
-            });
-            var timeout = 0f;
-            while (!done && unit != null && timeout < 12f)
-            {
-                timeout += Time.deltaTime;
-                yield return null;
-            }
-            if (delayBetweenDroneShots > 0f)
-                yield return new WaitForSeconds(delayBetweenDroneShots);
-        }
-    }
-
-    static void DestroyAirUnit(Transform unit)
-    {
-        if (unit == null) return;
-        foreach (var r in unit.GetComponentsInChildren<Renderer>(true))
-            r.enabled = false;
-        foreach (var col in unit.GetComponentsInChildren<Collider>(true))
-            col.enabled = false;
-        var missile = unit.GetComponent<MissileProjectile>();
-        if (missile != null) unit.gameObject.SetActive(false);
-    }
-
     void ShowPathToTracker()
     {
         if (!showPathLikeLvl2) return;
-        origin ??= FindAnyObjectByType<XROrigin>();
-        var target = FindTrackerTransform();
+        var target = trackerPathTarget;
         if (origin == null || target == null) return;
 
         if (pathGuide != null) Destroy(pathGuide.gameObject);
@@ -349,26 +242,9 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         pathGuide = FloorPathGuide.Create(new List<Vector3> { start, end }, origin.transform, true);
     }
 
-    Transform FindTrackerTransform()
-    {
-        foreach (var name in trackerObjectNames)
-        {
-            var go = FindByName(name);
-            if (go != null) return go.transform;
-        }
-        return trackerScope != null ? trackerScope.transform : null;
-    }
-
     IEnumerator WaitForTrackerPickup()
     {
-        ResolveRefs();
-        while (trackerScope == null)
-        {
-            ResolveRefs();
-            if (trackerScope == null) yield break;
-            yield return null;
-        }
-
+        if (trackerScope == null) yield break;
         while (!trackerScope.IsHeld)
             yield return null;
 
@@ -381,10 +257,8 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     void WireTrackerToDrone()
     {
-        ResolveRefs();
-        var drone = FindByName(droneObjectName);
-        if (trackerScope == null || drone == null) return;
-        trackerScope.AssignTarget(drone.transform);
+        if (trackerScope == null || droneRoot == null) return;
+        trackerScope.AssignTarget(droneRoot.transform);
     }
 
     IEnumerator WaitForDroneKill()
@@ -407,7 +281,6 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying || sequenceRunning) return;
-        ResolveRefs();
         switch (index)
         {
             case 1:
@@ -424,7 +297,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
                 break;
             case 4:
                 if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                sequenceRoutine = StartCoroutine(DroneDestroyAirUnits());
+                droneStrikes?.Play();
                 break;
             case 5:
                 ShowPathToTracker();
@@ -447,12 +320,11 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
             TrackStep(8);
     }
 
-    static GameObject FindByName(string name)
+    void OnDisable()
     {
-        if (string.IsNullOrWhiteSpace(name)) return null;
-        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (t.name == name && t.gameObject.scene.IsValid()) return t.gameObject;
-        return null;
+        StopAllCoroutines();
+        sequenceRoutine = null;
+        sequenceRunning = false;
     }
 
     public void EditorTestBeginSequence()

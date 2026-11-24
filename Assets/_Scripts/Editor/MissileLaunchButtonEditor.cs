@@ -9,24 +9,6 @@ public sealed class MissileLaunchButtonEditor : Editor
     const string PendingKey = "B1.MissileLaunchButton.PendingTest";
     const float PlayModeDelay = 1.5f;
 
-    [MenuItem("B1/Wire Launch Buttons")]
-    static void WireLaunchButtons()
-    {
-        var count = MissileLaunchButton.AutoWireScene(
-            (pointName, position, parent) =>
-            {
-                var go = new GameObject(pointName);
-                Undo.RegisterCreatedObjectUndo(go, "Wire Launch Buttons");
-                go.transform.SetParent(parent, false);
-                go.transform.position = position;
-                return go.transform;
-            },
-            obj => Undo.RecordObject(obj, "Wire Launch Buttons"));
-
-        EditorSceneManager.MarkAllScenesDirty();
-        Debug.Log("Wire Launch Buttons: " + count + " button(s) wired. Move the 'Point B' objects under 'Launch Paths' to change where each one flies.");
-    }
-
     [MenuItem("B1/Test All Launch Buttons")]
     static void TestAll()
     {

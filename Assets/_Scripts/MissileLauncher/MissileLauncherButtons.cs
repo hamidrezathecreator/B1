@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
 
 /// <summary>Physical button adapter. Emits events without knowing about launchers or tutorials.</summary>
 public sealed class MissileLauncherButtons : MonoBehaviour
@@ -15,23 +16,69 @@ public sealed class MissileLauncherButtons : MonoBehaviour
     public bool IsConfigured => rotateButton != null && fireButton != null && rotateButton != fireButton;
     bool rotateAllowed;
     bool fireAllowed;
+    bool rotateFingerInside;
+    bool fireFingerInside;
 
     void OnEnable()
     {
         DisableButtons();
-        if (rotateButton != null) rotateButton.selectEntered.AddListener(OnRotateSelected);
-        if (fireButton != null) fireButton.selectEntered.AddListener(OnFireSelected);
+        if (rotateButton != null)
+        {
+            rotateButton.selectEntered.AddListener(OnRotateSelected);
+            rotateButton.hoverEntered.AddListener(OnRotateHovered);
+        }
+        if (fireButton != null)
+        {
+            fireButton.selectEntered.AddListener(OnFireSelected);
+            fireButton.hoverEntered.AddListener(OnFireHovered);
+        }
     }
 
     void OnDisable()
     {
-        if (rotateButton != null) rotateButton.selectEntered.RemoveListener(OnRotateSelected);
-        if (fireButton != null) fireButton.selectEntered.RemoveListener(OnFireSelected);
+        if (rotateButton != null)
+        {
+            rotateButton.selectEntered.RemoveListener(OnRotateSelected);
+            rotateButton.hoverEntered.RemoveListener(OnRotateHovered);
+        }
+        if (fireButton != null)
+        {
+            fireButton.selectEntered.RemoveListener(OnFireSelected);
+            fireButton.hoverEntered.RemoveListener(OnFireHovered);
+        }
         DisableButtons();
     }
 
     void OnRotateSelected(SelectEnterEventArgs _) => PressRotate();
     void OnFireSelected(SelectEnterEventArgs _) => PressFire();
+
+    void OnRotateHovered(HoverEnterEventArgs args)
+    {
+        if (args.interactorObject is XRPokeInteractor) PressRotate();
+    }
+
+    void OnFireHovered(HoverEnterEventArgs args)
+    {
+        if (args.interactorObject is XRPokeInteractor) PressFire();
+    }
+
+    void Update()
+    {
+        var rotateInside = FingerInside(rotateButton);
+        var fireInside = FingerInside(fireButton);
+        if (rotateInside && !rotateFingerInside) PressRotate();
+        if (fireInside && !fireFingerInside) PressFire();
+        rotateFingerInside = rotateInside;
+        fireFingerInside = fireInside;
+    }
+
+    static bool FingerInside(XRBaseInteractable button)
+    {
+        if (button == null || !button.gameObject.activeInHierarchy) return false;
+        foreach (var collider in button.colliders)
+            if (collider != null && collider.enabled && TabletFingerTip.AnyInside(collider)) return true;
+        return false;
+    }
 
     [ContextMenu("Test/Press Rotate (Play Mode)")]
     public void PressRotate()

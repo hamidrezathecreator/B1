@@ -20,6 +20,10 @@ public sealed class XrHandsRig : MonoBehaviour
     [Tooltip("Rigged hand model or prefab, e.g. LeftHandAndroidXR.fbx.")]
     [SerializeField] GameObject leftHandVisualPrefab;
     [SerializeField] GameObject rightHandVisualPrefab;
+    [Tooltip("Material used by both visible controller hands.")]
+    [SerializeField] Material handMaterial;
+    [Tooltip("Optional base texture override. Leave empty to use the material's texture.")]
+    [SerializeField] Texture2D handTexture;
     [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
     [SerializeField] Vector3 handOnControllerPosition = new Vector3(0.025f, -0.015f, -0.06f);
     [Tooltip("Extra wrist rotation on the controller, degrees.")]
@@ -34,6 +38,12 @@ public sealed class XrHandsRig : MonoBehaviour
     bool ready;
     bool controllerModels;
     bool preferHandTrackingWhenAvailable;
+    Material fallbackHandMaterial;
+    bool appearanceDirty;
+
+    public GameObject GetHandVisualPrefab(bool isLeft) => isLeft ? leftHandVisualPrefab : rightHandVisualPrefab;
+    public Material HandMaterial => handMaterial;
+    public Texture2D HandTexture => handTexture;
 
     public void PreferHandTrackingWhenAvailable(bool prefer) => preferHandTrackingWhenAvailable = prefer;
     /// <summary>
@@ -254,10 +264,7 @@ public sealed class XrHandsRig : MonoBehaviour
         meshObject.transform.SetParent(anchor, false);
         meshObject.AddComponent<MeshFilter>();
         var renderer = meshObject.AddComponent<MeshRenderer>();
-        var skin = BlueHandMaterial();
-        var mats = new Material[Mathf.Max(1, skinned.sharedMesh.subMeshCount)];
-        for (var i = 0; i < mats.Length; i++) mats[i] = skin;
-        renderer.sharedMaterials = mats;
+        ApplyHandAppearance(renderer, skinned.sharedMesh.subMeshCount);
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
         var rig = anchor.gameObject.AddComponent<ControllerHandRig>();
@@ -268,6 +275,45 @@ public sealed class XrHandsRig : MonoBehaviour
 
         Debug.Log("XrHandsRig: '" + template.name + "' hand on " + controllerName +
                   " (" + skinned.sharedMesh.vertexCount + " vertices, " + rig.FingerBoneCount + " finger bones).", this);
+    }
+
+    void ApplyHandAppearance(MeshRenderer renderer, int subMeshCount)
+    {
+        var skin = handMaterial;
+        if (skin == null)
+        {
+            if (fallbackHandMaterial == null) fallbackHandMaterial = BlueHandMaterial();
+            skin = fallbackHandMaterial;
+        }
+        var materials = new Material[Mathf.Max(1, subMeshCount)];
+        for (var index = 0; index < materials.Length; index++) materials[index] = skin;
+        renderer.sharedMaterials = materials;
+
+        var properties = new MaterialPropertyBlock();
+        if (handTexture != null && skin != null)
+        {
+            if (skin.HasProperty("_BaseMap")) properties.SetTexture("_BaseMap", handTexture);
+            if (skin.HasProperty("_MainTex")) properties.SetTexture("_MainTex", handTexture);
+        }
+        renderer.SetPropertyBlock(properties);
+    }
+
+    void RefreshHandAppearance(Transform anchor)
+    {
+        if (anchor == null) return;
+        var meshObject = anchor.Find("Hand Mesh");
+        if (meshObject == null) return;
+        var renderer = meshObject.GetComponent<MeshRenderer>();
+        var filter = meshObject.GetComponent<MeshFilter>();
+        if (renderer != null && filter != null && filter.sharedMesh != null)
+            ApplyHandAppearance(renderer, filter.sharedMesh.subMeshCount);
+    }
+
+    void OnValidate() => appearanceDirty = true;
+
+    void OnDestroy()
+    {
+        if (fallbackHandMaterial != null) Destroy(fallbackHandMaterial);
     }
 
     static Transform FindBone(SkinnedMeshRenderer skinned, Transform root, string contains)
@@ -446,6 +492,13 @@ public sealed class XrHandsRig : MonoBehaviour
     void LateUpdate()
     {
         if (!ready) return;
+
+        if (appearanceDirty)
+        {
+            RefreshHandAppearance(leftAnchor);
+            RefreshHandAppearance(rightAnchor);
+            appearanceDirty = false;
+        }
 
         KeepControllerObjects(origin);
 

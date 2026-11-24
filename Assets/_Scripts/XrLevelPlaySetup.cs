@@ -21,131 +21,95 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     const float BodyHeight = 1.75f;
     const float SkinWidth = 0.02f;
 
-    [Header("Hands / controllers")]
-    [Tooltip("Off: show the normal VR controller models (recommended for Lvl 3).")]
-    [SerializeField] bool showHandsOnControllers;
-    [SerializeField] GameObject leftHandVisualPrefab;
-    [SerializeField] GameObject rightHandVisualPrefab;
-    [Tooltip("Wrist position on the controller (right hand; left is mirrored on X).")]
-    [SerializeField] Vector3 handOnControllerPosition = new Vector3(0.025f, -0.015f, -0.06f);
-    [Tooltip("Extra wrist rotation on the controller, degrees.")]
-    [SerializeField] Vector3 handOnControllerEuler = Vector3.zero;
-
     [Header("Ground")]
-    [Tooltip("Objects whose meshes are walkable and teleportable. Empty = Topology / Terrain / TerrainProxy.")]
+    [Tooltip("Scene-authored walkable ground roots with colliders and teleportation areas.")]
     [SerializeField] Transform[] groundRoots;
     [Tooltip("Steeper ground than this blocks walking and turns the teleport reticle red.")]
     [Range(10f, 80f)] [SerializeField] float maxSlopeDegrees = 40f;
-    [SerializeField] bool placePlayerOnGround = true;
+    [SerializeField] Transform playerSpawn;
 
     [Header("Guide")]
-    [Tooltip("Objects that get the blue \"go here\" beacon (hidden once one of their launch buttons is pressed).")]
-    [SerializeField] string[] beaconObjectNames = { "ShootMissile (1)" };
     [Tooltip("Persian font for the hint above the right controller.")]
     [SerializeField] TMPro.TMP_FontAsset handHintFont;
-    [Tooltip("Hint above the right controller until the first launch button is pressed. Empty = no hint.")]
+    [Tooltip("Hint above the right controller until both tutorial launch buttons are pressed. Empty = no hint.")]
     [SerializeField] string launchHintMessage = "برو روی دکمه لانچر بزن";
 
     [Header("Music")]
-    [Tooltip("Looped level music. Empty = Resources/Audio/Lvl3Music.")]
+    [Tooltip("Optional clip override for the assigned scene music source.")]
     [SerializeField] AudioClip music;
     [Range(0f, 1f)] [SerializeField] float musicVolume = 0.35f;
     [SerializeField] AudioClip missileLaunchSound;
     [SerializeField] AudioClip missileImpactSound;
 
-    XROrigin origin;
+    [Header("Scene references")]
+    [SerializeField] XROrigin origin;
+    [SerializeField] Transform rightController;
+    [SerializeField] XRRayInteractor[] teleportRays;
+    [SerializeField] Camera[] scopeCameras;
+    [SerializeField] Camera[] disabledCameras;
+    [SerializeField] MissileLauncherButtons tutorialButtons;
+    [SerializeField] MissileProjectile[] launchProjectiles;
+    [SerializeField] FighterJetFlight[] flights;
+    [SerializeField] ExplodeAndSwap[] strikes;
+    [SerializeField] TrackerWeaponScope trackerScope;
+    [SerializeField] AudioSource musicSource;
     HandHintBanner launchHint;
 
     void Start()
     {
+        if (origin == null || groundRoots == null || groundRoots.Length == 0 || trackerScope == null)
+        {
+            Debug.LogError("XrLevelPlaySetup: assign the player, authored ground, tracker and interaction references in the scene.", this);
+            enabled = false;
+            return;
+        }
         PlayMusic();
-        origin = FindAnyObjectByType<XROrigin>();
-        if (origin == null) return;
-
-        // The first-scene auto setup pins the body to one height and adds a flat deck.
-        // Uneven ground needs neither.
         BridgeXrPlaySetup.SuspendDeckLock(origin);
-        var deck = GameObject.Find("Walkable Deck");
-        if (deck != null) deck.SetActive(false);
-
         var groundLayer = LayerMask.NameToLayer("Ground");
-        if (groundLayer < 0) groundLayer = 0;
-        LayerMask groundMask = 1 << groundLayer;
-
+        LayerMask groundMask = 1 << Mathf.Max(0, groundLayer);
         UseOnlyHeadsetCamera();
-        PrepareGround(groundLayer);
         SetupBody(groundMask);
         SetupTeleportRays(groundMask);
-        if (placePlayerOnGround) PlantOnGround(groundMask);
-
-        var rig = GetComponent<XrHandsRig>();
-        if (rig == null) rig = gameObject.AddComponent<XrHandsRig>();
-        rig.Configure(leftHandVisualPrefab, rightHandVisualPrefab, handOnControllerPosition, handOnControllerEuler);
-        rig.UseControllerModels(!showHandsOnControllers);
-        rig.Setup(origin);
-
-        // Launch panels: any button still without a target gets the nearest missile / Shahed.
-        MissileLaunchButton.AutoWireScene();
-        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            button.SetLaunchSound(missileLaunchSound);
-        foreach (var jet in FindObjectsByType<FighterJetFlight>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            jet.ConfigureMissileLaunchSound(missileLaunchSound);
-        foreach (var strike in FindObjectsByType<ExplodeAndSwap>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            strike.SetImpactSound(missileImpactSound);
-
-        TrackerWeaponScope.SetupByName(
-            missileLaunchSound,
-            missileImpactSound,
-            handHintFont,
-            "TrackerWeapon",
-            "TrackerDevice",
-            "SM_TrackerWeapon",
-            "LaserWeapon",
-            "SM_LaserWeapon");
-
-        if (beaconObjectNames != null)
+        if (playerSpawn != null)
         {
-            foreach (var beaconName in beaconObjectNames)
-            {
-                if (string.IsNullOrWhiteSpace(beaconName)) continue;
-                var target = GameObject.Find(beaconName);
-                if (target == null)
-                {
-                    Debug.LogWarning("XrLevelPlaySetup: no '" + beaconName + "' for the go-here beacon.", this);
-                    continue;
-                }
-                if (target.GetComponent<GoHereBeacon>() == null) target.AddComponent<GoHereBeacon>();
-            }
+            var body = origin.GetComponent<CharacterController>();
+            var wasEnabled = body != null && body.enabled;
+            if (body != null) body.enabled = false;
+            origin.transform.SetPositionAndRotation(playerSpawn.position, playerSpawn.rotation);
+            if (body != null) body.enabled = wasEnabled;
         }
-
+        if (launchProjectiles != null)
+            foreach (var projectile in launchProjectiles)
+                if (projectile != null) projectile.ConfigureLaunchSound(missileLaunchSound);
+        if (flights != null)
+            foreach (var flight in flights)
+                if (flight != null) flight.ConfigureMissileLaunchSound(missileLaunchSound);
+        if (strikes != null)
+            foreach (var strike in strikes)
+                if (strike != null) strike.SetImpactSound(missileImpactSound);
+        trackerScope.ConfigureFeedback(missileLaunchSound, missileImpactSound, handHintFont);
         ShowLaunchHint();
     }
 
     void PlayMusic()
     {
-        var clip = music != null ? music : Resources.Load<AudioClip>("Audio/Lvl3Music");
-        if (clip == null) return;
-        var source = gameObject.AddComponent<AudioSource>();
-        source.clip = clip;
-        source.loop = true;
-        source.playOnAwake = false;
-        source.spatialBlend = 0f;
-        source.volume = musicVolume;
-        source.Play();
+        if (musicSource == null) return;
+        if (music != null) musicSource.clip = music;
+        musicSource.volume = musicVolume;
+        musicSource.Play();
     }
 
     void ShowLaunchHint()
     {
         if (string.IsNullOrWhiteSpace(launchHintMessage) || origin.Camera == null) return;
-        var hand = XrHandsRig.FindNamed(origin, "Right Controller");
+        var hand = rightController;
         if (hand == null) return;
 
         launchHint = HandHintBanner.Create(origin.Camera, handHintFont, launchHintMessage);
         launchHint.SetHand(hand);
 
-        // Gone as soon as any launch button is pressed.
-        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            button.onPressed.AddListener(HideLaunchHint);
+        if (tutorialButtons != null)
+            tutorialButtons.firePressed.AddListener(HideLaunchHint);
     }
 
     void HideLaunchHint()
@@ -163,24 +127,14 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         }
 
         launchHint = null;
-        foreach (var button in FindObjectsByType<MissileLaunchButton>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-        {
-            if (button == null || button.onPressed == null) continue;
-            button.onPressed.RemoveListener(HideLaunchHint);
-        }
+        if (tutorialButtons != null)
+            tutorialButtons.firePressed.RemoveListener(HideLaunchHint);
     }
 
-    void OnValidate()
-    {
-        // Play mode: tune the hand position on the controller live from the inspector.
-        if (!Application.isPlaying) return;
-        var rig = GetComponent<XrHandsRig>();
-        if (rig != null) rig.SetWristOffset(handOnControllerPosition, handOnControllerEuler);
-    }
 
     void OnDestroy()
     {
-        if (launchHint != null) launchHint.Hide();
+        HideLaunchHint();
     }
 
     /// <summary>
@@ -197,6 +151,10 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             return;
         }
 
+        if (scopeCameras != null)
+            foreach (var camera in scopeCameras)
+                if (camera != null) DemoteToRenderTextureCamera(camera);
+
         headset.tag = "MainCamera";
         headset.enabled = true;
         var headsetListener = headset.GetComponent<AudioListener>();
@@ -208,21 +166,12 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         else if (GraphicsSettings.currentRenderPipeline == null)
             headset.stereoTargetEye = StereoTargetEyeMask.Both;
 
-        foreach (var cam in FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        foreach (var cam in disabledCameras ?? System.Array.Empty<Camera>())
         {
             if (cam == null || cam == headset) continue;
             if (!cam.gameObject.scene.IsValid()) continue;
 
             // Scope / weapon cameras: never write into the headset.
-            var isScope = cam.name.IndexOf("Lase", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                          cam.name.IndexOf("Laser", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                          cam.name.IndexOf("Scope", System.StringComparison.OrdinalIgnoreCase) >= 0;
-            if (isScope)
-            {
-                DemoteToRenderTextureCamera(cam);
-                continue;
-            }
-
             // Orphan editor Main Camera and any other stereo camera without a target texture.
             var camData = cam.GetComponent<UniversalAdditionalCameraData>();
             var stealsHeadset = cam.targetTexture == null &&
@@ -261,67 +210,7 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         if (cam.targetTexture == null) cam.enabled = false;
     }
 
-    IEnumerable<Transform> GroundRoots()
-    {
-        if (groundRoots != null && groundRoots.Length > 0)
-        {
-            foreach (var root in groundRoots)
-                if (root != null) yield return root;
-            yield break;
-        }
 
-        foreach (var name in new[] { "Topology", "TerrainProxy", "Terrain" })
-        {
-            var found = GameObject.Find(name);
-            if (found != null) yield return found.transform;
-        }
-
-        foreach (var terrain in FindObjectsByType<Terrain>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-            yield return terrain.transform;
-    }
-
-    void PrepareGround(int groundLayer)
-    {
-        foreach (var root in GroundRoots())
-        {
-            var hasCollider = false;
-
-            foreach (var terrain in root.GetComponentsInChildren<Terrain>(true))
-            {
-                if (terrain.GetComponent<TerrainCollider>() == null)
-                {
-                    var tc = terrain.gameObject.AddComponent<TerrainCollider>();
-                    tc.terrainData = terrain.terrainData;
-                }
-            }
-
-            foreach (var filter in root.GetComponentsInChildren<MeshFilter>(true))
-            {
-                if (filter.sharedMesh == null) continue;
-                if (filter.GetComponent<Collider>() != null) continue;
-                // Topology.fbx imports with colliders; this only covers meshes that still lack one.
-                var meshCollider = filter.gameObject.AddComponent<MeshCollider>();
-                meshCollider.sharedMesh = filter.sharedMesh;
-            }
-
-            foreach (var col in root.GetComponentsInChildren<Collider>(true))
-            {
-                if (col.isTrigger) continue;
-                col.gameObject.layer = groundLayer;
-                hasCollider = true;
-            }
-
-            if (!hasCollider) continue;
-
-            // One area per root collects every collider under it.
-            var area = root.GetComponent<TeleportationArea>();
-            if (area == null) area = root.gameObject.AddComponent<TeleportationArea>();
-            area.enabled = true;
-            area.interactionLayers = -1;
-            area.filterSelectionByHitNormal = true;
-            area.upNormalToleranceDegrees = maxSlopeDegrees;
-        }
-    }
 
     void SetupBody(LayerMask groundMask)
     {
@@ -384,9 +273,9 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
     void SetupTeleportRays(LayerMask groundMask)
     {
         // Ground only: props and launchers in front of the ground would turn the reticle red.
-        foreach (var ray in origin.GetComponentsInChildren<XRRayInteractor>(true))
+        foreach (var ray in teleportRays ?? System.Array.Empty<XRRayInteractor>())
         {
-            if (!ray.gameObject.name.Contains("Teleport")) continue;
+            if (ray == null) continue;
             ray.hitDetectionType = XRRayInteractor.HitDetectionType.Raycast;
             ray.raycastMask = groundMask;
             ray.interactionLayers = -1;
@@ -397,17 +286,4 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
             provider.enabled = true;
     }
 
-    void PlantOnGround(LayerMask groundMask)
-    {
-        var start = origin.transform.position + Vector3.up * 50f;
-        if (!Physics.Raycast(start, Vector3.down, out var hit, 400f, groundMask, QueryTriggerInteraction.Ignore))
-            return;
-
-        var body = origin.GetComponent<CharacterController>();
-        var wasEnabled = body != null && body.enabled;
-        if (body != null) body.enabled = false;
-        var p = origin.transform.position;
-        origin.transform.position = new Vector3(p.x, hit.point.y + SkinWidth, p.z);
-        if (body != null) body.enabled = wasEnabled;
-    }
 }

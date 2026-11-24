@@ -14,8 +14,9 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 [AddComponentMenu("B1/Magnet Drop Zone")]
 public sealed class MagnetDropZone : MonoBehaviour
 {
-    [Tooltip("Only this object snaps. Empty = any grabbable object.")]
+    [Tooltip("Optional single accepted object. Assign this or Accepted Objects explicitly.")]
     [SerializeField] XRGrabInteractable acceptedObject;
+    [SerializeField] List<XRGrabInteractable> acceptedObjects = new List<XRGrabInteractable>();
     [Tooltip("Release closer than this (meters, center to center) to snap.")]
     [Min(0.05f)] [SerializeField] float snapRadius = 0.8f;
     [Tooltip("Closer than this it snaps even while still held.")]
@@ -33,13 +34,14 @@ public sealed class MagnetDropZone : MonoBehaviour
     static readonly HashSet<XRGrabInteractable> Claimed = new HashSet<XRGrabInteractable>();
 
     readonly List<XRGrabInteractable> watched = new List<XRGrabInteractable>();
-    readonly List<XRGrabInteractable> acceptedList = new List<XRGrabInteractable>();
     Vector3 localCenter;
     bool filled;
 
     public bool IsFilled => filled;
     public float SnapRadius => snapRadius;
     public XRGrabInteractable AcceptedObject => acceptedObject;
+    public XRGrabInteractable PlacedObject { get; private set; }
+    public bool HasAssignedObjects => acceptedObject != null || acceptedObjects.Exists(grab => grab != null);
 
     /// <summary>True while (or after) some zone has taken this object.</summary>
     public static bool IsClaimed(XRGrabInteractable grab) => grab != null && Claimed.Contains(grab);
@@ -47,7 +49,7 @@ public sealed class MagnetDropZone : MonoBehaviour
     public void Configure(XRGrabInteractable accepted, GameObject placeholder, float radius)
     {
         acceptedObject = accepted;
-        acceptedList.Clear();
+        acceptedObjects.Clear();
         hideWhenFilled = placeholder;
         snapRadius = radius;
         CacheCenter();
@@ -58,9 +60,9 @@ public sealed class MagnetDropZone : MonoBehaviour
     public void Configure(IEnumerable<XRGrabInteractable> accepted, GameObject placeholder, float radius)
     {
         acceptedObject = null;
-        acceptedList.Clear();
+        acceptedObjects.Clear();
         foreach (var grab in accepted)
-            if (grab != null) acceptedList.Add(grab);
+            if (grab != null) acceptedObjects.Add(grab);
         hideWhenFilled = placeholder;
         snapRadius = radius;
         CacheCenter();
@@ -70,7 +72,7 @@ public sealed class MagnetDropZone : MonoBehaviour
     public void Accept(XRGrabInteractable accepted)
     {
         acceptedObject = accepted;
-        acceptedList.Clear();
+        acceptedObjects.Clear();
         if (isActiveAndEnabled) Rehook();
     }
 
@@ -88,6 +90,11 @@ public sealed class MagnetDropZone : MonoBehaviour
         Unhook();
     }
 
+    void OnDestroy()
+    {
+        if (PlacedObject != null) Claimed.Remove(PlacedObject);
+    }
+
     /// <summary>Spots can sit close together; only the nearest free one that accepts the object takes it.</summary>
     bool IsNearestFreeZone(XRGrabInteractable grab, float myDistance)
     {
@@ -99,7 +106,8 @@ public sealed class MagnetDropZone : MonoBehaviour
         return true;
     }
 
-    bool Accepts(XRGrabInteractable grab) => watched.Contains(grab);
+    public bool Accepts(XRGrabInteractable grab) => grab != null &&
+        (acceptedObject != null ? acceptedObject == grab : acceptedObjects.Contains(grab));
 
     /// <summary>Center of the placeholder's mesh, so pivots placed off-center do not matter.</summary>
     void CacheCenter()
@@ -115,10 +123,9 @@ public sealed class MagnetDropZone : MonoBehaviour
         Unhook();
         if (acceptedObject != null)
             watched.Add(acceptedObject);
-        else if (acceptedList.Count > 0)
-            watched.AddRange(acceptedList);
         else
-            watched.AddRange(FindObjectsByType<XRGrabInteractable>(FindObjectsInactive.Exclude, FindObjectsSortMode.None));
+            foreach (var grab in acceptedObjects)
+                if (grab != null && !watched.Contains(grab)) watched.Add(grab);
 
         foreach (var grab in watched)
             if (grab != null) grab.selectExited.AddListener(OnReleased);
@@ -193,6 +200,7 @@ public sealed class MagnetDropZone : MonoBehaviour
 
         grab.transform.SetPositionAndRotation(transform.position, transform.rotation);
         HoldStill(body);
+        PlacedObject = grab;
 
         onSnapped?.Invoke();
         Snapped?.Invoke(grab);
@@ -225,6 +233,7 @@ public sealed class MagnetDropZone : MonoBehaviour
 
     void OnDrawGizmosSelected()
     {
+        CacheCenter();
         Gizmos.color = new Color(1f, 0.8f, 0.2f, 0.8f);
         Gizmos.DrawWireSphere(transform.TransformPoint(localCenter), snapRadius);
     }

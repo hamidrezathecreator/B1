@@ -39,6 +39,12 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [Tooltip("Expanding cloud radius is tested against this point (usually the headset). Empty = XR Origin camera in the cloud's scene.")]
     [SerializeField] private Transform playerListener;
     [SerializeField] private bool notifyWhenCloudReachesPlayer = true;
+    [Tooltip("Controller vibration strength when the cloud reaches the player. Zero disables vibration.")]
+    [SerializeField, Range(0f, 1f)] private float playerEngulfVibrationAmplitude = 0.8f;
+    [SerializeField, Min(0f)] private float playerEngulfVibrationSeconds = 0.4f;
+    [Tooltip("Sound when the expanding cloud reaches the player. Empty uses a generated pressure hit.")]
+    [SerializeField] private AudioClip playerEngulfSound;
+    [SerializeField, Range(0f, 1f)] private float playerEngulfSoundVolume = 0.7f;
     public UnityEvent<Vector3> onPlayerEngulfed = new UnityEvent<Vector3>();
 
     /// <summary>Fired once per cloud when the listener enters the expanding sphere (world center + radius).</summary>
@@ -200,6 +206,8 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         if (listener == null) return;
         if (Vector3.Distance(listener.position, center) > worldRadius) return;
         fired = true;
+        ControllerHaptics.Pulse(playerEngulfVibrationAmplitude, playerEngulfVibrationSeconds);
+        PlayerImpactAudio.PlayCloudHit(playerEngulfSound, playerEngulfSoundVolume);
         PlayerEngulfed?.Invoke(center, worldRadius);
         onPlayerEngulfed.Invoke(center);
     }
