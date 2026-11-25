@@ -6,7 +6,6 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEngine.XR.Interaction.Toolkit.Interactables;
-using UnityEngine.XR.Interaction.Toolkit.Interactors;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Teleportation;
 
 public sealed class ElevatorDoorIntro : MonoBehaviour
@@ -23,6 +22,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [SerializeField] Transform buttonPressedPose;
     [SerializeField] XRSimpleInteractable[] floorButtons;
     [SerializeField] GameObject exitBarrier;
+    [SerializeField] XrPlayBoundaryVolume elevatorBoundary;
+    [SerializeField] XrPlayBoundaryVolume levelBoundary;
     [SerializeField] TeleportationArea[] outsideTeleportAreas;
     [SerializeField] XROrigin xrOrigin;
     [SerializeField] Transform rightController;
@@ -62,6 +63,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [Min(0f)] [SerializeField] float fadeOutSeconds = 0.8f;
 
     Coroutine nextSceneRoutine;
+    Coroutine elevatorRoutine;
+    Coroutine fadeRoutine;
     bool loadingNextScene;
     bool floorPressed;
     bool doorsOpenForPlayer;
@@ -69,6 +72,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     Transform playerParent;
     Vector3 buttonRestLocal;
 
+    public bool IsFadeComplete { get; private set; }
     public bool IsFloorPressed => floorPressed;
     public bool IsLoadingNextScene => loadingNextScene;
     public bool AreDoorsOpenForPlayer => doorsOpenForPlayer;
@@ -76,7 +80,10 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         playerSpawn != null && door01 != null && door02 != null && door01OpenPose != null &&
         door02OpenPose != null && elevatorButton != null && buttonPressedPose != null &&
         floorButtons != null && floorButtons.Length > 0 && System.Array.TrueForAll(floorButtons, item => item != null) &&
-        exitBarrier != null && xrOrigin != null && tabletGrab != null && tabletUi != null &&
+        exitBarrier != null && elevatorBoundary != null && levelBoundary != null &&
+        elevatorBoundary != levelBoundary && elevatorBoundary.transform.IsChildOf(elevatorRoot) &&
+        !levelBoundary.transform.IsChildOf(elevatorRoot) &&
+        xrOrigin != null && tabletGrab != null && tabletUi != null &&
         tabletCollider != null && tabletBody != null && table != null && fadeOverlay != null &&
         (!showPathToTable || (pathStart != null && pathTarget != null));
 
@@ -84,7 +91,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (!HasValidAssignments)
         {
-            Debug.LogError("ElevatorDoorIntro: assign the cabin, poses, button, tablet, table, player and fade overlay in the scene.", this);
+            Debug.LogError("ElevatorDoorIntro: assign the cabin, poses, button, cabin/level boundaries, tablet, table, player and fade overlay in the scene.", this);
             enabled = false;
             return;
         }
@@ -93,13 +100,14 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         BridgeXrPlaySetup.PrepareElevatorPlaySpace(xrOrigin);
         xrOrigin.transform.SetPositionAndRotation(playerSpawn.position, playerSpawn.rotation);
         xrOrigin.transform.SetParent(elevatorRoot, true);
+        SetElevatorBoundaryActive(true);
         exitBarrier.SetActive(true);
         SetOutsideTeleportEnabled(false);
         foreach (var button in floorButtons)
         {
+            button.enabled = false;
             button.selectEntered.AddListener(OnFloorSelected);
             button.activated.AddListener(OnFloorActivated);
-            button.hoverEntered.AddListener(OnFloorHovered);
         }
         foreach (var own in xrOrigin.GetComponentsInChildren<Collider>(true))
             Physics.IgnoreCollision(tabletCollider, own, true);
@@ -118,12 +126,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             handHint = HandHintBanner.Create(xrOrigin.Camera, handHintFont, elevatorHintMessage);
             handHint.SetHand(rightController);
         }
-        StartCoroutine(AutoFadeIn());
-    }
-
-    void OnFloorHovered(HoverEnterEventArgs args)
-    {
-        if (args.interactorObject is XRPokeInteractor) TryOpenDoors();
+        fadeRoutine = StartCoroutine(AutoFadeIn());
     }
 
     void OnFloorSelected(SelectEnterEventArgs args) => TryOpenDoors();
@@ -131,14 +134,15 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
     void TryOpenDoors()
     {
-        if (!enabled || !HasValidAssignments || floorPressed) return;
+        if (!enabled || !HasValidAssignments || !IsFadeComplete || floorPressed) return;
         floorPressed = true;
+        foreach (var button in floorButtons) button.enabled = false;
         ButtonClickSound.Play();
         if (handHint != null) handHint.Hide();
         handHint = null;
         if (buttonShake != null) buttonShake.ShakeFor(buttonShakeSeconds, buttonShakeStrength);
         StartCoroutine(AnimateButtonPress());
-        StartCoroutine(RideThenOpenDoors());
+        elevatorRoutine = StartCoroutine(RideThenOpenDoors());
     }
 
     IEnumerator AnimateButtonPress()
@@ -178,13 +182,28 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
         door01.localPosition = end01;
         door02.localPosition = end02;
+        CompleteElevatorRide();
+    }
+
+    void CompleteElevatorRide()
+    {
         exitBarrier.SetActive(false);
         xrOrigin.transform.SetParent(playerParent, true);
         BridgeXrPlaySetup.PrepareElevatorPlaySpace(xrOrigin);
+        SetElevatorBoundaryActive(false);
         SetOutsideTeleportEnabled(true);
         doorsOpenForPlayer = true;
         ShowPathToTable();
         OnTabletChecklistChanged(tabletUi.AllOptionsChecked);
+    }
+
+    void SetElevatorBoundaryActive(bool value)
+    {
+        elevatorBoundary.gameObject.SetActive(value);
+        levelBoundary.gameObject.SetActive(!value);
+        var enforcer = xrOrigin.GetComponent<XrPlayBoundaryEnforcer>();
+        if (enforcer == null) enforcer = xrOrigin.gameObject.AddComponent<XrPlayBoundaryEnforcer>();
+        enforcer.RefreshVolumes();
     }
 
     void SetOutsideTeleportEnabled(bool value)
@@ -243,6 +262,14 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (blackHoldSeconds > 0f) yield return new WaitForSecondsRealtime(blackHoldSeconds);
         yield return FadeTo(0f, fadeInSeconds);
+        FinishFadeIn();
+    }
+
+    void FinishFadeIn()
+    {
+        fadeOverlay.alpha = 0f;
+        IsFadeComplete = true;
+        foreach (var button in floorButtons) button.enabled = !floorPressed;
     }
 
     IEnumerator CrossfadeToTunnelMusic()
@@ -266,7 +293,28 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
 
     public void EditorTestPressElevatorButton()
     {
-        if (Application.isPlaying) TryOpenDoors();
+        if (!Application.isPlaying || !enabled || !HasValidAssignments) return;
+        EditorTestFinishFadeIn();
+        TryOpenDoors();
+    }
+
+    public void EditorTestFinishFadeIn()
+    {
+        if (!Application.isPlaying || !enabled || !HasValidAssignments) return;
+        if (fadeRoutine != null) StopCoroutine(fadeRoutine);
+        FinishFadeIn();
+    }
+
+    public void EditorTestCompleteElevatorRide()
+    {
+        if (!Application.isPlaying || !enabled || !HasValidAssignments || doorsOpenForPlayer) return;
+        EditorTestPressElevatorButton();
+        if (elevatorRoutine != null) StopCoroutine(elevatorRoutine);
+        elevatorRoot.SetPositionAndRotation(elevatorArrival.position, elevatorArrival.rotation);
+        door01.position = door01OpenPose.position;
+        door02.position = door02OpenPose.position;
+        StartCoroutine(CrossfadeToTunnelMusic());
+        CompleteElevatorRide();
     }
 
     public void EditorTestLoadNextSceneNow()
@@ -289,7 +337,6 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
                 if (button == null) continue;
                 button.selectEntered.RemoveListener(OnFloorSelected);
                 button.activated.RemoveListener(OnFloorActivated);
-                button.hoverEntered.RemoveListener(OnFloorHovered);
             }
         if (handHint != null) handHint.Hide();
     }

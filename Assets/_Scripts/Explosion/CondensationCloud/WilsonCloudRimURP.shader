@@ -36,6 +36,7 @@ Shader "JangBalad/Effects/Wilson Cloud Rim URP"
             #pragma target 2.0
             #pragma vertex Vert
             #pragma fragment Frag
+            #pragma multi_compile_instancing
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -60,6 +61,7 @@ Shader "JangBalad/Effects/Wilson Cloud Rim URP"
                 float4 positionOS : POSITION;
                 float3 normalOS   : NORMAL;
                 float2 uv         : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct Varyings
@@ -70,11 +72,14 @@ Shader "JangBalad/Effects/Wilson Cloud Rim URP"
                 float3 normalWS    : TEXCOORD2;
                 float3 viewDirWS   : TEXCOORD3;
                 float heightOS     : TEXCOORD4;
+                UNITY_VERTEX_OUTPUT_STEREO
             };
 
             Varyings Vert(Attributes input)
             {
                 Varyings output;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
                 VertexPositionInputs position = GetVertexPositionInputs(input.positionOS.xyz);
                 VertexNormalInputs normal = GetVertexNormalInputs(input.normalOS);
 
@@ -90,6 +95,7 @@ Shader "JangBalad/Effects/Wilson Cloud Rim URP"
 
             half4 Frag(Varyings input) : SV_Target
             {
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
                 half4 cloudTex = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, input.uvMain);
                 half rimTex = SAMPLE_TEXTURE2D(_RimTex, sampler_RimTex, input.uvRim).r;
 

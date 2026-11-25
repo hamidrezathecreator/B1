@@ -135,9 +135,9 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     {
         step = Step.Grab;
         SetWalking(true);
+        ClearButtonHighlight();
+        origin.GetComponent<ControllerHandsPresentation>()?.ShowHands();
         ShowBanner(grabMessage);
-        // The universal controller's grip is the side "Bumper".
-        HighlightButton("Grip", "Bumper");
     }
 
     void OnCaseGrabbed(SelectEnterEventArgs args)
@@ -146,6 +146,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (args.interactorObject is XRSocketInteractor) return;
         var grabbed = args.interactableObject as XRGrabInteractable;
         if (grabbed == null || Array.IndexOf(pickupCases, grabbed) < 0 || MagnetDropZone.IsClaimed(grabbed)) return;
+        if (step == Step.Teleport) BeginGrabStep();
         carriedCase = grabbed;
         var firstTime = step != Step.Carry;
         step = Step.Carry;
@@ -192,7 +193,6 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         if (path != null) Destroy(path.gameObject);
         ClearButtonHighlight();
         ShowBanner(doneMessage);
-        origin.GetComponent<ControllerHandsPresentation>()?.CompleteTutorialAfterDelay(doneMessageSeconds);
         PlacementCompleted?.Invoke();
         if (doneMessageSeconds > 0f) yield return new WaitForSecondsRealtime(doneMessageSeconds);
         HideBanner();

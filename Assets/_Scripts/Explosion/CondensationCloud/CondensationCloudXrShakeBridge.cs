@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// Shakes the headset when <see cref="CondensationCloudSystem"/> reports the expanding cloud has reached the listener.
+/// Shakes the headset when the distance-based pressure front reaches the listener.
 /// Add beside <see cref="XRExplosionShake"/> on the XR Origin.
 /// </summary>
 [DisallowMultipleComponent]
@@ -23,6 +23,8 @@ public sealed class CondensationCloudXrShakeBridge : MonoBehaviour
     private void OnPlayerEngulfed(Vector3 center, float radius)
     {
         if (explosionShake == null || !isActiveAndEnabled) return;
-        explosionShake.ShakeWithStrength(shakeStrength);
+        if (CondensationCloudSystem.Instance != null &&
+            CondensationCloudSystem.Instance.gameObject.scene != gameObject.scene) return;
+        explosionShake.HeavyImpact(shakeStrength);
     }
 }

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 507185153de142efb94197c37d164ef7, type: 3}
+  m_Name: CentralScopeSettings
+  m_EditorClassIdentifier: 
+  shake:
+    radialBlurAmount: 1
+    radialBlurRadius: 0.757
+    vignetteAmount: 0.04
+    featherInnerRadius: 0.3
+    featherOuterRadius: 0.65
+    featherCurve: 2
+  fall:
+    radialBlurAmount: 1
+    radialBlurRadius: 0.85
+    vignetteAmount: 0.4
+    featherInnerRadius: 0.136
+    featherOuterRadius: 0.66
+    featherCurve: 2.367

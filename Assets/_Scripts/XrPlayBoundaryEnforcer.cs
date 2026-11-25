@@ -22,7 +22,7 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
 
     public void RefreshVolumes()
     {
-        volumes = FindObjectsByType<XrPlayBoundaryVolume>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        volumes = FindObjectsByType<XrPlayBoundaryVolume>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         active = volumes != null && volumes.Length > 0;
     }
 
@@ -31,9 +31,11 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
         if (!active || origin == null) return;
 
         var pos = origin.transform.position;
-        if (IsInsideAny(pos)) return;
+        var playerPoint = origin.Camera != null ? origin.Camera.transform.position : pos;
+        playerPoint.y = pos.y;
+        if (IsInsideAny(playerPoint)) return;
 
-        var clamped = ClosestAllowedPoint(pos);
+        var clamped = pos + ClosestAllowedPoint(playerPoint) - playerPoint;
         if ((clamped - pos).sqrMagnitude <= 1e-8f) return;
 
         if (body != null && body.enabled)
@@ -50,7 +52,7 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
     {
         foreach (var volume in volumes)
         {
-            if (volume != null && volume.Contains(worldPoint))
+            if (IsActive(volume) && volume.Contains(worldPoint))
                 return true;
         }
 
@@ -63,7 +65,7 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
         var bestDist = float.MaxValue;
         foreach (var volume in volumes)
         {
-            if (volume == null) continue;
+            if (!IsActive(volume)) continue;
             var clamped = volume.ClampPoint(worldPoint);
             var dist = (clamped - worldPoint).sqrMagnitude;
             if (dist >= bestDist) continue;
@@ -73,4 +75,8 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
 
         return best;
     }
+
+    static bool IsActive(XrPlayBoundaryVolume volume) =>
+        volume != null && volume.isActiveAndEnabled && volume.VolumeCollider != null &&
+        volume.VolumeCollider.enabled;
 }

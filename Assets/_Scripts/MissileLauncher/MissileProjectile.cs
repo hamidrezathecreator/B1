@@ -382,9 +382,17 @@ public sealed class MissileProjectile : MonoBehaviour
 
     void PlayFlightSound()
     {
-        if (flightSounds == null || flightSounds.Length == 0) return;
-        var clip = flightSounds[Random.Range(0, flightSounds.Length)];
-        if (clip == null) return;
+        var clip = flightSounds != null && flightSounds.Length > 0 ? flightSounds[Random.Range(0, flightSounds.Length)] : null;
+        if (clip == null)
+        {
+            if (flightAudioSource == null) flightAudioSource = PlayerImpactAudio.PlayMissileWhoosh(transform);
+            if (flightAudioSource != null)
+            {
+                UpdateFlightSoundVolume();
+                flightAudioSource.Play();
+            }
+            return;
+        }
         if (flightAudioSource == null)
         {
             var soundObject = new GameObject("Flight Audio");

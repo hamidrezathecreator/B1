@@ -7,6 +7,8 @@ Gameplay objects, interaction colliders, destinations and flow components are sa
 Select **Level 2 Flow** in `Scenes/Production/Lvl2_MissileTunnel.unity`.
 
 - **Elevator Door Intro** references the cabin, doors, floor-button interactables, barrier, tablet, table, player, fade overlay and audio sources.
+- **Elevator Boundary** stays active through fade, button waiting, travel and door opening. It is a child of the moving cabin. **Level Boundary** starts inactive and replaces it only after both doors finish opening. The enforcer follows the headset horizontally, including room-scale movement.
+- Fade completion comes from the intro's actual fade routine. Only then are the floor buttons enabled. A single accepted press starts the ride; tablet progress cannot bypass the closed doors.
 - Move **Player Spawn** inside the cabin to set the starting position. Move **Elevator Arrival** to set the cabin's destination. Keep the arrival outside the moving cabin hierarchy.
 - Move the **Door 1/2 Open Pose** and **Floor Button Pressed Pose** anchors to edit the animation destinations. Keep these anchors beside their moving objects, not beneath them.
 - **Tablet Path Start**, **Tablet Path Corner** and **Tablet Path Destination** define the route after the doors open.

@@ -12,7 +12,6 @@ public sealed class ControllerHandsPresentation : MonoBehaviour
     static bool handsUnlocked;
     XROrigin origin;
     XrHandsRig hands;
-    bool completingTutorial;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     static void ResetSession() => handsUnlocked = false;
@@ -64,22 +63,12 @@ public sealed class ControllerHandsPresentation : MonoBehaviour
         }
     }
 
-    public void CompleteTutorialAfterDelay(float delaySeconds)
+    public void ShowHands()
     {
-        if (completingTutorial || handsUnlocked) return;
-        completingTutorial = true;
-        StartCoroutine(CompleteTutorial(delaySeconds));
-    }
-
-    IEnumerator CompleteTutorial(float delaySeconds)
-    {
-        if (delaySeconds > 0f) yield return new WaitForSecondsRealtime(delaySeconds);
-
-        ControllerHaptics.Pulse(vibrationAmplitude, vibrationSeconds);
-
-        if (vibrationSeconds > 0f) yield return new WaitForSecondsRealtime(vibrationSeconds);
+        if (handsUnlocked) return;
         handsUnlocked = true;
-        if (hands == null || origin == null) yield break;
+        ControllerHaptics.Pulse(vibrationAmplitude, vibrationSeconds);
+        if (hands == null || origin == null) return;
         hands.UseControllerModels(false);
         hands.Setup(origin);
     }

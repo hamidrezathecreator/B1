@@ -5386,8 +5386,12 @@ PrefabInstance:
       value: Play Boundary Lvl3
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.88687
+      objectReference: {fileID: 0}
+    - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 18.364014
+      value: 99.4
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalPosition.y
@@ -5395,7 +5399,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -12.604996
+      value: 331.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.93251276
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalRotation.x
@@ -5403,11 +5411,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalRotation.y
-      value: -0
+      value: -0.361137
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_LocalRotation.z
       value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5738029461122334456, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: -42.34
       objectReference: {fileID: 0}
     - target: {fileID: 5738029461122334457, guid: bfd71a3e9e4c5b2f8a6d0e1c4f73920a, type: 3}
       propertyPath: m_Size.x
@@ -10217,6 +10229,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1994378209}
     m_Modifications:
+    - target: {fileID: 1579491960159202299, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+      propertyPath: explosionShake
+      value: 
+      objectReference: {fileID: 1429904692}
     - target: {fileID: 1717954561962503725, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       propertyPath: m_Name
       value: XR Origin (XR Rig)

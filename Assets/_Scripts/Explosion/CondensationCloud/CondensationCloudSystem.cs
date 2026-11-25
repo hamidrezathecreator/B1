@@ -20,7 +20,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField] private Material fallbackMaterial;
     [SerializeField, Min(0.01f)] private float defaultLifetime = 0.35f;
     [SerializeField, Range(0f, 0.2f)] private float preDelay = 0.03f;
-    [SerializeField, Range(0.05f, 0.5f)] private float attackFraction = 0.2f;
+    [SerializeField, Range(0.05f, 0.9f)] private float attackFraction = 0.5f;
     [SerializeField, Range(0f, 1f)] private float peakAlpha = 0.75f;
     [SerializeField, Min(1)] private int initialCapacity = 12;
     [SerializeField, Min(1)] private int maxPoolSize = 64;
@@ -36,7 +36,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField, Min(0f)] private float timeScaleRampDuration = 0.15f;
 
     [Header("Player engulfment")]
-    [Tooltip("Expanding cloud radius is tested against this point (usually the headset). Empty = XR Origin camera in the cloud's scene.")]
+    [Tooltip("Distance to the headset drives pressure arrival. Assigning an XR Origin or one of its children resolves to its tracked camera. Empty = scene XR Origin camera.")]
     [SerializeField] private Transform playerListener;
     [SerializeField] private bool notifyWhenCloudReachesPlayer = true;
     [Tooltip("Controller vibration strength when the cloud reaches the player. Zero disables vibration.")]
@@ -46,8 +46,18 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField] private AudioClip playerEngulfSound;
     [SerializeField, Range(0f, 1f)] private float playerEngulfSoundVolume = 0.7f;
     public UnityEvent<Vector3> onPlayerEngulfed = new UnityEvent<Vector3>();
+    [Header("Cloud-thrown debris")]
+    [SerializeField] private Transform[] objectsToThrow = Array.Empty<Transform>();
+    [SerializeField, Min(0.01f)] private float throwSpeed = 85f;
+    [SerializeField, Min(0.05f)] private float maximumThrowSeconds = 0.75f;
+    [SerializeField, Min(0f)] private float throwSpacing = 0.12f;
+    [SerializeField, Min(0.01f)] private float playerHitRadius = 0.65f;
+    private readonly System.Collections.Generic.HashSet<Transform> thrownObjects = new();
+    private int flyingDebris;
+    private int pendingPressureWaves;
+    public bool HasFlyingDebris => flyingDebris > 0 || pendingPressureWaves > 0;
 
-    /// <summary>Fired once per cloud when the listener enters the expanding sphere (world center + radius).</summary>
+    /// <summary>Fired once when the distance-based pressure front reaches the listener.</summary>
     public static event Action<Vector3, float> PlayerEngulfed;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -80,17 +90,23 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     public GameObject Spawn(Vector3 position, float radius, float lifetime = -1f,
         ExplosionTimeScaleSettings.Profile? timeScale = null, bool useUnscaledTime = false)
     {
+        float duration = lifetime > 0f ? lifetime : defaultLifetime;
+        float worldRadius = Mathf.Max(0.005f, radius);
+        var scale = timeScale ?? ExplosionTimeScaleSettings.Current;
+        if (notifyWhenCloudReachesPlayer && ResolveListener() != null)
+        {
+            pendingPressureWaves++;
+            StartCoroutine(TrackPressureArrival(position, worldRadius, duration, scale));
+        }
         if (_pool == null || activeCloudCount >= Mathf.Max(1, maxSimultaneousClouds)) return null;
         var cloud = _pool.Get();
         activeCloudCount++;
         cloud.transform.SetPositionAndRotation(position, Quaternion.identity);
         float diameter = Mathf.Max(0.01f, radius * 2f);
-        float duration = lifetime > 0f ? lifetime : defaultLifetime;
         cloud.transform.localScale = Vector3.zero;
         var renderer = cloud.GetComponentInChildren<Renderer>();
         SetCloudAlpha(renderer, 0f);
-        var scale = timeScale ?? ExplosionTimeScaleSettings.Current;
-        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer, scale, useUnscaledTime));
+        StartCoroutine(AnimateAndRelease(preDelay, duration, diameter, cloud, renderer, scale));
         return cloud;
     }
 
@@ -114,15 +130,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
             if (fallbackMaterial != null)
                 instance.GetComponent<Renderer>().sharedMaterial = fallbackMaterial;
         }
-        var sphere = instance.GetComponent<SphereCollider>();
-        if (sphere == null) sphere = instance.AddComponent<SphereCollider>();
-        sphere.center = Vector3.zero;
-        sphere.radius = 0.5f;
-        sphere.isTrigger = true;
-        var body = instance.GetComponent<Rigidbody>();
-        if (body == null) body = instance.AddComponent<Rigidbody>();
-        body.isKinematic = true;
-        body.useGravity = false;
+        foreach (var collider in instance.GetComponentsInChildren<Collider>()) collider.enabled = false;
         instance.name = "CondensationCloud";
         return instance;
     }
@@ -132,92 +140,121 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     private static void OnDestroy(GameObject cloud) { if (cloud != null) Destroy(cloud); }
 
     private IEnumerator AnimateAndRelease(float delay, float seconds, float diameter, GameObject cloud, Renderer renderer,
-        ExplosionTimeScaleSettings.Profile timeScale, bool useUnscaledTime)
+        ExplosionTimeScaleSettings.Profile timeScale)
     {
-        if (delay > 0f)
-        {
-            if (useUnscaledTime) yield return new WaitForSecondsRealtime(delay);
-            else yield return new WaitForSeconds(delay);
-        }
+        if (delay > 0f) yield return new WaitForSeconds(delay);
         float attack = Mathf.Clamp(seconds * attackFraction, 0.01f, seconds);
-        float wallPlayback = 0f;
-        float virtualElapsed = 0f;
-        bool engulfNotified = false;
-        // PrimeTween uses the same global scaled clock as particles and bridge debris.
-        var expansion = Tween.Scale(cloud.transform, 0f, diameter, attack, ease: Ease.OutCubic, useUnscaledTime: useUnscaledTime);
-        Tween contraction = default;
-        bool contracting = false;
-        // The frame before spawning is not part of this cloud's lifetime.
+        float playback = 0f;
+        float elapsed = 0f;
         yield return null;
-        while (virtualElapsed < seconds && cloud != null)
+        while (elapsed < seconds && cloud != null)
         {
-            float dt = useUnscaledTime ? Time.unscaledDeltaTime : Time.deltaTime;
-            wallPlayback += dt;
-            float playbackScale = timeScale.Evaluate(wallPlayback);
-            virtualElapsed += dt * playbackScale;
-            if (expansion.isAlive) expansion.timeScale = playbackScale;
-            float alpha;
-            if (virtualElapsed <= attack)
-            {
-                float rise = 1f - Mathf.Pow(1f - Mathf.Clamp01(virtualElapsed / attack), 3f);
-                alpha = rise * peakAlpha;
-            }
-            else
-            {
-                if (!contracting)
-                {
-                    contracting = true;
-                    if (expansion.isAlive) expansion.Complete();
-                    contraction = Tween.Scale(cloud.transform, diameter, diameter * 0.88f,
-                        Mathf.Max(0.001f, seconds - attack), ease: Ease.InOutSine, useUnscaledTime: useUnscaledTime);
-                }
-                if (contraction.isAlive) contraction.timeScale = playbackScale;
-                float fall = Mathf.Clamp01((virtualElapsed - attack) / Mathf.Max(0.001f, seconds - attack));
-                fall = fall * fall * (3f - 2f * fall);
-                alpha = (1f - fall) * peakAlpha;
-            }
-            SetCloudAlpha(renderer, alpha);
-            // Test the actual sphere each rendered frame. XR headsets need no collider,
-            // and this remains accurate while fixed-step physics is frozen.
-            var sphere = cloud.GetComponent<SphereCollider>();
-            Vector3 center = sphere.transform.TransformPoint(sphere.center);
-            Vector3 lossy = sphere.transform.lossyScale;
-            float worldRadius = sphere.radius * Mathf.Max(Mathf.Abs(lossy.x), Mathf.Abs(lossy.y), Mathf.Abs(lossy.z));
-            TryNotifyPlayerEngulfed(cloud, center, worldRadius, ref engulfNotified);
+            playback += Time.deltaTime;
+            elapsed += Time.deltaTime * timeScale.Evaluate(playback);
+            float expansion = Mathf.Clamp01(elapsed / attack);
+            float fade = Mathf.SmoothStep(0f, 1f, (elapsed - attack) / Mathf.Max(0.001f, seconds - attack));
+            cloud.transform.localScale = Vector3.one * diameter * expansion * Mathf.Lerp(1f, 0.88f, fade);
+            SetCloudAlpha(renderer, peakAlpha * Mathf.Clamp01(elapsed / Mathf.Min(0.15f, attack)) * (1f - fade));
             yield return null;
         }
-        if (expansion.isAlive) expansion.Stop();
-        if (contraction.isAlive) contraction.Stop();
-
         if (cloud != null)
         {
             cloud.transform.localScale = Vector3.zero;
             SetCloudAlpha(renderer, 0f);
+            if (cloud.activeSelf && _pool != null) _pool.Release(cloud);
         }
-        if (cloud != null && cloud.activeSelf && _pool != null)
-            _pool.Release(cloud);
         activeCloudCount--;
     }
 
-    void TryNotifyPlayerEngulfed(GameObject cloud, Vector3 center, float worldRadius, ref bool fired)
+    IEnumerator TrackPressureArrival(Vector3 center, float radius, float seconds, ExplosionTimeScaleSettings.Profile timeScale)
     {
-        if (!notifyWhenCloudReachesPlayer || fired || cloud == null || worldRadius <= 0.0001f) return;
-        Transform listener = ResolveListener(cloud);
-        if (listener == null) return;
-        if (Vector3.Distance(listener.position, center) > worldRadius) return;
-        fired = true;
-        ControllerHaptics.Pulse(playerEngulfVibrationAmplitude, playerEngulfVibrationSeconds);
-        PlayerImpactAudio.PlayCloudHit(playerEngulfSound, playerEngulfSoundVolume);
-        PlayerEngulfed?.Invoke(center, worldRadius);
-        onPlayerEngulfed.Invoke(center);
+        if (preDelay > 0f) yield return new WaitForSeconds(preDelay);
+        float attack = Mathf.Clamp(seconds * attackFraction, 0.01f, seconds);
+        float playback = 0f;
+        float elapsed = 0f;
+        yield return null;
+        while (true)
+        {
+            var listener = ResolveListener();
+            if (listener == null) break;
+            playback += Time.deltaTime;
+            elapsed += Time.deltaTime * timeScale.Evaluate(playback);
+            float distanceTraveled = radius * Mathf.Clamp01(elapsed / attack);
+            if (Vector3.Distance(listener.position, center) <= distanceTraveled + playerHitRadius)
+            {
+                NotifyPressureArrival(listener, center, distanceTraveled);
+                break;
+            }
+            if (elapsed >= attack) break;
+            yield return null;
+        }
+        pendingPressureWaves--;
     }
 
-    Transform ResolveListener(GameObject cloud)
+    void NotifyPressureArrival(Transform listener, Vector3 center, float distanceTraveled)
     {
-        if (playerListener != null) return playerListener;
+        ControllerHaptics.Pulse(playerEngulfVibrationAmplitude, playerEngulfVibrationSeconds);
+        PlayerImpactAudio.PlayCloudHit(playerEngulfSound, playerEngulfSoundVolume);
+        PlayerEngulfed?.Invoke(center, distanceTraveled);
+        onPlayerEngulfed.Invoke(center);
+        for (int objectIndex = 0; objectIndex < objectsToThrow.Length; objectIndex++)
+        {
+            var debris = objectsToThrow[objectIndex];
+            if (debris == null || debris == listener || listener.IsChildOf(debris) || !thrownObjects.Add(debris)) continue;
+            flyingDebris++;
+            StartCoroutine(ThrowAtPlayer(debris, listener, objectIndex * throwSpacing));
+        }
+    }
+
+    IEnumerator ThrowAtPlayer(Transform debris, Transform listener, float delaySeconds)
+    {
+        if (delaySeconds > 0f) yield return new WaitForSeconds(delaySeconds);
+        if (debris == null || listener == null) { flyingDebris--; yield break; }
+        Tween.StopAll(debris);
+        debris.SetParent(null, true);
+        debris.gameObject.SetActive(true);
+        foreach (var body in debris.GetComponentsInChildren<Rigidbody>()) body.isKinematic = true;
+        foreach (var collider in debris.GetComponentsInChildren<Collider>()) collider.enabled = false;
+        var visual = debris.GetComponentInChildren<Renderer>();
+        var startPosition = visual != null ? visual.bounds.center : debris.position;
+        float travelSeconds = Mathf.Clamp((Vector3.Distance(startPosition, listener.position) - playerHitRadius) / Mathf.Max(0.01f, throwSpeed),
+            0.05f, maximumThrowSeconds);
+        float elapsed = 0f;
+        yield return null;
+        while (elapsed < travelSeconds && listener != null)
+        {
+            elapsed += Time.deltaTime;
+            if (debris != null)
+            {
+                debris.Rotate(new Vector3(80f, 120f, 65f) * Time.deltaTime, Space.Self);
+                var center = visual != null ? visual.bounds.center : debris.position;
+                debris.position += Vector3.Lerp(startPosition, listener.position, Mathf.Clamp01(elapsed / travelSeconds)) - center;
+            }
+            if (elapsed >= travelSeconds) break;
+            yield return null;
+        }
+        if (listener != null)
+        {
+            var shake = listener.GetComponentInParent<XRExplosionShake>();
+            if (shake != null) shake.HeavyImpact();
+            ControllerHaptics.Pulse(1f, 0.25f);
+            PlayerImpactAudio.PlayCloudHit(volume: 0.9f);
+        }
+        if (debris != null) debris.gameObject.SetActive(false);
+        flyingDebris--;
+    }
+
+    Transform ResolveListener()
+    {
+        if (playerListener != null)
+        {
+            var assignedOrigin = playerListener.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>();
+            if (assignedOrigin != null && assignedOrigin.Camera != null) return assignedOrigin.Camera.transform;
+            return playerListener;
+        }
         foreach (var origin in FindObjectsByType<Unity.XR.CoreUtils.XROrigin>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
-            if (origin.Camera == null || origin.gameObject.scene != cloud.scene) continue;
+            if (origin.Camera == null || origin.gameObject.scene != gameObject.scene) continue;
             return origin.Camera.transform;
         }
         return null;
@@ -227,7 +264,8 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     {
         if (renderer == null) return;
         renderer.GetPropertyBlock(SharedBlock);
-        Color color = SharedBlock.GetColor(MainColorId);
+        Color color = renderer.sharedMaterial != null && renderer.sharedMaterial.HasProperty(MainColorId)
+            ? renderer.sharedMaterial.GetColor(MainColorId) : Color.white;
         if (color.r == 0f && color.g == 0f && color.b == 0f && color.a == 0f) color = Color.white;
         color.a = Mathf.Clamp01(alpha);
         SharedBlock.SetColor(MainColorId, color);

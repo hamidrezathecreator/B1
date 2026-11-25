@@ -1,6 +1,7 @@
 using System.Collections;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using PrimeTween;
 
 /// <summary>
 /// Event-driven positional shake applied above XR tracked poses.
@@ -49,6 +50,74 @@ public sealed class XRExplosionShake : MonoBehaviour
     private float currentRisingIntensity;
     private bool shaking;
     private float pulseDurationOverride = -1f;
+    private Transform impactPivot;
+    private Tween impactPosition;
+    private Tween impactRotation;
+    private bool falling;
+    private CentralScopeCamera scopeCamera;
+
+    public void HeavyImpact(float value = 1f)
+    {
+        if (!shakeEnabled || !isActiveAndEnabled || !TryInitializeImpact()) return;
+        if (falling) return;
+        StopImpactMotion();
+        float amount = Mathf.Clamp01(value);
+        GetCentralScope()?.PlayShake(0.65f, amount);
+        impactPivot.localPosition = Vector3.down * 0.18f;
+        impactPosition = Tween.ShakeLocalPosition(impactPivot, new Vector3(0.16f, 0.12f, 0.1f) * amount,
+            0.65f, 24f, useUnscaledTime: true);
+        impactRotation = Tween.ShakeLocalRotation(impactPivot, new Vector3(7f, 4f, 9f) * amount,
+            0.65f, 18f, useUnscaledTime: true);
+    }
+
+    public void BeginFallShake()
+    {
+        if (!shakeEnabled || !isActiveAndEnabled || !TryInitializeImpact()) return;
+        StopImpactMotion();
+        falling = true;
+        GetCentralScope()?.BeginFall();
+        impactPosition = Tween.ShakeLocalPosition(impactPivot, new Vector3(0.09f, 0.07f, 0.08f),
+            1f, 20f, enableFalloff: false, cycles: -1, useUnscaledTime: true);
+        impactRotation = Tween.ShakeLocalRotation(impactPivot, new Vector3(3f, 2f, 4f),
+            1f, 13f, enableFalloff: false, cycles: -1, useUnscaledTime: true);
+    }
+
+    public void StopImpactMotion()
+    {
+        if (impactPosition.isAlive) impactPosition.Stop();
+        if (impactRotation.isAlive) impactRotation.Stop();
+        if (impactPivot != null)
+        {
+            impactPivot.localPosition = Vector3.zero;
+            impactPivot.localRotation = Quaternion.identity;
+        }
+        falling = false;
+        if (scopeCamera != null) scopeCamera.StopEffect();
+    }
+
+    private CentralScopeCamera GetCentralScope()
+    {
+        if (scopeCamera != null) return scopeCamera;
+        var camera = GetComponent<XROrigin>().Camera;
+        if (camera == null) return null;
+        scopeCamera = camera.GetComponent<CentralScopeCamera>();
+        if (scopeCamera == null) scopeCamera = camera.gameObject.AddComponent<CentralScopeCamera>();
+        return scopeCamera;
+    }
+
+    private bool TryInitializeImpact()
+    {
+        if (!TryInitialize()) return false;
+        if (impactPivot != null) return true;
+        impactPivot = new GameObject("XR Impact Motion").transform;
+        impactPivot.SetParent(cachedPivot, false);
+        for (int childIndex = cachedPivot.childCount - 1; childIndex >= 0; childIndex--)
+        {
+            var child = cachedPivot.GetChild(childIndex);
+            if (child != impactPivot) child.SetParent(impactPivot, false);
+        }
+        return true;
+    }
 
     private void OnEnable()
     {
@@ -113,6 +182,7 @@ public sealed class XRExplosionShake : MonoBehaviour
         BeginShake();
         ApplyShake();
         SmallShakeStarted?.Invoke(this);
+        GetCentralScope()?.PlayShake(ActivePulseDuration, value);
     }
 
     /// <summary>Stop immediately and restore the pivot.</summary>
@@ -120,6 +190,7 @@ public sealed class XRExplosionShake : MonoBehaviour
     {
         StopAllCoroutines();
         StopMotion();
+        StopImpactMotion();
     }
 
     private void StopMotion()
@@ -186,6 +257,7 @@ public sealed class XRExplosionShake : MonoBehaviour
         elapsed += delta;
         currentRisingIntensity = Mathf.MoveTowards(currentRisingIntensity,
             GetRisingIntensity(), delta / Mathf.Max(0.01f, risingFadeTime));
+        if (currentRisingIntensity > 0f) GetCentralScope()?.PlayShake(0.1f, currentRisingIntensity);
         if (!shaking && Mathf.Max(GetPulseIntensity(), currentRisingIntensity) > 0f)
         {
             if (!TryInitialize()) return;

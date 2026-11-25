@@ -36,6 +36,11 @@ public sealed class XrShockFallSequence : MonoBehaviour
     [SerializeField] Vector2 yawRange = new Vector2(-40f, 40f);
     [SerializeField] Vector2 rollRange = new Vector2(-35f, 35f);
     [Min(0.05f)] [SerializeField] float rotationBlendSeconds = 2.5f;
+    [SerializeField, Min(1f)] float rotationDegreesPerSecond = 32f;
+    [SerializeField, Min(0.1f)] float groundProbeDistance = 250f;
+    [SerializeField] LayerMask groundLayers = ~0;
+    XRExplosionShake fallShake;
+    ControllerFallHaptics fallHaptics;
 
     bool running;
     float fogStartDensity;
@@ -56,7 +61,7 @@ public sealed class XrShockFallSequence : MonoBehaviour
         running = true;
         var origin = FindAnyObjectByType<XROrigin>();
         if (origin != null) PlayerImpactAudio.PlayFall(fallingSound, fallingSoundVolume);
-        var fallHaptics = origin != null ? ControllerFallHaptics.Begin(this) : null;
+        fallHaptics = origin != null ? ControllerFallHaptics.Begin(this) : null;
         ResolvePlane();
         if (plane != null)
         {
@@ -71,6 +76,21 @@ public sealed class XrShockFallSequence : MonoBehaviour
             Random.Range(rollRange.x, rollRange.y));
 
         if (origin != null) SuspendLocomotion(origin);
+        if (origin != null)
+        {
+            fallShake = origin.GetComponent<XRExplosionShake>();
+            if (fallShake != null) fallShake.BeginFallShake();
+        }
+        float groundHeight = float.NegativeInfinity;
+        if (origin != null)
+        {
+            foreach (var hit in Physics.RaycastAll(origin.transform.position + Vector3.down * 0.5f,
+                Vector3.down, groundProbeDistance, groundLayers, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.transform.IsChildOf(origin.transform) || (plane != null && hit.transform.IsChildOf(plane))) continue;
+                groundHeight = Mathf.Max(groundHeight, hit.point.y);
+            }
+        }
 
         if (driveFog) CaptureFog();
 
@@ -79,6 +99,7 @@ public sealed class XrShockFallSequence : MonoBehaviour
 
         var speed = 0f;
         var elapsed = 0f;
+        var nextRotationTime = rotationBlendSeconds;
         while ((moveOrigin && origin != null) || (movePlane && plane != null))
         {
             elapsed += Time.deltaTime;
@@ -89,12 +110,25 @@ public sealed class XrShockFallSequence : MonoBehaviour
                 origin.transform.position += step;
                 if (rotationBlendSeconds > 0f)
                 {
-                    var rt = Mathf.Clamp01(elapsed / rotationBlendSeconds);
-                    origin.transform.rotation = Quaternion.Slerp(startRot, shockRot, rt);
+                    if (elapsed >= nextRotationTime)
+                    {
+                        shockRot = startRot * Quaternion.Euler(Random.Range(pitchRange.x, pitchRange.y),
+                            Random.Range(yawRange.x, yawRange.y), Random.Range(rollRange.x, rollRange.y));
+                        nextRotationTime = elapsed + rotationBlendSeconds;
+                    }
+                    origin.transform.rotation = Quaternion.RotateTowards(origin.transform.rotation, shockRot,
+                        rotationDegreesPerSecond * Time.deltaTime);
                 }
             }
 
             if (movePlane && plane != null) plane.position += step;
+            if (origin != null && origin.transform.position.y <= groundHeight)
+            {
+                var landingCorrection = Vector3.up * (groundHeight - origin.transform.position.y);
+                origin.transform.position += landingCorrection;
+                if (movePlane && plane != null) plane.position += landingCorrection;
+                break;
+            }
 
             if (driveFog && fogRampSeconds > 0f)
             {
@@ -108,6 +142,8 @@ public sealed class XrShockFallSequence : MonoBehaviour
         }
 
         if (fallHaptics != null) fallHaptics.StopVibration();
+        if (fallShake != null) fallShake.StopImpactMotion();
+        PlayerImpactAudio.StopFall();
 
         if (driveFog)
         {
@@ -115,6 +151,15 @@ public sealed class XrShockFallSequence : MonoBehaviour
             RenderSettings.fogColor = fogColor;
         }
 
+        running = false;
+    }
+
+    void OnDisable()
+    {
+        StopAllCoroutines();
+        if (fallHaptics != null) fallHaptics.StopVibration();
+        if (fallShake != null) fallShake.StopImpactMotion();
+        PlayerImpactAudio.StopFall();
         running = false;
     }
 

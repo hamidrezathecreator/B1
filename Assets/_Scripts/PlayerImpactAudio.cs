@@ -6,6 +6,49 @@ public static class PlayerImpactAudio
     static AudioClip cloudHitClip;
     static AudioClip fallClip;
     static AudioSource fallSource;
+    static AudioClip missileWhooshClip;
+    static AudioClip fighterJetClip;
+
+    public static void PlayFighterJet(AudioClip clip = null, float volume = 0.85f)
+    {
+        if (clip == null)
+        {
+            if (fighterJetClip == null) fighterJetClip = CreateAirPass(true);
+            clip = fighterJetClip;
+        }
+        Play(clip, volume, "Fighter Jet Flyby");
+    }
+
+    public static AudioSource PlayMissileWhoosh(Transform missile, AudioClip clip = null, float volume = 0.8f)
+    {
+        if (missile == null || volume <= 0f) return null;
+        if (clip == null)
+        {
+            if (missileWhooshClip == null) missileWhooshClip = CreateAirPass(false);
+            clip = missileWhooshClip;
+        }
+        var source = new GameObject("Missile Whoosh").AddComponent<AudioSource>();
+        source.transform.SetParent(missile, false);
+        source.playOnAwake = false;
+        source.spatialBlend = 0.7f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 20f;
+        source.maxDistance = 1800f;
+        source.dopplerLevel = 0f;
+        source.volume = Mathf.Clamp01(volume);
+        source.clip = clip;
+        source.loop = true;
+        source.Play();
+        return source;
+    }
+
+    public static void StopFall()
+    {
+        if (fallSource == null) return;
+        fallSource.Stop();
+        Object.Destroy(fallSource.gameObject);
+        fallSource = null;
+    }
 
     public static void PlayCloudHit(AudioClip clip = null, float volume = 0.7f)
     {
@@ -26,10 +69,10 @@ public static class PlayerImpactAudio
             if (fallClip == null) fallClip = CreateClip(true);
             clip = fallClip;
         }
-        fallSource = Play(clip, volume, "Player Falling Sound");
+        fallSource = Play(clip, volume, "Player Falling Sound", true);
     }
 
-    static AudioSource Play(AudioClip clip, float volume, string objectName)
+    static AudioSource Play(AudioClip clip, float volume, string objectName, bool loop = false)
     {
         var source = new GameObject(objectName).AddComponent<AudioSource>();
         source.playOnAwake = false;
@@ -37,9 +80,35 @@ public static class PlayerImpactAudio
         source.dopplerLevel = 0f;
         source.volume = Mathf.Clamp01(volume);
         source.clip = clip;
+        source.loop = loop;
         source.Play();
-        Object.Destroy(source.gameObject, clip.length);
+        if (!loop) Object.Destroy(source.gameObject, clip.length);
         return source;
+    }
+
+    static AudioClip CreateAirPass(bool jet)
+    {
+        float seconds = jet ? 5.5f : 1.6f;
+        var samples = new float[Mathf.CeilToInt(seconds * SampleRate) * 2];
+        var random = new System.Random(jet ? 3721 : 4259);
+        float filtered = 0f;
+        float phase = 0f;
+        for (int sampleIndex = 0; sampleIndex < samples.Length / 2; sampleIndex++)
+        {
+            float time = sampleIndex / (float)SampleRate;
+            float progress = time / seconds;
+            float noise = (float)random.NextDouble() * 2f - 1f;
+            filtered = Mathf.Lerp(filtered, noise, jet ? 0.16f : 0.4f);
+            float envelope = jet ? Mathf.Pow(Mathf.Sin(Mathf.PI * progress), 1.8f) : 0.85f;
+            phase += 2f * Mathf.PI * Mathf.Lerp(jet ? 145f : 320f, jet ? 65f : 210f, progress) / SampleRate;
+            float roar = filtered * 0.78f + Mathf.Sin(phase) * 0.13f + Mathf.Sin(phase * 2.03f) * 0.09f;
+            float pan = jet ? Mathf.Lerp(-0.85f, 0.85f, progress) : 0f;
+            samples[sampleIndex * 2] = roar * envelope * Mathf.Sqrt((1f - pan) * 0.5f);
+            samples[sampleIndex * 2 + 1] = roar * envelope * Mathf.Sqrt((1f + pan) * 0.5f);
+        }
+        var clip = AudioClip.Create(jet ? "Fighter Jet Pass" : "Missile Air Whoosh", samples.Length / 2, 2, SampleRate, false);
+        clip.SetData(samples, 0);
+        return clip;
     }
 
     static AudioClip CreateClip(bool falling)

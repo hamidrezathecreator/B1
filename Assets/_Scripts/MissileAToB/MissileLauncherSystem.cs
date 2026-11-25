@@ -48,6 +48,9 @@ public sealed class MissileLauncherSystem : MonoBehaviour
     [SerializeField, Min(0.01f)] private float flightDuration = 4f;
     [Tooltip("The direction the missile nose points in prefab local space. Usually +Z; use +Y for an upright model.")]
     [SerializeField] private Vector3 modelForwardAxis = Vector3.forward;
+    [Header("Missile whoosh")]
+    [SerializeField] private AudioClip missileWhoosh;
+    [SerializeField, Range(0f, 1f)] private float missileWhooshVolume = 0.8f;
 
     [Header("Impact sequence")]
     [Tooltip("A quad prefab with a QuadSequncerController and a Renderer on the same object.")]
@@ -262,6 +265,7 @@ public sealed class MissileLauncherSystem : MonoBehaviour
             }
             spawnedMissiles.Add(missile, destination);
             missile.SetActive(true);
+            PlayerImpactAudio.PlayMissileWhoosh(missile.transform, missileWhoosh, missileWhooshVolume);
             if (currentRun != runId) yield break;
             flights.Add(Tween.Position(missile.transform, destination, duration, Ease.Linear).OnComplete(() =>
             {

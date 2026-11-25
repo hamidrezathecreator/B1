@@ -28,10 +28,10 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     [FormerlySerializedAs("tExplosion13")]
     [SerializeField] float tFirstStrike = 2.55f;
     [Tooltip("Real seconds after the first impact before launching the second salvo. Slow motion finishes before launch.")]
-    [SerializeField, Min(0f)] float secondStrikeDelay = 10f;
+    [SerializeField, Min(0f)] float secondStrikeDelay = 2.5f;
 
     [FormerlySerializedAs("fallAfterExplosionTwoSeconds")]
-    [SerializeField, Min(0f)] float fallAfterSecondStrikeSeconds = 1f;
+    [SerializeField, Min(0f)] float fallAfterSecondStrikeSeconds = 0.15f;
 
     [Header("Refs")]
     [SerializeField] GameObject explosionOne;
@@ -51,10 +51,15 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     [SerializeField, Min(0.01f)] float condensationCloudRadius = 400f;
     [SerializeField] float condensationCloudLifetime = 5f;
 
-    [Header("First strike global slow motion: frozen impact to full speed")]
-    [SerializeField, Min(0.05f)] float explosionTimeScaleRampSeconds = 6f;
+    [Header("First strike global slow motion")]
+    [SerializeField, Min(0f)] float slowMotionDelaySeconds = 0.5f;
+    [SerializeField, Range(0.01f, 1f)] float minimumTimeScale = 0.08f;
+    [SerializeField, Min(0.05f)] float explosionTimeScaleRampSeconds = 2f;
     [Tooltip("Higher holds near frozen longer, then accelerates sharply.")]
     [SerializeField, Range(1f, 16f)] float slowMotionExponent = 8f;
+    [Header("Post-tutorial jet pass")]
+    [SerializeField] AudioClip fighterJetSound;
+    [SerializeField, Range(0f, 1f)] float fighterJetVolume = 0.85f;
     [Header("Building shake on every strike")]
     [SerializeField] Transform buildingShakeTarget;
     [SerializeField] Vector3 buildingShakeStrength = new Vector3(0.12f, 0.08f, 0.12f);
@@ -72,6 +77,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     [Min(0f)] [SerializeField] float fadeOutSeconds = 1f;
 
     [SerializeField, Min(0f)] float fadeAfterFallSeconds = 0.65f;
+    [SerializeField, Min(0.1f)] float maximumFallSeconds = 8f;
     Coroutine slowMotionRoutine;
     bool ownsTimeScale;
     float savedFixedDeltaTime;
@@ -127,6 +133,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (sequenceRunning || SequenceComplete) return;
         sequenceRunning = true;
+        if (firstStep <= 2) PlayerImpactAudio.PlayFighterJet(fighterJetSound, fighterJetVolume);
         sequenceRoutine = StartCoroutine(RunSequence(firstStep, initialDelay));
     }
 
@@ -156,6 +163,8 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
             if (!secondStrikePlayed) { AbortSequence(); yield break; }
 
             yield return new WaitForSecondsRealtime(fallAfterSecondStrikeSeconds);
+            while (CondensationCloudSystem.Instance != null && CondensationCloudSystem.Instance.HasFlyingDebris)
+                yield return null;
         }
         if (firstStep <= 4)
         {
@@ -246,7 +255,6 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         firstImpactTime = Time.unscaledTime;
         savedFixedDeltaTime = Time.fixedDeltaTime;
         ownsTimeScale = true;
-        Time.timeScale = 0f;
         slowMotionRoutine = StartCoroutine(RampGlobalTime());
         if (explosionOne != null) explosionOne.transform.position = position;
         PlayExplosionObject(explosionOne, ExplosionTimeScaleSettings.Profile.Identity);
@@ -298,13 +306,16 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     IEnumerator RampGlobalTime()
     {
         float elapsed = 0f;
-        yield return null; // Keep a frozen impact frame.
+        if (slowMotionDelaySeconds > 0f) yield return new WaitForSecondsRealtime(slowMotionDelaySeconds);
+        Time.timeScale = minimumTimeScale;
+        Time.fixedDeltaTime = savedFixedDeltaTime * minimumTimeScale;
+        float rampStartedAt = Time.unscaledTime;
         while (elapsed < explosionTimeScaleRampSeconds)
         {
-            elapsed += Time.unscaledDeltaTime;
+            elapsed = Time.unscaledTime - rampStartedAt;
             float t = Mathf.Clamp01(elapsed / Mathf.Max(0.05f, explosionTimeScaleRampSeconds));
             float k = Mathf.Max(1f, slowMotionExponent);
-            float scale = (Mathf.Exp(k * t) - 1f) / (Mathf.Exp(k) - 1f);
+            float scale = Mathf.Lerp(minimumTimeScale, 1f, (Mathf.Exp(k * t) - 1f) / (Mathf.Exp(k) - 1f));
             Time.timeScale = scale;
             Time.fixedDeltaTime = savedFixedDeltaTime * Mathf.Max(0.01f, scale);
             yield return null;
@@ -373,7 +384,12 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
 
     IEnumerator RunFallPhase()
     {
-        if (preferShockFall && shockFall != null) shockFall.BeginFall();
+        if (preferShockFall && shockFall != null)
+        {
+            shockFall.BeginFall();
+            float deadline = Time.unscaledTime + maximumFallSeconds;
+            while (shockFall.IsRunning && Time.unscaledTime < deadline) yield return null;
+        }
         yield return new WaitForSecondsRealtime(fadeAfterFallSeconds);
         // The drop continues through the scene transition fade.
     }

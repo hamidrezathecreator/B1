@@ -22,12 +22,6 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
     [SerializeField] ElevatorDoorIntro intro;
     [SerializeField] MilitaryTabletLcdUi tablet;
 
-    [Header("Fade tracking")]
-    [Tooltip("Unscaled seconds before step 1 is shown. Match ElevatorDoorIntro black hold + fade.")]
-    [SerializeField] float fadeCompleteSeconds = 4.5f;
-
-    float fadeTimer;
-
     protected override string[] StepNames => Steps;
 
     public int TabletCheckedCount => tablet != null ? tablet.CheckedCount : 0;
@@ -53,7 +47,7 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
         SetStep(0);
     }
 
-    public bool HasValidAssignments => intro != null && tablet != null;
+    public bool HasValidAssignments => intro != null && intro.HasValidAssignments && tablet != null;
 
     void Update()
     {
@@ -65,28 +59,14 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (intro == null) return;
 
-        if (StepIndex <= 0)
-        {
-            fadeTimer += Time.unscaledDeltaTime;
-            if (fadeTimer >= fadeCompleteSeconds && StepIndex < 1)
-                TrackStep(1);
-        }
-
-        if (!intro.IsFloorPressed)
-        {
-            if (StepIndex > 1 && StepIndex < 4) return;
-        }
-        else if (StepIndex < 2)
-            TrackStep(2);
-
-        if (intro.AreDoorsOpenForPlayer && StepIndex < 3)
-            TrackStep(3);
-
-        if (tablet != null && intro.AreDoorsOpenForPlayer)
-            TrackTabletProgress();
-
-        if (intro.IsLoadingNextScene && StepIndex < 7)
+        if (intro.IsLoadingNextScene)
             TrackStep(7);
+        else if (tablet != null && intro.AreDoorsOpenForPlayer)
+            TrackTabletProgress();
+        else if (intro.IsFloorPressed)
+            TrackStep(2);
+        else
+            TrackStep(intro.IsFadeComplete ? 1 : 0);
     }
 
     void TrackTabletProgress()
@@ -99,21 +79,24 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
             2 => 5,
             _ => 6
         };
-        if (StepIndex < target)
-            TrackStep(target);
+        TrackStep(target);
     }
 
     void OnTabletOptionToggled(int index, bool on)
     {
-        if (!on || tablet == null || intro == null || !intro.AreDoorsOpenForPlayer) return;
+        if (tablet == null || intro == null || !intro.AreDoorsOpenForPlayer || intro.IsLoadingNextScene) return;
         TrackTabletProgress();
     }
 
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying) return;
+        if (index >= 3) intro?.EditorTestCompleteElevatorRide();
         switch (index)
         {
+            case 1:
+                intro?.EditorTestFinishFadeIn();
+                break;
             case 2:
                 intro?.EditorTestPressElevatorButton();
                 break;
@@ -121,9 +104,12 @@ public sealed class Lvl2BuildLevelStateMachine : BuildLevelStateMachineBase
                 tablet?.EditorTestSetOptionChecked(0, true);
                 break;
             case 5:
+                tablet?.EditorTestSetOptionChecked(0, true);
                 tablet?.EditorTestSetOptionChecked(1, true);
                 break;
             case 6:
+                tablet?.EditorTestSetOptionChecked(0, true);
+                tablet?.EditorTestSetOptionChecked(1, true);
                 tablet?.EditorTestSetOptionChecked(2, true);
                 break;
             case 7:
