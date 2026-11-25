@@ -553,10 +553,9 @@ MonoBehaviour:
   - projectile: {fileID: 1363494640}
     destination: {fileID: 2120106014}
   droneRoot: {fileID: 910000001}
-  hideDroneUntilEngagement: 1
   delayBeforeDroneAppears: 2
-  orbitBeforeShootingSeconds: 6
   droneFlight: {fileID: 910000002}
+  delayBeforeReturnToLvl1: 4
   trackerPathTarget: {fileID: 1767850596}
   trackerScope: {fileID: 1165631120}
   showPathLikeLvl2: 1
@@ -14865,7 +14864,7 @@ MonoBehaviour:
   targets:
   - intact: {fileID: 395164438}
     destroyed: {fileID: 251120075}
-    delay: 33
+    delay: 3
   - intact: {fileID: 1979498500}
     destroyed: {fileID: 1299632503}
     delay: 3

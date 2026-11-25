@@ -59,6 +59,7 @@ public sealed class MissileLauncherController : MonoBehaviour
     public bool RotationCompleted { get; private set; }
     public bool IsRotating { get; private set; }
     public bool IsLaunching { get; private set; }
+    public bool LaunchSequenceCompleted { get; private set; }
     public bool CanLaunch => isActiveAndEnabled && !IsRotating && !IsLaunching && (!requireRotationPhase || RotationCompleted);
     public bool HasValidAssignments => container != null && missiles != null && missiles.Length > 0 &&
         System.Array.TrueForAll(missiles, slot => slot != null && slot.prefab != null);
@@ -113,6 +114,7 @@ public sealed class MissileLauncherController : MonoBehaviour
         IsRotating = false;
         IsLaunching = false;
         RotationCompleted = false;
+        LaunchSequenceCompleted = false;
         container.localRotation = initialLocalRotation;
         foreach (var missile in spawnedMissiles)
             if (missile != null) { missile.ResetProjectile(); missile.gameObject.SetActive(false); Destroy(missile.gameObject); }
@@ -145,6 +147,7 @@ public sealed class MissileLauncherController : MonoBehaviour
 
     IEnumerator LaunchRoutine()
     {
+        LaunchSequenceCompleted = false;
         IsLaunching = true;
         missileSequenceStarted?.Invoke();
         for (var i = 0; i < missiles.Length; i++)
@@ -166,6 +169,7 @@ public sealed class MissileLauncherController : MonoBehaviour
             if (wait > 0f) yield return new WaitForSeconds(wait);
         }
         IsLaunching = false;
+        LaunchSequenceCompleted = true;
         missileSequenceCompleted?.Invoke();
     }
 

@@ -116,6 +116,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     Quaternion homeRotation;
     TrackerScopeThermalVision scopeThermalDriver;
     bool thermalEngaged;
+    bool engagementEnabled = true;
     bool scopeReady;
     bool wasContextButton;
     RectTransform crosshairRoot;
@@ -227,7 +228,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
 
     public void SetThermalEngaged(bool engaged)
     {
-        thermalEngaged = engaged && scopeThermalView;
+        thermalEngaged = engaged && scopeThermalView && engagementEnabled;
         scopeThermalDriver?.SetUserThermalEnabled(thermalEngaged);
         if (thermalEngaged && scopeCamera != null)
             ThermalDroneHeatmap.Apply(target, droneHeatmapMaterial);
@@ -236,6 +237,13 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             name + ": tracker scope thermal " + (thermalEngaged ? "ON" : "OFF") +
             (scopeCamera != null ? " (camera: " + scopeCamera.name + ", enabled=" + scopeCamera.enabled + ")" : " (no scope camera)"),
             this);
+    }
+
+    public void SetEngagementEnabled(bool enabled)
+    {
+        engagementEnabled = enabled;
+        lockTimer = 0f;
+        SetThermalEngaged(enabled);
     }
 
     /// <summary>Called after XR headset camera setup so scope cameras keep their render texture.</summary>
@@ -703,7 +711,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
 
     void UpdateThermalContextButton(bool held)
     {
-        if (!thermalToggledByContextButton || !scopeThermalView) return;
+        if (!engagementEnabled || !thermalToggledByContextButton || !scopeThermalView) return;
         if (thermalContextButtonRequiresHeld && !held)
         {
             wasContextButton = false;
@@ -731,7 +739,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     {
         if (confirmingLock || missileAway) return;
         SetFullLockVisual(false);
-        var visible = !targetDown && (held || !requireHeld) && IsTargetVisible();
+        var visible = engagementEnabled && !targetDown && (held || !requireHeld) && IsTargetVisible();
         if (visible != targetVisible || !breathTween.isAlive)
         {
             targetVisible = visible;

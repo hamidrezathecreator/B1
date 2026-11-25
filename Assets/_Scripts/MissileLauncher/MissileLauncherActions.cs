@@ -16,6 +16,8 @@ public sealed class MissileLauncherActions : MonoBehaviour
     public bool HasValidAssignments => launchers != null && launchers.Length > 0 &&
         System.Array.TrueForAll(launchers, launcher => launcher != null && launcher.HasValidAssignments);
     public bool HasTwoTutorialLaunchers => HasValidAssignments && launchers.Length == 2 && launchers[0] != launchers[1];
+    public bool TutorialLaunchesCompleted => HasTwoTutorialLaunchers &&
+        System.Array.TrueForAll(launchers, launcher => launcher.LaunchSequenceCompleted);
     readonly Dictionary<MissileLauncherController, UnityAction> handlers = new Dictionary<MissileLauncherController, UnityAction>();
     readonly HashSet<MissileLauncherController> pending = new HashSet<MissileLauncherController>();
     readonly List<MissileLauncherController> participants = new List<MissileLauncherController>();

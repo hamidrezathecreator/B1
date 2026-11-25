@@ -4,7 +4,7 @@ using Unity.XR.CoreUtils;
 using UnityEngine;
 
 /// <summary>
-/// Lvl3: tutorial two-button launch → auto salvo → drone orbit + kills two air units → path to tracker → lock-on kill.
+/// Lvl3: two-button launch, auto salvo, destroy two units, drone orbit, tracker pickup and lock-on kill.
 /// </summary>
 [AddComponentMenu("B1/Lvl3 Build Level State Machine")]
 public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
@@ -21,8 +21,8 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         "Idle",
         "Tutorial Launch Buttons",
         "Auto Launcher Salvo",
-        "Drone Orbits",
         "Drone Shoots 2 Units",
+        "Drone Orbits",
         "Path To Tracker Device",
         "Pick Up Tracker",
         "Lock On Drone",
@@ -51,10 +51,11 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     [Header("Drone")]
     [SerializeField] GameObject droneRoot;
-    [SerializeField] bool hideDroneUntilEngagement = true;
     [Min(0f)] [SerializeField] float delayBeforeDroneAppears = 2f;
-    [Min(0f)] [SerializeField] float orbitBeforeShootingSeconds = 6f;
     [SerializeField] FighterJetFlight droneFlight;
+
+    [Header("Completion")]
+    [Min(0f)] [SerializeField] float delayBeforeReturnToLvl1 = 4f;
 
     [Header("Tracker path")]
     [SerializeField] Transform trackerPathTarget;
@@ -75,6 +76,8 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (orchestrator != null)
             orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
+        PrepareDroneHidden();
+        trackerScope?.SetEngagementEnabled(false);
     }
 
     void Start()
@@ -109,7 +112,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     void PrepareDroneHidden()
     {
-        if (!hideDroneUntilEngagement) return;
+        if (droneFlight != null) droneFlight.StopFlying();
         if (droneRoot != null) droneRoot.SetActive(false);
     }
 
@@ -117,13 +120,16 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (sequenceRunning || !HasValidAssignments) yield break;
         sequenceRunning = true;
+        SequenceComplete = false;
         DroneDestroyed = false;
+        PrepareDroneHidden();
+        trackerScope.SetEngagementEnabled(false);
 
         orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
         SetStep(1);
         orchestrator.Begin();
         yield return WaitForTutorialFire();
-        if (orchestrator == null || !orchestrator.isActiveAndEnabled || !orchestrator.FireAccepted || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed)
+        if (orchestrator == null || !orchestrator.isActiveAndEnabled || !orchestrator.FireAccepted || orchestrator.Phase != MissileLauncherTutorialOrchestrator.TutorialPhase.Completed)
         {
             sequenceRunning = false;
             Debug.LogError("Lvl3: the tutorial fire button was not accepted; automatic launches remain blocked.", this);
@@ -139,11 +145,12 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         }
 
         SetStep(3);
-        yield return SpawnAndOrbitDrone();
-
-        SetStep(4);
+        PrepareDroneHidden();
         droneStrikes.Play();
         while (!droneStrikes.IsComplete) yield return null;
+
+        SetStep(4);
+        yield return SpawnAndOrbitDrone();
 
         SetStep(5);
         ShowPathToTracker();
@@ -160,11 +167,15 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         SetStep(9);
         SequenceComplete = true;
         sequenceRunning = false;
+        if (delayBeforeReturnToLvl1 > 0f)
+            yield return new WaitForSeconds(delayBeforeReturnToLvl1);
+        SceneTransitionRunner.Begin(BuildLevelScenes.Lvl1, true, 0f, 0.35f, 0f, 0.35f);
     }
 
     IEnumerator WaitForTutorialFire()
     {
-        while (orchestrator != null && !orchestrator.FireAccepted)
+        while (orchestrator != null && (!orchestrator.FireAccepted ||
+            orchestrator.Phase != MissileLauncherTutorialOrchestrator.TutorialPhase.Completed))
         {
             if (!orchestrator.isActiveAndEnabled || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed)
                 yield break;
@@ -187,12 +198,17 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
                 !orchestrator.FireAccepted || orchestrator.Phase == MissileLauncherTutorialOrchestrator.TutorialPhase.Failed))
                 yield break;
             var launch = automaticLaunches[i];
-            if (launch.projectile == null || launch.destination == null || !launch.projectile.gameObject.activeInHierarchy)
+            if (launch.projectile == null || launch.destination == null)
             {
                 Debug.LogError("Lvl3: an automatic missile or its destination became unavailable.", this);
                 yield break;
             }
             launch.projectile.Launch(launch.destination.position);
+            if (!launch.projectile.HasLaunched || !launch.projectile.gameObject.activeInHierarchy)
+            {
+                Debug.LogError("Lvl3: an automatic missile could not launch.", this);
+                yield break;
+            }
             if (i < count - 1 && gapMax > 0f)
                 yield return new WaitForSeconds(Random.Range(gapMin, gapMax));
         }
@@ -201,21 +217,16 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     IEnumerator SpawnAndOrbitDrone()
     {
-        if (droneRoot != null && hideDroneUntilEngagement)
-            droneRoot.SetActive(true);
-
-
         if (delayBeforeDroneAppears > 0f)
             yield return new WaitForSeconds(delayBeforeDroneAppears);
 
+        if (droneRoot != null) droneRoot.SetActive(true);
         if (droneFlight != null)
         {
             droneFlight.StopFlying();
             droneFlight.StartFlying();
         }
 
-        if (orbitBeforeShootingSeconds > 0f)
-            yield return new WaitForSeconds(orbitBeforeShootingSeconds);
     }
 
     void ShowPathToTracker()
@@ -229,7 +240,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         if (Physics.Raycast(end + Vector3.up * 0.2f, Vector3.down, out var hit, 4f, ~0, QueryTriggerInteraction.Ignore))
             end = hit.point;
 
-        var start = origin.transform.position;
+        var start = origin.Camera != null ? origin.Camera.transform.position : origin.transform.position;
         start.y = end.y;
         var forward = new Vector3(target.position.x - start.x, 0f, target.position.z - start.z);
         if (forward.sqrMagnitude > 0.01f)
@@ -259,6 +270,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (trackerScope == null || droneRoot == null) return;
         trackerScope.AssignTarget(droneRoot.transform);
+        trackerScope.SetEngagementEnabled(true);
     }
 
     IEnumerator WaitForDroneKill()
@@ -293,11 +305,12 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
                 break;
             case 3:
                 if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                sequenceRoutine = StartCoroutine(SpawnAndOrbitDrone());
+                PrepareDroneHidden();
+                droneStrikes?.Play();
                 break;
             case 4:
                 if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
-                droneStrikes?.Play();
+                sequenceRoutine = StartCoroutine(SpawnAndOrbitDrone());
                 break;
             case 5:
                 ShowPathToTracker();
@@ -336,7 +349,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
 
     public void EditorTestTutorialOnly() => EditorTestJumpToStep(1);
     public void EditorTestAutoSalvoOnly() => EditorTestJumpToStep(2);
-    public void EditorTestDroneEngagement() => EditorTestJumpToStep(4);
+    public void EditorTestDroneEngagement() => EditorTestJumpToStep(3);
     public void EditorTestShowTrackerPath() => EditorTestJumpToStep(5);
     public void EditorTestForceDroneKill() => EditorTestJumpToStep(8);
 }

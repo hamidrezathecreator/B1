@@ -284,9 +284,9 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
             if (!actions.FireTutorialLauncher(1)) { Fail(); return; }
             fireCard.alpha = 0f;
             FireAccepted = true;
-            Phase = TutorialPhase.Completed;
+            Phase = TutorialPhase.Firing;
             buttons.DisableButtons();
-            tutorialCompleted.Invoke();
+            StartCoroutine(WaitForTutorialLaunches());
             return;
         }
         FireAccepted = true;
@@ -300,6 +300,18 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         // Hold the current level while nearby missiles are loud, including during the startup fade.
         if (musicManager != null) musicManager.FadeToVolume(musicStartVolume, 0f);
         actions.FireAll();
+    }
+
+    IEnumerator WaitForTutorialLaunches()
+    {
+        while (Phase == TutorialPhase.Firing && !actions.TutorialLaunchesCompleted)
+        {
+            if (!actions.isActiveAndEnabled) { Fail(); yield break; }
+            yield return null;
+        }
+        if (Phase != TutorialPhase.Firing) yield break;
+        Phase = TutorialPhase.Completed;
+        tutorialCompleted.Invoke();
     }
 
     void OnMissileLaunched(MissileProjectile missile)
