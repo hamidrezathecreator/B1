@@ -12941,6 +12941,7 @@ MonoBehaviour:
   maximumThrowSeconds: 0.75
   throwSpacing: 0.2
   playerHitRadius: 15
+  throwAimRadius: 12
 --- !u!1 &908877665
 GameObject:
   m_ObjectHideFlags: 0
@@ -19661,7 +19662,7 @@ Transform:
   m_GameObject: {fileID: 1388105558}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0.14798203, z: 0, w: 0.98899007}
-  m_LocalPosition: {x: -2.029, y: 0.463, z: 2.206}
+  m_LocalPosition: {x: -1.765, y: 0.463, z: 2.125}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

@@ -3203,7 +3203,7 @@ Transform:
   m_GameObject: {fileID: 218838270}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1, y: 0.00000011920929, z: 89.21}
+  m_LocalPosition: {x: -1, y: 0.4, z: 89.21}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -4734,7 +4734,7 @@ Transform:
   m_GameObject: {fileID: 297232473}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.99, y: 0.00000011920929, z: 15.85}
+  m_LocalPosition: {x: -2.99, y: 0.4, z: 15.85}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -12052,7 +12052,7 @@ Transform:
   m_GameObject: {fileID: 761719443}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -15.541, y: 0.00000011920929, z: 9.5}
+  m_LocalPosition: {x: -15.541, y: 0.28, z: 9.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -14645,6 +14645,7 @@ MonoBehaviour:
   - {fileID: 1134798866}
   - {fileID: 218838271}
   - {fileID: 297232474}
+  pathHeightOffset: 0.15
   elevatorVolume: 1
   tunnelVolume: 0.85
   musicCrossfadeSeconds: 1.5
@@ -14660,7 +14661,7 @@ Transform:
   m_GameObject: {fileID: 957684639}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0.072, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -17326,7 +17327,7 @@ Transform:
   m_GameObject: {fileID: 1134798865}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -11.91, y: 0.00000011920929, z: 96.57}
+  m_LocalPosition: {x: -11.91, y: 0.4, z: 96.57}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -25902,7 +25903,7 @@ Transform:
   m_GameObject: {fileID: 1626621523}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.116, y: 0.05, z: -0.681}
+  m_LocalPosition: {x: -1.116, y: 0.34, z: -0.681}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

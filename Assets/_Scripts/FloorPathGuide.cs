@@ -29,12 +29,14 @@ public sealed class FloorPathGuide : MonoBehaviour
     Transform player;
     Vector3 goal;
     bool onVisibleFloor;
-    float arrowLift = 0.014f;
+    [Tooltip("Raises arrows above the snapped floor. Increase if they sit under the ground mesh.")]
+    [SerializeField] float arrowLift = 0.014f;
+    float heightOffset;
 
     /// <summary>Arrows on the teleport floor (Ground layer), at the surface closest to the given height.</summary>
     public static FloorPathGuide Create(IList<Vector3> worldPoints, Transform playerRoot, params Collider[] ignoreForFloor)
     {
-        return Create(worldPoints, playerRoot, false, ignoreForFloor);
+        return Create(worldPoints, playerRoot, false, 0f, ignoreForFloor);
     }
 
     /// <param name="visibleFloor">
@@ -43,11 +45,20 @@ public sealed class FloorPathGuide : MonoBehaviour
     /// </param>
     public static FloorPathGuide Create(IList<Vector3> worldPoints, Transform playerRoot, bool visibleFloor, params Collider[] ignoreForFloor)
     {
+        return Create(worldPoints, playerRoot, visibleFloor, 0f, ignoreForFloor);
+    }
+
+    /// <param name="heightOffset">
+    /// Extra lift after floor snap. Use this when the visible ground mesh sits above its collider.
+    /// </param>
+    public static FloorPathGuide Create(IList<Vector3> worldPoints, Transform playerRoot, bool visibleFloor, float heightOffset, params Collider[] ignoreForFloor)
+    {
         var go = new GameObject("PathToTable");
         var guide = go.AddComponent<FloorPathGuide>();
         guide.player = playerRoot;
         guide.onVisibleFloor = visibleFloor;
-        if (visibleFloor) guide.arrowLift = 0.025f;
+        guide.heightOffset = Mathf.Max(0f, heightOffset);
+        guide.arrowLift = visibleFloor ? 0.025f : 0.014f;
         guide.Build(worldPoints, ignoreForFloor);
         return guide;
     }
@@ -56,7 +67,10 @@ public sealed class FloorPathGuide : MonoBehaviour
     {
         points.Clear();
         foreach (var p in worldPoints)
-            points.Add(onVisibleFloor ? SnapToVisibleFloor(p, ignore) : SnapToFloor(p, ignore));
+        {
+            var snapped = onVisibleFloor ? SnapToVisibleFloor(p, ignore) : SnapToFloor(p, ignore);
+            points.Add(snapped + Vector3.up * heightOffset);
+        }
         if (points.Count < 2) { Destroy(gameObject); return; }
 
         cumulative.Clear();

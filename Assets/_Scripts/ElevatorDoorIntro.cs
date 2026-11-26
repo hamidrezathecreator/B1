@@ -56,6 +56,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [SerializeField] Transform pathStart;
     [SerializeField] Transform pathTarget;
     [SerializeField] Transform[] pathWaypoints;
+    [Tooltip("Raises the arrows above the floor snap. Increase if they sit under the ground mesh.")]
+    [Min(0f)] [SerializeField] float pathHeightOffset = 0.08f;
     [Header("Sound")]
     [Range(0f, 1f)] [SerializeField] float elevatorVolume = 1f;
     [Range(0f, 1f)] [SerializeField] float tunnelVolume = 0.5f;
@@ -250,12 +252,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     void ShowPathToTable()
     {
         if (!showPathToTable || pathStart == null || pathTarget == null) return;
-        var points = new List<Vector3> { pathStart.position };
-        if (pathWaypoints != null)
-            foreach (var waypoint in pathWaypoints)
-                if (waypoint != null) points.Add(waypoint.position);
-        points.Add(pathTarget.position);
-        FloorPathGuide.Create(points, xrOrigin.transform, true, table.GetComponentsInChildren<Collider>());
+        FloorPathGuide.Create(CollectPathPoints(), xrOrigin.transform, true, pathHeightOffset, table.GetComponentsInChildren<Collider>());
     }
 
     void OnTabletChecklistChanged(bool allChecked)
@@ -483,6 +480,54 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         }
 
         fadeOverlay.alpha = target;
+    }
+
+    void OnDrawGizmos()
+    {
+        if (!showPathToTable) return;
+        DrawPathGizmos(0.45f, 0.12f);
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        if (!showPathToTable) return;
+        DrawPathGizmos(1f, 0.18f);
+    }
+
+    void DrawPathGizmos(float alpha, float radius)
+    {
+        var points = CollectPathPoints();
+        if (points.Count == 0) return;
+
+        var pathColor = new Color(0.98f, 0.80f, 0.20f, alpha);
+        var liftColor = new Color(0.45f, 0.85f, 1f, alpha);
+        Gizmos.color = pathColor;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var authored = points[i];
+            var lifted = authored + Vector3.up * pathHeightOffset;
+            Gizmos.DrawSphere(lifted, radius);
+            if (pathHeightOffset > 0.001f)
+            {
+                Gizmos.color = liftColor;
+                Gizmos.DrawLine(authored, lifted);
+                Gizmos.color = pathColor;
+            }
+            if (i > 0)
+                Gizmos.DrawLine(points[i - 1] + Vector3.up * pathHeightOffset,
+                    lifted);
+        }
+    }
+
+    List<Vector3> CollectPathPoints()
+    {
+        var points = new List<Vector3>();
+        if (pathStart != null) points.Add(pathStart.position);
+        if (pathWaypoints != null)
+            foreach (var waypoint in pathWaypoints)
+                if (waypoint != null) points.Add(waypoint.position);
+        if (pathTarget != null) points.Add(pathTarget.position);
+        return points;
     }
 
 }

@@ -52,6 +52,8 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField, Min(0.05f)] private float maximumThrowSeconds = 0.75f;
     [SerializeField, Min(0f)] private float throwSpacing = 0.12f;
     [SerializeField, Min(0.01f)] private float playerHitRadius = 0.65f;
+    [Tooltip("Each thrown object flies at a random point this far from the headset, so they do not all home in on the same spot.")]
+    [SerializeField, Min(0f)] private float throwAimRadius = 8f;
     private readonly System.Collections.Generic.HashSet<Transform> thrownObjects = new();
     private bool firstPressureArrivalReceived;
     private Transform cachedListener;
@@ -208,11 +210,11 @@ public sealed class CondensationCloudSystem : MonoBehaviour
             var debris = objectsToThrow[objectIndex];
             if (debris == null || debris == listener || listener.IsChildOf(debris) || !thrownObjects.Add(debris)) continue;
             flyingDebris++;
-            StartCoroutine(ThrowAtPlayer(debris, listener, objectIndex * throwSpacing));
+            StartCoroutine(ThrowAtPlayer(debris, listener, objectIndex * throwSpacing, objectIndex));
         }
     }
 
-    IEnumerator ThrowAtPlayer(Transform debris, Transform listener, float delaySeconds)
+    IEnumerator ThrowAtPlayer(Transform debris, Transform listener, float delaySeconds, int objectIndex)
     {
         if (delaySeconds > 0f) yield return new WaitForSeconds(delaySeconds);
         if (debris == null || listener == null) { flyingDebris--; yield break; }
@@ -223,7 +225,8 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         foreach (var collider in debris.GetComponentsInChildren<Collider>()) collider.enabled = false;
         var visual = debris.GetComponentInChildren<Renderer>();
         var startPosition = visual != null ? visual.bounds.center : debris.position;
-        float travelSeconds = Mathf.Clamp((Vector3.Distance(startPosition, listener.position) - playerHitRadius) / Mathf.Max(0.01f, throwSpeed),
+        var aim = AimAroundListener(listener.position, objectIndex);
+        float travelSeconds = Mathf.Clamp(Vector3.Distance(startPosition, aim) / Mathf.Max(0.01f, throwSpeed),
             0.05f, maximumThrowSeconds);
         float elapsed = 0f;
         yield return null;
@@ -234,7 +237,7 @@ public sealed class CondensationCloudSystem : MonoBehaviour
             {
                 debris.Rotate(new Vector3(80f, 120f, 65f) * Time.deltaTime, Space.Self);
                 var center = visual != null ? visual.bounds.center : debris.position;
-                debris.position += Vector3.Lerp(startPosition, listener.position, Mathf.Clamp01(elapsed / travelSeconds)) - center;
+                debris.position += Vector3.Lerp(startPosition, aim, Mathf.Clamp01(elapsed / travelSeconds)) - center;
             }
             if (elapsed >= travelSeconds) break;
             yield return null;
@@ -248,6 +251,15 @@ public sealed class CondensationCloudSystem : MonoBehaviour
         }
         if (debris != null) debris.gameObject.SetActive(false);
         flyingDebris--;
+    }
+
+    Vector3 AimAroundListener(Vector3 listenerPosition, int objectIndex)
+    {
+        if (throwAimRadius <= 0.01f) return listenerPosition;
+        float angle = (objectIndex * 137.508f + UnityEngine.Random.Range(-22f, 22f)) * Mathf.Deg2Rad;
+        float distance = UnityEngine.Random.Range(throwAimRadius * 0.45f, throwAimRadius);
+        float height = UnityEngine.Random.Range(-throwAimRadius * 0.25f, throwAimRadius * 0.35f);
+        return listenerPosition + new Vector3(Mathf.Cos(angle) * distance, height, Mathf.Sin(angle) * distance);
     }
 
     Transform ResolveListener()

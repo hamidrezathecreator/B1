@@ -16,6 +16,7 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 public sealed class TrackerWeaponScope : MonoBehaviour
 {
     public enum Axis { Auto, PlusX, MinusX, PlusY, MinusY, PlusZ, MinusZ }
+    public enum ReticleState { Idle, Acquisition, FullyLocked }
 
     [Header("Scope camera")]
     [Tooltip("Assigned scene camera that renders the scope picture and aims the lock ray.")]
@@ -55,12 +56,24 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     [SerializeField] Color fullLockColor = new Color(1f, 0.15f, 0.1f, 1f);
     [Range(0.1f, 1f)] [SerializeField] float crosshairScale = 0.6f;
 
-    [Header("Crosshair feedback")]
+    [Header("Tracker canvas states")]
+    [Tooltip("Your canvas for the tracker UI. Its authored position, rotation and size are preserved.")]
     [SerializeField] Canvas trackerCanvas;
+    [Tooltip("Optional Image under your canvas. Its layout and color are preserved; only its sprite and feedback motion change. Empty creates an image when state sprites are assigned.")]
+    [SerializeField] UnityEngine.UI.Image trackerStateImage;
+    [SerializeField] Sprite idleSprite;
+    [SerializeField] Sprite acquisitionSprite;
+    [SerializeField] Sprite fullyLockedSprite;
+
+    [Header("Crosshair feedback")]
     [Min(0.2f)] [SerializeField] float breathSeconds = 1.2f;
     [Range(0.005f, 0.1f)] [SerializeField] float breathAmount = 0.025f;
     [Range(0f, 2f)] [SerializeField] float acquisitionShake = 0.65f;
+    [Tooltip("Maximum shake pulses per uninterrupted acquisition. Losing aim resets the count. Zero disables acquisition shakes.")]
+    [Min(0)] [SerializeField] int acquisitionShakeCount = 6;
     [Range(0f, 3f)] [SerializeField] float confirmationShake = 1.1f;
+    [Tooltip("Shake and beep pulses at full lock before launch. Zero launches immediately after acquisition.")]
+    [Min(0)] [SerializeField] int confirmationShakeCount = 3;
     [Min(0.08f)] [SerializeField] float confirmationShakeSeconds = 0.16f;
     [SerializeField] AudioClip trackingBeep;
     [SerializeField] AudioClip lockedBeep;
@@ -121,9 +134,14 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     bool engagementEnabled = true;
     bool scopeReady;
     bool wasContextButton;
-    RectTransform crosshairRoot;
     RectTransform trackingReticle;
     RectTransform fullLockReticle;
+    RectTransform reticleMotion;
+    Vector3 reticleRestPosition;
+    Vector3 reticleRestScale;
+    Sprite defaultReticleSprite;
+    int acquisitionShakesPlayed;
+    public ReticleState CurrentReticleState { get; private set; }
     Tween breathTween;
     Tween shakeTween;
     Tween missileTween;
@@ -193,8 +211,9 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         {
             CreateScreen(weaponRenderer, screenBounds, screenNormal, screenUp);
             ApplyTrackerScreenTexture(weaponRenderer);
-            CreateCrosshair(screenBounds, screenNormal, screenUp);
         }
+        if (hasScreen || trackerCanvas != null || trackerStateImage != null)
+            CreateCrosshair(screenBounds, screenNormal, screenUp);
         if (grabbable) MakeGrabbable(whole);
         CacheTargetRenderers();
         scopeReady = true;
@@ -378,6 +397,12 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     /// <summary>White cross in the middle of the scope picture, drawn with UI on top of the screen.</summary>
     void CreateCrosshair(Bounds screen, Vector3 normal, Vector3 up)
     {
+        if (trackerStateImage != null)
+        {
+            if (trackerCanvas == null) trackerCanvas = trackerStateImage.canvas;
+            InitializeReticleMotion(trackerStateImage.rectTransform);
+            return;
+        }
         var right = Vector3.Cross(up, normal);
         var width = Mathf.Abs(Vector3.Dot(screen.size, Abs(right))) * 0.96f;
         var height = Mathf.Abs(Vector3.Dot(screen.size, Abs(up))) * 0.96f;
@@ -412,10 +437,22 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         rect.anchoredPosition = Vector2.zero;
         rect.sizeDelta = new Vector2(canvasHeight, canvasHeight);
         rect.localScale = Vector3.one * (Mathf.Abs(((RectTransform)trackerCanvas.transform).rect.height) / canvasHeight * crosshairScale);
-        crosshairRoot = rect;
         var motion = new GameObject("Crosshair Motion", typeof(RectTransform)).GetComponent<RectTransform>();
         motion.SetParent(rect, false);
         motion.sizeDelta = rect.sizeDelta;
+        if (idleSprite != null || acquisitionSprite != null || fullyLockedSprite != null)
+        {
+            trackerStateImage = new GameObject("Tracker State Sprite", typeof(RectTransform),
+                typeof(UnityEngine.UI.Image)).GetComponent<UnityEngine.UI.Image>();
+            trackerStateImage.rectTransform.SetParent(motion, false);
+            trackerStateImage.rectTransform.anchorMin = Vector2.zero;
+            trackerStateImage.rectTransform.anchorMax = Vector2.one;
+            trackerStateImage.rectTransform.sizeDelta = Vector2.zero;
+            trackerStateImage.raycastTarget = false;
+            trackerStateImage.preserveAspect = true;
+            InitializeReticleMotion(motion);
+            return;
+        }
         trackingReticle = new GameObject("Tracking Reticle", typeof(RectTransform)).GetComponent<RectTransform>();
         trackingReticle.SetParent(motion, false);
         fullLockReticle = new GameObject("Full Lock Reticle", typeof(RectTransform)).GetComponent<RectTransform>();
@@ -440,23 +477,40 @@ public sealed class TrackerWeaponScope : MonoBehaviour
                     new Vector2(bar, bracketLength));
             }
         AddBar(fullLockReticle, Vector2.zero, new Vector2(bar, bar));
-        SetFullLockVisual(false);
+        InitializeReticleMotion(motion);
         SetCrosshairColor(crosshairColor);
     }
 
-    void SetFullLockVisual(bool fullLock)
+    void InitializeReticleMotion(RectTransform motion)
     {
-        if (trackingReticle != null) trackingReticle.gameObject.SetActive(!fullLock);
-        if (fullLockReticle != null) fullLockReticle.gameObject.SetActive(fullLock);
+        reticleMotion = motion;
+        reticleRestPosition = motion.localPosition;
+        reticleRestScale = motion.localScale;
+        defaultReticleSprite = trackerStateImage != null ? trackerStateImage.sprite : null;
+        SetReticleState(ReticleState.Idle);
+    }
+
+    void SetReticleState(ReticleState state)
+    {
+        CurrentReticleState = state;
+        if (trackerStateImage != null)
+        {
+            var sprite = state == ReticleState.FullyLocked ? fullyLockedSprite
+                : state == ReticleState.Acquisition ? acquisitionSprite : idleSprite;
+            if (sprite == null) sprite = idleSprite != null ? idleSprite : defaultReticleSprite;
+            trackerStateImage.sprite = sprite;
+            trackerStateImage.enabled = sprite != null;
+        }
+        if (trackingReticle != null) trackingReticle.gameObject.SetActive(state != ReticleState.FullyLocked);
+        if (fullLockReticle != null) fullLockReticle.gameObject.SetActive(state == ReticleState.FullyLocked);
     }
 
     void StartBreathing(bool visible)
     {
         if (breathTween.isAlive) breathTween.Stop();
-        if (crosshairRoot == null) return;
-        var motion = crosshairRoot.GetChild(0);
-        motion.localScale = Vector3.one;
-        breathTween = Tween.Scale(motion, 1f - breathAmount, 1f + breathAmount,
+        if (reticleMotion == null) return;
+        reticleMotion.localScale = reticleRestScale;
+        breathTween = Tween.Scale(reticleMotion, reticleRestScale * (1f - breathAmount), reticleRestScale * (1f + breathAmount),
             Mathf.Max(0.1f, breathSeconds) * (visible ? 0.35f : 0.5f),
             ease: Ease.InOutSine, cycles: -1, cycleMode: CycleMode.Yoyo);
     }
@@ -464,10 +518,10 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     void ShakeCrosshair(float strength, float seconds)
     {
         if (shakeTween.isAlive) shakeTween.Stop();
-        if (crosshairRoot == null) return;
-        var motion = crosshairRoot.GetChild(0);
-        motion.localPosition = Vector3.zero;
-        shakeTween = Tween.ShakeLocalPosition(motion, new Vector3(strength, strength * 0.7f, 0f), seconds, 24f);
+        if (reticleMotion == null) return;
+        reticleMotion.localPosition = reticleRestPosition;
+        if (strength <= 0f) return;
+        shakeTween = Tween.ShakeLocalPosition(reticleMotion, new Vector3(strength, strength * 0.7f, 0f), seconds, 24f);
     }
 
     void PlayFeedbackBeep(bool locked, float progress)
@@ -760,7 +814,6 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     void UpdateLock(bool held)
     {
         if (confirmingLock || missileAway) return;
-        SetFullLockVisual(false);
         var visible = engagementEnabled && !targetDown && (held || !requireHeld) && IsTargetVisible();
         if (visible != targetVisible || !breathTween.isAlive)
         {
@@ -769,6 +822,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             nextBeep = 0f;
         }
         var onTarget = visible && IsOnTarget();
+        SetReticleState(onTarget ? ReticleState.Acquisition : ReticleState.Idle);
         lockTimer = onTarget ? lockTimer + Time.deltaTime : 0f;
         var progress = Mathf.Clamp01(lockTimer / Mathf.Max(0.1f, lockSeconds));
         SetCrosshairColor(Color.Lerp(crosshairColor, lockedColor, progress));
@@ -778,21 +832,28 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             PlayFeedbackBeep(false, progress);
             nextBeep = Time.time + Mathf.Lerp(breathSeconds * 0.7f, 0.16f, progress);
         }
-        if (onTarget && Time.time >= nextShake)
-        {
-            ShakeCrosshair(acquisitionShake * progress, 0.14f);
-            nextShake = Time.time + 0.16f;
-        }
-        else if (!onTarget && shakeTween.isAlive)
-        {
-            shakeTween.Stop();
-            if (crosshairRoot != null) crosshairRoot.GetChild(0).localPosition = Vector3.zero;
-        }
+        UpdateAcquisitionShake(onTarget, progress);
 
         if (lockTimer < lockSeconds) return;
         lockTimer = 0f;
         confirmingLock = true;
         StartCoroutine(ConfirmLockAndLaunch());
+    }
+
+    void UpdateAcquisitionShake(bool onTarget, float progress)
+    {
+        if (!onTarget)
+        {
+            acquisitionShakesPlayed = 0;
+            nextShake = 0f;
+            if (shakeTween.isAlive) shakeTween.Stop();
+            if (reticleMotion != null) reticleMotion.localPosition = reticleRestPosition;
+            return;
+        }
+        if (Time.time < nextShake || acquisitionShakesPlayed >= Mathf.Max(0, acquisitionShakeCount)) return;
+        acquisitionShakesPlayed++;
+        ShakeCrosshair(acquisitionShake * progress, 0.14f);
+        nextShake = Time.time + 0.16f;
     }
 
     bool IsTargetVisible()
@@ -816,18 +877,25 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     System.Collections.IEnumerator ConfirmLockAndLaunch()
     {
         if (breathTween.isAlive) breathTween.Stop();
-        if (crosshairRoot != null) crosshairRoot.GetChild(0).localScale = Vector3.one;
-        SetFullLockVisual(true);
+        if (shakeTween.isAlive) shakeTween.Stop();
+        if (reticleMotion != null)
+        {
+            reticleMotion.localPosition = reticleRestPosition;
+            reticleMotion.localScale = reticleRestScale;
+        }
+        SetReticleState(ReticleState.FullyLocked);
         SetCrosshairColor(fullLockColor);
-        for (var pulse = 0; pulse < 3; pulse++)
+        int pulseCount = Mathf.Max(0, confirmationShakeCount);
+        for (var pulse = 0; pulse < pulseCount; pulse++)
         {
             if (targetDown || target == null || !target.gameObject.activeInHierarchy)
             {
-                confirmingLock = false;
+                ResetCrosshairFeedback();
                 yield break;
             }
             PlayFeedbackBeep(true, 1f);
-            ShakeCrosshair(confirmationShake * Mathf.Lerp(0.6f, 1f, pulse / 2f), confirmationShakeSeconds);
+            float progress = pulseCount > 1 ? pulse / (pulseCount - 1f) : 1f;
+            ShakeCrosshair(confirmationShake * Mathf.Lerp(0.6f, 1f, progress), confirmationShakeSeconds);
             yield return Tween.Delay(Mathf.Max(0.08f, confirmationShakeSeconds) + 0.07f).ToYieldInstruction();
         }
         yield return MissileToTarget();
@@ -985,7 +1053,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         FreezeAndHideTarget();
         targetDown = true;
         missileAway = false;
-        SetFullLockVisual(false);
+        SetReticleState(ReticleState.Idle);
         SetCrosshairColor(crosshairColor);
         TargetEliminated?.Invoke();
         StartCoroutine(ShowKillMessage());
@@ -1080,18 +1148,19 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     {
         if (breathTween.isAlive) breathTween.Stop();
         if (shakeTween.isAlive) shakeTween.Stop();
-        if (crosshairRoot != null)
+        if (reticleMotion != null)
         {
-            crosshairRoot.GetChild(0).localPosition = Vector3.zero;
-            crosshairRoot.GetChild(0).localScale = Vector3.one;
+            reticleMotion.localPosition = reticleRestPosition;
+            reticleMotion.localScale = reticleRestScale;
         }
         if (feedbackAudio != null) feedbackAudio.Stop();
         targetVisible = false;
         confirmingLock = false;
         lockTimer = 0f;
         nextShake = 0f;
+        acquisitionShakesPlayed = 0;
         nextBeep = 0f;
-        SetFullLockVisual(false);
+        SetReticleState(ReticleState.Idle);
         SetCrosshairColor(crosshairColor);
     }
 
