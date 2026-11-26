@@ -41,6 +41,20 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     [SerializeField] MissileLauncherTutorialOrchestrator orchestrator;
     [SerializeField] ExplodeAndSwap droneStrikes;
 
+    [Header("Voiceovers")]
+    [Tooltip("Opening mission dialogue, played once before the launcher tutorial.")]
+    [SerializeField] AudioSource openingDialogue;
+    [Tooltip("Dedicated 2D source shared by this level's tutorial and order clips.")]
+    [SerializeField] AudioSource voiceoverSource;
+    [Header("Launcher button voiceovers")]
+    [Tooltip("Played once for both launcher buttons, before the launcher order.")]
+    [SerializeField] AudioClip launcherTutorialVoice;
+    [SerializeField] AudioClip launcherOrderVoice;
+    [Header("Tracker pickup voiceovers")]
+    [Tooltip("Played only when the tracker path step starts, before the tracker order.")]
+    [SerializeField] AudioClip trackerTutorialVoice;
+    [SerializeField] AudioClip trackerOrderVoice;
+
     [Header("Automatic missile launches")]
     [Min(0f)] [SerializeField] float delayAfterTutorialBeforeSalvo = 3f;
     [Tooltip("Random wait between automatic missile launches, after the tutorial fire button is accepted.")]
@@ -67,6 +81,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     Coroutine sequenceRoutine;
     bool sequenceRunning;
     bool automaticSalvoCompleted;
+    bool voiceoverFailed;
 
     public bool DroneDestroyed { get; private set; }
 
@@ -76,8 +91,10 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (orchestrator != null)
             orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
+        if (openingDialogue != null) openingDialogue.playOnAwake = false;
+        if (voiceoverSource != null) voiceoverSource.playOnAwake = false;
         PrepareDroneHidden();
-        trackerScope?.SetEngagementEnabled(false);
+        SetTrackerAvailable(false);
     }
 
     void Start()
@@ -120,13 +137,20 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (sequenceRunning || !HasValidAssignments) yield break;
         sequenceRunning = true;
+        voiceoverFailed = false;
         SequenceComplete = false;
         DroneDestroyed = false;
         PrepareDroneHidden();
-        trackerScope.SetEngagementEnabled(false);
+        SetTrackerAvailable(false);
+
+        if (openingDialogue != null)
+            yield return PlayVoiceover(openingDialogue, openingDialogue.clip);
+        if (StopForVoiceoverFailure()) yield break;
 
         orchestrator.ConfigureForExternalSequence(true, suppressOrchestratorFinalLogo);
         SetStep(1);
+        yield return PlayLauncherVoiceovers();
+        if (StopForVoiceoverFailure()) yield break;
         orchestrator.Begin();
         yield return WaitForTutorialFire();
         if (orchestrator == null || !orchestrator.isActiveAndEnabled || !orchestrator.FireAccepted || orchestrator.Phase != MissileLauncherTutorialOrchestrator.TutorialPhase.Completed)
@@ -153,7 +177,10 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         yield return SpawnAndOrbitDrone();
 
         SetStep(5);
+        SetTrackerAvailable(true);
         ShowPathToTracker();
+        yield return PlayTrackerVoiceovers();
+        if (StopForVoiceoverFailure()) yield break;
 
         SetStep(6);
         yield return WaitForTrackerPickup();
@@ -170,6 +197,67 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         if (delayBeforeReturnToLvl1 > 0f)
             yield return new WaitForSeconds(delayBeforeReturnToLvl1);
         SceneTransitionRunner.Begin(BuildLevelScenes.Lvl1, true, 0f, 0.35f, 0f, 0.35f);
+    }
+
+    IEnumerator PlayLauncherVoiceovers()
+    {
+        yield return PlayVoiceover(voiceoverSource, launcherTutorialVoice);
+        if (!voiceoverFailed) yield return PlayVoiceover(voiceoverSource, launcherOrderVoice);
+    }
+
+    IEnumerator PlayTrackerVoiceovers()
+    {
+        yield return PlayVoiceover(voiceoverSource, trackerTutorialVoice);
+        if (!voiceoverFailed) yield return PlayVoiceover(voiceoverSource, trackerOrderVoice);
+    }
+
+    IEnumerator PlayVoiceover(AudioSource source, AudioClip clip)
+    {
+        if (clip == null) yield break;
+        if (source == null || !source.isActiveAndEnabled)
+        {
+            voiceoverFailed = true;
+            Debug.LogError("Lvl3: assign an active voiceover source for the tutorial and order clips.", this);
+            yield break;
+        }
+        source.Stop();
+        source.loop = false;
+        source.clip = clip;
+        source.Play();
+        while (source != null && source.isActiveAndEnabled &&
+            (source.isPlaying || (AudioListener.pause && !source.ignoreListenerPause)))
+            yield return null;
+        if (source == null || !source.isActiveAndEnabled)
+        {
+            voiceoverFailed = true;
+            Debug.LogError("Lvl3: voiceover playback was interrupted because its source became unavailable.", this);
+        }
+    }
+
+    bool StopForVoiceoverFailure()
+    {
+        if (!voiceoverFailed) return false;
+        sequenceRunning = false;
+        return true;
+    }
+
+    void StopVoiceovers()
+    {
+        if (openingDialogue != null) openingDialogue.Stop();
+        if (voiceoverSource != null) voiceoverSource.Stop();
+        voiceoverFailed = false;
+    }
+
+    IEnumerator BeginLauncherTutorial()
+    {
+        yield return PlayLauncherVoiceovers();
+        if (!voiceoverFailed) orchestrator?.Begin();
+    }
+
+    IEnumerator BeginTrackerPath()
+    {
+        ShowPathToTracker();
+        yield return PlayTrackerVoiceovers();
     }
 
     IEnumerator WaitForTutorialFire()
@@ -253,6 +341,13 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
         pathGuide = FloorPathGuide.Create(new List<Vector3> { start, end }, origin.transform, true);
     }
 
+    void SetTrackerAvailable(bool available)
+    {
+        if (trackerScope == null) return;
+        trackerScope.SetEngagementEnabled(false);
+        trackerScope.gameObject.SetActive(available);
+    }
+
     IEnumerator WaitForTrackerPickup()
     {
         if (trackerScope == null) yield break;
@@ -288,16 +383,18 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
             sequenceRoutine = null;
         }
         sequenceRunning = false;
+        StopVoiceovers();
     }
 
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying || sequenceRunning) return;
+        SetTrackerAvailable(index >= 5);
         switch (index)
         {
             case 1:
                 orchestrator?.ConfigureForExternalSequence(true, suppressFinalLogo: suppressOrchestratorFinalLogo);
-                orchestrator?.Begin();
+                sequenceRoutine = StartCoroutine(BeginLauncherTutorial());
                 break;
             case 2:
                 if (sequenceRoutine != null) StopCoroutine(sequenceRoutine);
@@ -313,7 +410,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
                 sequenceRoutine = StartCoroutine(SpawnAndOrbitDrone());
                 break;
             case 5:
-                ShowPathToTracker();
+                sequenceRoutine = StartCoroutine(BeginTrackerPath());
                 break;
             case 7:
                 WireTrackerToDrone();
@@ -336,6 +433,7 @@ public sealed class Lvl3BuildLevelStateMachine : BuildLevelStateMachineBase
     void OnDisable()
     {
         StopAllCoroutines();
+        StopVoiceovers();
         sequenceRoutine = null;
         sequenceRunning = false;
     }

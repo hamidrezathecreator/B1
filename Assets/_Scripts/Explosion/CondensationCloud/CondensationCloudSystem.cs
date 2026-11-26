@@ -53,6 +53,9 @@ public sealed class CondensationCloudSystem : MonoBehaviour
     [SerializeField, Min(0f)] private float throwSpacing = 0.12f;
     [SerializeField, Min(0.01f)] private float playerHitRadius = 0.65f;
     private readonly System.Collections.Generic.HashSet<Transform> thrownObjects = new();
+    private bool firstPressureArrivalReceived;
+    private Transform cachedListener;
+    private Transform cachedListenerSource;
     private int flyingDebris;
     private int pendingPressureWaves;
     public bool HasFlyingDebris => flyingDebris > 0 || pendingPressureWaves > 0;
@@ -193,10 +196,13 @@ public sealed class CondensationCloudSystem : MonoBehaviour
 
     void NotifyPressureArrival(Transform listener, Vector3 center, float distanceTraveled)
     {
+        bool throwDebris = !firstPressureArrivalReceived;
+        firstPressureArrivalReceived = true;
         ControllerHaptics.Pulse(playerEngulfVibrationAmplitude, playerEngulfVibrationSeconds);
         PlayerImpactAudio.PlayCloudHit(playerEngulfSound, playerEngulfSoundVolume);
         PlayerEngulfed?.Invoke(center, distanceTraveled);
         onPlayerEngulfed.Invoke(center);
+        if (!throwDebris) return;
         for (int objectIndex = 0; objectIndex < objectsToThrow.Length; objectIndex++)
         {
             var debris = objectsToThrow[objectIndex];
@@ -246,16 +252,21 @@ public sealed class CondensationCloudSystem : MonoBehaviour
 
     Transform ResolveListener()
     {
+        if (cachedListener != null && cachedListener.gameObject.activeInHierarchy && cachedListenerSource == playerListener)
+            return cachedListener;
+        cachedListenerSource = playerListener;
         if (playerListener != null)
         {
             var assignedOrigin = playerListener.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>();
-            if (assignedOrigin != null && assignedOrigin.Camera != null) return assignedOrigin.Camera.transform;
-            return playerListener;
+            cachedListener = assignedOrigin != null && assignedOrigin.Camera != null
+                ? assignedOrigin.Camera.transform : playerListener;
+            return cachedListener;
         }
         foreach (var origin in FindObjectsByType<Unity.XR.CoreUtils.XROrigin>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
         {
             if (origin.Camera == null || origin.gameObject.scene != gameObject.scene) continue;
-            return origin.Camera.transform;
+            cachedListener = origin.Camera.transform;
+            return cachedListener;
         }
         return null;
     }

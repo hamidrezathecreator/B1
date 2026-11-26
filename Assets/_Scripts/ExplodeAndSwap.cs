@@ -51,6 +51,9 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     [Min(0f)] [SerializeField] float burnSeconds = 20f;
     [Min(0.1f)] [SerializeField] float fireSize = 1f;
     [SerializeField] bool shakeHeadset = true;
+    [SerializeField] bool spawnCondensationCloud;
+    [SerializeField, Min(0.01f)] float condensationCloudRadius = 400f;
+    [SerializeField, Min(0.01f)] float condensationCloudLifetime = 5f;
     [SerializeField] AudioClip impactSound;
     [Range(0f, 1f)] [SerializeField] float impactVolume = 1f;
 
@@ -163,19 +166,35 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     void SpawnHitEffects(Vector3 center, Bounds bounds)
     {
         ThermalExplosionHeat.Spawn(center, bounds, explosionScale);
+        if (spawnCondensationCloud && CondensationCloudSystem.Instance != null)
+            CondensationCloudSystem.SpawnAt(center, condensationCloudRadius, condensationCloudLifetime,
+                ExplosionTimeScaleSettings.Profile.Identity);
 
         if (impactSound != null)
-            AudioSource.PlayClipAtPoint(impactSound, center, impactVolume);
+        {
+            var sound = new GameObject("Strike Explosion Sound");
+            sound.transform.position = center;
+            var source = sound.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.clip = impactSound;
+            source.volume = impactVolume;
+            source.spatialBlend = 0f;
+            source.dopplerLevel = 0f;
+            source.Play();
+            Destroy(sound, impactSound.length + 0.5f);
+        }
 
         if (explosionPrefab != null)
         {
             var boom = Instantiate(explosionPrefab, center, Quaternion.identity);
+            VrExplosionOptimizer.Apply(boom);
             boom.transform.localScale *= explosionScale;
+            boom.SetActive(true);
             foreach (var ps in boom.GetComponentsInChildren<ParticleSystem>(true))
             {
-                ps.gameObject.SetActive(true);
-                ps.Clear(true);
-                ps.Play(true);
+                if (!ps.gameObject.activeInHierarchy) continue;
+                ps.Clear(false);
+                ps.Play(false);
             }
             Destroy(boom, 15f);
         }
@@ -190,6 +209,7 @@ public sealed class ExplodeAndSwap : MonoBehaviour
     void ShakeHeadset(Vector3 at)
     {
         if (headsetShake == null) return;
+        if (spawnCondensationCloud && CondensationCloudSystem.Instance != null) return;
         var distance = Vector3.Distance(headsetShake.transform.position, at);
         if (distance <= 150f) headsetShake.ShakeFor(0.8f, Mathf.Lerp(0.8f, 0.2f, distance / 150f));
     }

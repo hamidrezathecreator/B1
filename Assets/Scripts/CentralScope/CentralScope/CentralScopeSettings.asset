@@ -22,7 +22,7 @@ MonoBehaviour:
   fall:
     radialBlurAmount: 1
     radialBlurRadius: 0.85
-    vignetteAmount: 0.4
+    vignetteAmount: 0.155
     featherInnerRadius: 0.136
     featherOuterRadius: 0.66
     featherCurve: 2.367

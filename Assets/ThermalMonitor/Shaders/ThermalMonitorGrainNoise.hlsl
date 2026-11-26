@@ -66,9 +66,9 @@ half TMScanlineShade(float2 uv, float vertScale, float scrollSpeed, float lineWi
     float stripe = frac(v);
 
     float dist = abs(stripe - 0.5) * 2.0;
-    half  line = smoothstep(1.0, saturate(1.0 - lineWidth), dist);
+    half scanlineMask = smoothstep(1.0, saturate(1.0 - lineWidth), dist);
 
-    return lerp(1.0 - intensity, 1.0, line);
+    return lerp(1.0 - intensity, 1.0, scanlineMask);
 }
 
 #endif

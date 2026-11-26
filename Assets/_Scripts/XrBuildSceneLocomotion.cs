@@ -55,6 +55,7 @@ static class XrBuildSceneLocomotion
     public static void EnableWalking(XROrigin origin)
     {
         if (origin == null) return;
+        if (HelicopterHover.IsMovementLocked(origin)) return;
 
         var settings = origin.GetComponent<XrOriginPlaySettings>();
         if (settings != null)
@@ -67,6 +68,7 @@ static class XrBuildSceneLocomotion
         if (move == null) return;
 
         move.enabled = true;
+        move.enableStrafe = true;
         move.enableFly = false;
         move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
         move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;

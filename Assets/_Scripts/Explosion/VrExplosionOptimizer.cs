@@ -84,8 +84,8 @@ public sealed class VrExplosionOptimizer : MonoBehaviour
         foreach (var ps in GetComponentsInChildren<ParticleSystem>(true))
         {
             if (!ps.gameObject.activeInHierarchy) continue;
-            ps.Clear(true);
-            ps.Play(true);
+            ps.Clear(false);
+            ps.Play(false);
         }
         ScheduleDestroyFromNow();
     }

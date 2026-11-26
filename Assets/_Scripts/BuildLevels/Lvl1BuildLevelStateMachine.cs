@@ -2,6 +2,7 @@ using System.Collections;
 using PrimeTween;
 using UnityEngine.Serialization;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// Lvl_1 post-tutorial sequence. Assign scene refs. No Director, no timeline clocks.
@@ -12,23 +13,42 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
 {
     static readonly string[] Steps =
     {
-        "Await Start (tutorial)",
-        "Await Case Placement (tutorial)",
+        "Helicopter Start (await Mission Start)",
+        "Fade Out + Transfer To Tutorial + Fade In",
+        "Bridge Tutorial (move + pickup + placement)",
         "Missile 1 + Explosion 1 + Bridge scatter",
-        "Missile 2 + Explosion 2",
+        "Missile 2 + Explosion 2 + Delayed bridge scatter",
         "Fall + Fade Out",
         "Load Lvl 2"
     };
 
+    const int HelicopterStep = 0;
+    const int TransferStep = 1;
+    const int TutorialStep = 2;
+    const int FirstStrikeStep = 3;
+    const int SecondStrikeStep = 4;
+    const int FallStep = 5;
+    const int LoadStep = 6;
+
     [Header("Sequence")]
     [SerializeField] Lvl1Tutorial tutorial;
     [SerializeField] string nextSceneName = BuildLevelScenes.Lvl2;
+
+    [Header("Helicopter opening")]
+    [SerializeField] HelicopterHover helicopterIntro;
+    [SerializeField, Min(0f)] float helicopterFadeOutSeconds = 0.65f;
+    [SerializeField, Min(0f)] float helicopterBlackSeconds = 0.15f;
+    [SerializeField, Min(0f)] float helicopterFadeInSeconds = 0.65f;
+    Coroutine helicopterTransfer;
+    CanvasGroup helicopterFade;
 
     [Header("Strike timing (real seconds)")]
     [FormerlySerializedAs("tExplosion13")]
     [SerializeField] float tFirstStrike = 2.55f;
     [Tooltip("Real seconds after the first impact before launching the second salvo. Slow motion finishes before launch.")]
     [SerializeField, Min(0f)] float secondStrikeDelay = 2.5f;
+
+    [SerializeField, Min(0f)] float secondStrikeScatterDelaySeconds = 0.5f;
 
     [FormerlySerializedAs("fallAfterExplosionTwoSeconds")]
     [SerializeField, Min(0f)] float fallAfterSecondStrikeSeconds = 0.15f;
@@ -96,11 +116,14 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     protected override string[] StepNames => Steps;
 
     public Lvl1Tutorial Tutorial => tutorial;
-    void Awake() => TrackStep(0);
+    public event System.Action FirstExplosionPlayed;
+    public event System.Action FighterJetPlayed;
+    void Awake() => TrackStep(HelicopterStep);
     void OnEnable()
     {
         if (tutorial != null)
         {
+            tutorial.StartRequested += BeginHelicopterTransfer;
             tutorial.Started += NotifyTutorialStartPressed;
             tutorial.CasePickedUp += NotifyTutorialCasePhase;
             tutorial.PlacementCompleted += OnTutorialPlacementCompleted;
@@ -126,14 +149,137 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     public void NotifyTutorialCasePlaced(float completionMessageSeconds = 0f)
     {
         if (tutorial == null || !tutorial.HasCompletedPlacement) return;
-        BeginAutomaticSequence(2, Mathf.Max(0f, completionMessageSeconds) + Mathf.Max(0f, tFirstStrike));
+        BeginAutomaticSequence(FirstStrikeStep, Mathf.Max(0f, completionMessageSeconds) + Mathf.Max(0f, tFirstStrike));
+    }
+
+    void BeginHelicopterTransfer()
+    {
+        if (helicopterTransfer != null) return;
+        if (helicopterIntro == null)
+        {
+            Debug.LogError("Lvl1: assign Helicopter Intro on the state machine before starting the mission.", this);
+            tutorial?.CancelStartTransition();
+            return;
+        }
+        if (!helicopterIntro.IsRiding)
+        {
+            tutorial?.CompleteStartTransition();
+            return;
+        }
+        if (helicopterIntro.PassengerCamera == null)
+        {
+            Debug.LogError("Lvl1: assign the helicopter passenger's headset camera before starting the mission.", this);
+            tutorial?.CancelStartTransition();
+            return;
+        }
+        EnsureHelicopterFade();
+        TrackStep(TransferStep);
+        helicopterTransfer = StartCoroutine(TransferFromHelicopter());
+    }
+
+    IEnumerator TransferFromHelicopter()
+    {
+        yield return FadeHelicopterView(1f, helicopterFadeOutSeconds);
+        yield return null;
+        helicopterIntro.EndRide(keepMovementLocked: true);
+        helicopterIntro.DisableAfterTransfer();
+        if (helicopterBlackSeconds > 0f) yield return new WaitForSecondsRealtime(helicopterBlackSeconds);
+        yield return FadeHelicopterView(0f, helicopterFadeInSeconds);
+        helicopterIntro.ReleaseMovementLock();
+        helicopterTransfer = null;
+        tutorial?.CompleteStartTransition();
+    }
+
+    void LateUpdate()
+    {
+        if (helicopterTransfer != null) helicopterIntro?.MaintainPassengerLock();
+    }
+
+    void EnsureHelicopterFade()
+    {
+        if (helicopterFade != null) return;
+        var camera = helicopterIntro.PassengerCamera;
+        var overlay = new GameObject("Helicopter Mission Fade", typeof(RectTransform),
+            typeof(Canvas), typeof(CanvasGroup), typeof(Image));
+        overlay.layer = LayerMask.NameToLayer("UI");
+        var rect = overlay.GetComponent<RectTransform>();
+        rect.SetParent(camera.transform, false);
+        float distance = Mathf.Max(camera.nearClipPlane + 0.03f, 0.1f);
+        rect.localPosition = Vector3.forward * distance;
+        rect.localScale = Vector3.one * (distance * 0.005f);
+        rect.sizeDelta = new Vector2(2000f, 2000f);
+        var canvas = overlay.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvas.worldCamera = camera;
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = 32767;
+        var image = overlay.GetComponent<Image>();
+        image.color = Color.black;
+        image.raycastTarget = false;
+        helicopterFade = overlay.GetComponent<CanvasGroup>();
+        helicopterFade.alpha = 0f;
+        helicopterFade.blocksRaycasts = false;
+        helicopterFade.interactable = false;
+    }
+
+    IEnumerator FadeHelicopterView(float target, float seconds)
+    {
+        float start = helicopterFade.alpha;
+        for (float elapsed = 0f; elapsed < seconds; elapsed += Time.unscaledDeltaTime)
+        {
+            helicopterFade.alpha = Mathf.Lerp(start, target, Mathf.Clamp01(elapsed / seconds));
+            if (target > 0f) helicopterIntro.SetRideAudioLevel(1f - helicopterFade.alpha);
+            yield return null;
+        }
+        helicopterFade.alpha = target;
+        if (target > 0f) helicopterIntro.SetRideAudioLevel(0f);
+    }
+
+    void CancelHelicopterTransfer()
+    {
+        if (helicopterTransfer == null) return;
+        StopCoroutine(helicopterTransfer);
+        helicopterTransfer = null;
+        if (helicopterFade != null) helicopterFade.alpha = 0f;
+        if (helicopterIntro != null && helicopterIntro.IsRiding)
+        {
+            helicopterIntro.SetRideAudioLevel(1f);
+            tutorial?.CancelStartTransition();
+            TrackStep(HelicopterStep);
+        }
+        else
+        {
+            helicopterIntro?.ReleaseMovementLock();
+            tutorial?.CompleteStartTransition();
+            TrackStep(TutorialStep);
+        }
+    }
+
+    void CompleteHelicopterOpeningImmediately()
+    {
+        if (helicopterTransfer != null) StopCoroutine(helicopterTransfer);
+        helicopterTransfer = null;
+        if (helicopterFade != null) helicopterFade.alpha = 0f;
+        helicopterIntro?.EndRide(keepMovementLocked: true);
+        helicopterIntro?.DisableAfterTransfer();
+        helicopterIntro?.ReleaseMovementLock();
+        tutorial?.CompleteStartTransition();
+    }
+
+    void OnDestroy()
+    {
+        if (helicopterFade != null) Destroy(helicopterFade.gameObject);
     }
 
     void BeginAutomaticSequence(int firstStep, float initialDelay)
     {
         if (sequenceRunning || SequenceComplete) return;
         sequenceRunning = true;
-        if (firstStep <= 2) PlayerImpactAudio.PlayFighterJet(fighterJetSound, fighterJetVolume);
+        if (firstStep <= FirstStrikeStep)
+        {
+            PlayerImpactAudio.PlayFighterJet(fighterJetSound, fighterJetVolume);
+            FighterJetPlayed?.Invoke();
+        }
         sequenceRoutine = StartCoroutine(RunSequence(firstStep, initialDelay));
     }
 
@@ -145,9 +291,9 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     IEnumerator RunSequence(int firstStep, float initialDelay)
     {
         if (initialDelay > 0f) yield return new WaitForSecondsRealtime(initialDelay);
-        if (firstStep <= 2)
+        if (firstStep <= FirstStrikeStep)
         {
-            TrackStep(2);
+            TrackStep(FirstStrikeStep);
             LaunchFirstStrike();
             yield return AwaitImpact(missiles1, true);
             if (!firstStrikePlayed) { AbortSequence(); yield break; }
@@ -155,23 +301,24 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
             while (Time.unscaledTime - firstImpactTime < secondStrikeDelay || ownsTimeScale)
                 yield return null;
         }
-        if (firstStep <= 3)
+        if (firstStep <= SecondStrikeStep)
         {
-            TrackStep(3);
+            TrackStep(SecondStrikeStep);
             LaunchSecondStrike();
             yield return AwaitImpact(missiles2, false);
             if (!secondStrikePlayed) { AbortSequence(); yield break; }
 
+            yield return new WaitForSecondsRealtime(secondStrikeScatterDelaySeconds);
+            scatterTwo?.Explode();
+            scatterObjects?.Explode();
             yield return new WaitForSecondsRealtime(fallAfterSecondStrikeSeconds);
-            while (CondensationCloudSystem.Instance != null && CondensationCloudSystem.Instance.HasFlyingDebris)
-                yield return null;
         }
-        if (firstStep <= 4)
+        if (firstStep <= FallStep)
         {
-            TrackStep(4);
+            TrackStep(FallStep);
             yield return RunFallPhase();
         }
-        TrackStep(5);
+        TrackStep(LoadStep);
         yield return LoadNextScene();
         sequenceRunning = false;
         sequenceRoutine = null;
@@ -198,17 +345,21 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
 
     protected override void PrepareForEditorStepEnter() => StopSequence();
 
-    protected override int NextEditorStep(int current) => current < 2 ? 2 : current + 1;
+    protected override int NextEditorStep(int current) => current + 1;
 
     protected override void OnEnterStep(int index)
     {
         if (!Application.isPlaying) return;
+        if (index >= TutorialStep) CompleteHelicopterOpeningImmediately();
         switch (index)
         {
-            case 2:
-            case 3:
-            case 4:
-            case 5:
+            case TransferStep:
+                tutorial?.EditorTestPressStart();
+                break;
+            case FirstStrikeStep:
+            case SecondStrikeStep:
+            case FallStep:
+            case LoadStep:
                 BeginAutomaticSequence(index, 0f);
                 break;
         }
@@ -262,6 +413,7 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         ShakeBuilding();
         SwapBridgeDestroyed();
         scatterOne?.Explode();
+        FirstExplosionPlayed?.Invoke();
         return true; // This impact already has its explosion and cloud.
     }
 
@@ -270,11 +422,10 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         if (!isActiveAndEnabled || !secondStrikeLaunched || secondStrikePlayed) return false;
         secondStrikePlayed = true;
         RestoreTimeScale();
+        scatterOne?.StopAndDisablePieces();
         if (explosionTwo != null) explosionTwo.transform.position = position;
         PlayExplosionObject(explosionTwo, ExplosionTimeScaleSettings.Profile.Identity);
         SpawnCondensationAt(explosionTwo, ExplosionTimeScaleSettings.Profile.Identity);
-        scatterTwo?.Explode();
-        scatterObjects?.Explode();
         ShakeBuilding();
         ShowGlassShardOverlay();
         return true;
@@ -290,10 +441,11 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         explosion.SetActive(true);
         foreach (var ps in explosion.GetComponentsInChildren<ParticleSystem>(true))
         {
+            if (!ps.gameObject.activeInHierarchy) continue;
             var main = ps.main;
             main.useUnscaledTime = false;
-            ps.Clear(true);
-            ps.Play(true);
+            ps.Clear(false);
+            ps.Play(false);
         }
         foreach (var audio in explosion.GetComponentsInChildren<AudioSource>(true))
             if (audio.clip != null && !audio.isPlaying) audio.Play();
@@ -345,11 +497,13 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
     {
         if (tutorial != null)
         {
+            tutorial.StartRequested -= BeginHelicopterTransfer;
             tutorial.Started -= NotifyTutorialStartPressed;
             tutorial.CasePickedUp -= NotifyTutorialCasePhase;
             tutorial.PlacementCompleted -= OnTutorialPlacementCompleted;
         }
         StopSequence();
+        CancelHelicopterTransfer();
         if (missiles1 != null && missiles1.ImpactPresentationOverride == OnFirstMissileImpact)
         {
             missiles1.ImpactPresentationOverride = previousFirstImpactHandler;
@@ -418,28 +572,31 @@ public sealed class Lvl1BuildLevelStateMachine : BuildLevelStateMachineBase
         if (hideGlassShardOnSceneLoad && glassShardOverlay != null) glassShardOverlay.Hide(0f);
     }
 
-    public void NotifyTutorialStartPressed() => TrackStep(1);
-    public void NotifyTutorialCasePhase() => TrackStep(1);
+    public void NotifyTutorialStartPressed() => TrackStep(TutorialStep);
+    public void NotifyTutorialCasePhase() => TrackStep(TutorialStep);
 
     public void EditorTestRunFullPostPlacement()
     {
         if (!Application.isPlaying) return;
         if (sequenceRunning || SequenceComplete) return;
-        BeginAutomaticSequence(2, 0f);
+        CompleteHelicopterOpeningImmediately();
+        BeginAutomaticSequence(FirstStrikeStep, 0f);
     }
 
     public void EditorTestPlayExplosionOne()
     {
         if (!Application.isPlaying) return;
         StopSequence();
-        BeginAutomaticSequence(2, 0f);
+        CompleteHelicopterOpeningImmediately();
+        BeginAutomaticSequence(FirstStrikeStep, 0f);
     }
 
     public void EditorTestPlayExplosionTwo()
     {
         if (!Application.isPlaying) return;
         StopSequence();
-        BeginAutomaticSequence(3, 0f);
+        CompleteHelicopterOpeningImmediately();
+        BeginAutomaticSequence(SecondStrikeStep, 0f);
     }
 
     public void EditorTestShowGlassShard() => ShowGlassShardOverlay();

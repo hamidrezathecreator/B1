@@ -109,7 +109,15 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
         launchHint.SetHand(hand);
 
         if (tutorialButtons != null)
-            tutorialButtons.firePressed.AddListener(HideLaunchHint);
+        {
+            tutorialButtons.rotatePressed.AddListener(OnLaunchButtonPressed);
+            tutorialButtons.firePressed.AddListener(OnLaunchButtonPressed);
+        }
+    }
+
+    void OnLaunchButtonPressed()
+    {
+        if (tutorialButtons != null && !tutorialButtons.HasEnabledButtons) HideLaunchHint();
     }
 
     void HideLaunchHint()
@@ -128,7 +136,10 @@ public sealed class XrLevelPlaySetup : MonoBehaviour
 
         launchHint = null;
         if (tutorialButtons != null)
-            tutorialButtons.firePressed.RemoveListener(HideLaunchHint);
+        {
+            tutorialButtons.rotatePressed.RemoveListener(OnLaunchButtonPressed);
+            tutorialButtons.firePressed.RemoveListener(OnLaunchButtonPressed);
+        }
     }
 
 

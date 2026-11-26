@@ -28,7 +28,7 @@ public sealed class XrPlayBoundaryEnforcer : MonoBehaviour
 
     void LateUpdate()
     {
-        if (!active || origin == null) return;
+        if (!active || origin == null || HelicopterHover.IsMovementLocked(origin)) return;
 
         var pos = origin.transform.position;
         var playerPoint = origin.Camera != null ? origin.Camera.transform.position : pos;

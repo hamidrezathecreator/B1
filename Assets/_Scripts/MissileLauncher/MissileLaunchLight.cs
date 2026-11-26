@@ -5,6 +5,8 @@ public sealed class MissileLaunchLight : MonoBehaviour
 {
     [SerializeField] Light pointLight;
     [SerializeField] SpriteRenderer sprite;
+    [SerializeField] UnityEngine.Rendering.LensFlareComponentSRP lensFlare;
+    [SerializeField, Min(0f)] float flareIntensity = 0.8f;
     [SerializeField, Min(0f)] float intensityMinimum = 0.5f;
     [SerializeField, Min(0f)] float intensityMaximum = 1.5f;
     [SerializeField, Min(0f)] float alphaMinimum = 0.5f;
@@ -18,6 +20,7 @@ public sealed class MissileLaunchLight : MonoBehaviour
     {
         if (pointLight == null) pointLight = GetComponentInChildren<Light>();
         if (sprite == null) sprite = GetComponentInChildren<SpriteRenderer>();
+        if (lensFlare == null) lensFlare = GetComponentInChildren<UnityEngine.Rendering.LensFlareComponentSRP>();
         if (billboardCamera == null) billboardCamera = Camera.main;
         noiseOffset = Random.Range(0f, 1000f);
     }
@@ -38,7 +41,10 @@ public sealed class MissileLaunchLight : MonoBehaviour
     void UpdateBrightness()
     {
         var noise = Mathf.PerlinNoise(Time.time * trembleSpeed + noiseOffset, 0.37f);
-        if (pointLight != null) pointLight.intensity = Mathf.Lerp(intensityMinimum, intensityMaximum, noise) * power;
+        var intensity = Mathf.Lerp(intensityMinimum, intensityMaximum, noise) * power;
+        if (pointLight != null) pointLight.intensity = intensity;
+        if (lensFlare != null)
+            lensFlare.intensity = intensityMaximum > 0f ? flareIntensity * intensity / intensityMaximum : 0f;
         if (sprite != null)
         {
             var color = sprite.color;

@@ -99,6 +99,7 @@ public class ThermalMonitorRenderFeature : ScriptableRendererFeature
         public ThermalMonitorPass()
         {
             renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
+            requiresIntermediateTexture = true;
         }
 
         public void Setup(ThermalMonitorCamera monitor)

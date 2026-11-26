@@ -477,11 +477,12 @@ public class ThermalMonitorCamera : MonoBehaviour
         _cam.allowHDR  = false;
         _cam.allowMSAA = false;
         _cam.allowDynamicResolution = false;
-        _cam.stereoTargetEye = StereoTargetEyeMask.None;   // plain mono camera, never an XR eye
 
         UniversalAdditionalCameraData data = _cam.GetUniversalAdditionalCameraData();
         if (data != null)
         {
+            data.allowXRRendering = false;
+            data.renderType = CameraRenderType.Base;
             data.renderPostProcessing = false;
             data.antialiasing         = AntialiasingMode.None;
             data.renderShadows        = false;   // monitor doesn't need shadow maps
@@ -489,6 +490,8 @@ public class ThermalMonitorCamera : MonoBehaviour
             data.requiresDepthOption  = useSceneDepth ? CameraOverrideOption.On : CameraOverrideOption.Off;
             data.requiresDepthTexture = useSceneDepth;
         }
+        else if (GraphicsSettings.currentRenderPipeline == null)
+            _cam.stereoTargetEye = StereoTargetEyeMask.None;
     }
 
     private void ClearOutputToBlack()

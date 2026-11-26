@@ -48,12 +48,13 @@ static class BuildLevelStateMachineEditorExtensions
 
     static string Lvl1Name(int i) => i switch
     {
-        0 => "Await Start (tutorial)",
-        1 => "Await Case Placement (tutorial)",
-        2 => "Missile 1 + Explosion 1 + Bridge scatter",
-        3 => "Missile 2 + Explosion 2",
-        4 => "Fall + Fade Out",
-        5 => "Load Lvl 2",
+        0 => "Helicopter Start (await Mission Start)",
+        1 => "Fade Out + Transfer To Tutorial + Fade In",
+        2 => "Bridge Tutorial (move + pickup + placement)",
+        3 => "Missile 1 + Explosion 1 + Bridge scatter",
+        4 => "Missile 2 + Explosion 2",
+        5 => "Fall + Fade Out",
+        6 => "Load Lvl 2",
         _ => "?"
     };
 

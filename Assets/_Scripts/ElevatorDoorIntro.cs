@@ -36,6 +36,9 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     [SerializeField] CanvasGroup fadeOverlay;
     [SerializeField] AudioSource elevatorAudio;
     [SerializeField] AudioSource tunnelAudio;
+    [Header("Elevator button order voice")]
+    [Tooltip("Played once after an accepted floor-button press, alongside the elevator ride.")]
+    [SerializeField] AudioSource floorButtonOrderVoice;
     [Header("Hint")]
     [SerializeField] TMP_FontAsset handHintFont;
     [SerializeField] string elevatorHintMessage = "روی دکمه آسانسور کلیک کن";
@@ -65,6 +68,7 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     Coroutine nextSceneRoutine;
     Coroutine elevatorRoutine;
     Coroutine fadeRoutine;
+    Coroutine musicRoutine;
     bool loadingNextScene;
     bool floorPressed;
     bool doorsOpenForPlayer;
@@ -73,6 +77,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     Vector3 buttonRestLocal;
 
     public bool IsFadeComplete { get; private set; }
+    public event System.Action DoorsOpened;
+    public event System.Action TransitionStarted;
     public bool IsFloorPressed => floorPressed;
     public bool IsLoadingNextScene => loadingNextScene;
     public bool AreDoorsOpenForPlayer => doorsOpenForPlayer;
@@ -138,6 +144,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         floorPressed = true;
         foreach (var button in floorButtons) button.enabled = false;
         ButtonClickSound.Play();
+        if (floorButtonOrderVoice != null && floorButtonOrderVoice.clip != null)
+        {
+            floorButtonOrderVoice.loop = false;
+            floorButtonOrderVoice.Play();
+        }
         if (handHint != null) handHint.Hide();
         handHint = null;
         if (buttonShake != null) buttonShake.ShakeFor(buttonShakeSeconds, buttonShakeStrength);
@@ -167,7 +178,6 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             yield return null;
         }
         elevatorRoot.SetPositionAndRotation(elevatorArrival.position, elevatorArrival.rotation);
-        StartCoroutine(CrossfadeToTunnelMusic());
         if (doorDelaySeconds > rideSeconds) yield return new WaitForSecondsRealtime(doorDelaySeconds - rideSeconds);
         var start01 = door01.localPosition;
         var start02 = door02.localPosition;
@@ -193,6 +203,8 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         SetElevatorBoundaryActive(false);
         SetOutsideTeleportEnabled(true);
         doorsOpenForPlayer = true;
+        musicRoutine = StartCoroutine(CrossfadeToTunnelMusic());
+        DoorsOpened?.Invoke();
         ShowPathToTable();
         OnTabletChecklistChanged(tabletUi.AllOptionsChecked);
     }
@@ -255,7 +267,31 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
             nextSceneRoutine = null;
             return;
         }
-        if (nextSceneRoutine == null) nextSceneRoutine = StartCoroutine(LoadNextSceneAfterClicks());
+        if (nextSceneRoutine == null)
+        {
+            TransitionStarted?.Invoke();
+            nextSceneRoutine = StartCoroutine(LoadNextSceneAfterClicks());
+        }
+    }
+
+    public void FadeOutTunnelMusic()
+    {
+        if (musicRoutine != null) StopCoroutine(musicRoutine);
+        if (elevatorAudio != null) elevatorAudio.Stop();
+        musicRoutine = StartCoroutine(FadeOutTunnel());
+    }
+
+    IEnumerator FadeOutTunnel()
+    {
+        if (tunnelAudio == null) yield break;
+        var startVolume = tunnelAudio.volume;
+        for (var elapsed = 0f; elapsed < musicCrossfadeSeconds; elapsed += Time.unscaledDeltaTime)
+        {
+            tunnelAudio.volume = Mathf.Lerp(startVolume, 0f, elapsed / musicCrossfadeSeconds);
+            yield return null;
+        }
+        tunnelAudio.Stop();
+        musicRoutine = null;
     }
 
     IEnumerator AutoFadeIn()
@@ -313,7 +349,6 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
         elevatorRoot.SetPositionAndRotation(elevatorArrival.position, elevatorArrival.rotation);
         door01.position = door01OpenPose.position;
         door02.position = door02OpenPose.position;
-        StartCoroutine(CrossfadeToTunnelMusic());
         CompleteElevatorRide();
     }
 
@@ -321,6 +356,11 @@ public sealed class ElevatorDoorIntro : MonoBehaviour
     {
         if (Application.isPlaying && doorsOpenForPlayer && tabletUi != null && tabletUi.AllOptionsChecked)
             OnTabletChecklistChanged(true);
+    }
+
+    void OnDisable()
+    {
+        if (floorButtonOrderVoice != null) floorButtonOrderVoice.Stop();
     }
 
     void OnDestroy()

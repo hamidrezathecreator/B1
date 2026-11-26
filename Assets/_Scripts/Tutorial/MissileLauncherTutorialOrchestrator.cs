@@ -83,6 +83,8 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     Quaternion originalLogoRotation;
     readonly List<MissileProjectile> musicMissiles = new List<MissileProjectile>();
     bool trackingFlightMusic;
+    bool firstTutorialLauncherAccepted;
+    bool secondTutorialLauncherAccepted;
     float musicStartVolume;
     float musicRiseProgress;
 
@@ -133,6 +135,8 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
     {
         if (!Application.isPlaying || !isActiveAndEnabled) return;
         FireAccepted = false;
+        firstTutorialLauncherAccepted = false;
+        secondTutorialLauncherAccepted = false;
         StopFlightMusicTracking();
         StopBeginDelay();
         StopIntroAudio();
@@ -149,7 +153,7 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
             rotateCard.alpha = 1f;
             fireCard.alpha = 1f;
             Phase = TutorialPhase.AwaitingRotate;
-            buttons.EnableRotate();
+            buttons.EnableBoth();
             return;
         }
         if (buttons == null || !buttons.isActiveAndEnabled || !buttons.IsConfigured || actions == null || !actions.isActiveAndEnabled ||
@@ -200,15 +204,12 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnRotatePressed()
     {
-        if (Phase != TutorialPhase.AwaitingRotate) return;
         if (launchButtonsOnly)
         {
-            if (!actions.FireTutorialLauncher(0)) { Fail(); return; }
-            rotateCard.alpha = 0f;
-            Phase = TutorialPhase.AwaitingFire;
-            buttons.EnableFire();
+            AcceptTutorialLauncher(0);
             return;
         }
+        if (Phase != TutorialPhase.AwaitingRotate) return;
         Phase = TutorialPhase.Rotating;
         buttons.DisableButtons();
         TransitionCards(null);
@@ -278,17 +279,12 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
 
     void OnFirePressed()
     {
-        if (Phase != TutorialPhase.AwaitingFire) return;
         if (launchButtonsOnly)
         {
-            if (!actions.FireTutorialLauncher(1)) { Fail(); return; }
-            fireCard.alpha = 0f;
-            FireAccepted = true;
-            Phase = TutorialPhase.Firing;
-            buttons.DisableButtons();
-            StartCoroutine(WaitForTutorialLaunches());
+            AcceptTutorialLauncher(1);
             return;
         }
+        if (Phase != TutorialPhase.AwaitingFire) return;
         FireAccepted = true;
         Phase = TutorialPhase.Firing;
         buttons.DisableButtons();
@@ -300,6 +296,40 @@ public sealed class MissileLauncherTutorialOrchestrator : MonoBehaviour
         // Hold the current level while nearby missiles are loud, including during the startup fade.
         if (musicManager != null) musicManager.FadeToVolume(musicStartVolume, 0f);
         actions.FireAll();
+    }
+
+    void AcceptTutorialLauncher(int index)
+    {
+        if (Phase != TutorialPhase.AwaitingRotate && Phase != TutorialPhase.AwaitingFire) return;
+        if (index == 0 ? firstTutorialLauncherAccepted : secondTutorialLauncherAccepted) return;
+        if (!actions.FireTutorialLauncher(index)) { Fail(); return; }
+        if (index == 0)
+        {
+            firstTutorialLauncherAccepted = true;
+            rotateCard.alpha = 0f;
+        }
+        else
+        {
+            secondTutorialLauncherAccepted = true;
+            fireCard.alpha = 0f;
+        }
+        if (firstTutorialLauncherAccepted && secondTutorialLauncherAccepted)
+        {
+            FireAccepted = true;
+            Phase = TutorialPhase.Firing;
+            buttons.DisableButtons();
+            StartCoroutine(WaitForTutorialLaunches());
+        }
+        else if (firstTutorialLauncherAccepted)
+        {
+            Phase = TutorialPhase.AwaitingFire;
+            buttons.EnableFire();
+        }
+        else
+        {
+            Phase = TutorialPhase.AwaitingRotate;
+            buttons.EnableRotate();
+        }
     }
 
     IEnumerator WaitForTutorialLaunches()

@@ -21,13 +21,24 @@ public sealed class XrOriginPlaySettings : MonoBehaviour
     [SerializeField] float bodyRadius = 0.2f;
 
     [Header("Locomotion")]
-    [Tooltip("Left thumbstick: smooth walk. Right thumbstick stays on teleport (see Controller Input Action Manager on each controller).")]
+    [Tooltip("Left thumbstick: smooth walk. Teleport is disabled on the XR Origin prefab.")]
     [SerializeField] bool enableStickWalking = true;
 
     [SerializeField] float moveSpeed = 2.5f;
 
-    public float EyeHeightMeters => eyeHeightMeters;
-    public float BodyHeightMeters => bodyHeightMeters;
+    float heightMultiplier = 1f;
+
+    public float EyeHeightMeters => eyeHeightMeters * heightMultiplier;
+    public float BodyHeightMeters => bodyHeightMeters * heightMultiplier;
+    public bool IsLocomotionLocked { get; private set; }
+
+    public void SetLocomotionLocked(bool locked) => IsLocomotionLocked = locked;
+
+    public void SetHeightMultiplier(float multiplier)
+    {
+        heightMultiplier = Mathf.Max(0.1f, multiplier);
+        Apply();
+    }
 
     void Awake() => Apply();
 
@@ -48,18 +59,19 @@ public sealed class XrOriginPlaySettings : MonoBehaviour
         var body = origin.GetComponent<CharacterController>();
         if (body != null)
         {
-            body.height = bodyHeightMeters;
+            body.height = BodyHeightMeters;
             body.radius = bodyRadius;
-            body.center = new Vector3(0f, bodyHeightMeters * 0.5f, 0f);
+            body.center = new Vector3(0f, BodyHeightMeters * 0.5f, 0f);
         }
 
-        if (!enableStickWalking) return;
+        if (!enableStickWalking || IsLocomotionLocked) return;
 
         var move = origin.GetComponentInChildren<DynamicMoveProvider>(true);
         if (move == null) return;
 
         move.enabled = true;
         move.moveSpeed = moveSpeed;
+        move.enableStrafe = true;
         move.enableFly = false;
         move.leftHandMovementDirection = DynamicMoveProvider.MovementDirection.HeadRelative;
         move.rightHandMoveInput.inputSourceMode = XRInputValueReader.InputSourceMode.Unused;
@@ -70,13 +82,13 @@ public sealed class XrOriginPlaySettings : MonoBehaviour
         var origin = GetComponent<XROrigin>();
         if (origin == null) return;
 
-        if (!Mathf.Approximately(origin.CameraYOffset, eyeHeightMeters))
-            origin.CameraYOffset = eyeHeightMeters;
+        if (!Mathf.Approximately(origin.CameraYOffset, EyeHeightMeters))
+            origin.CameraYOffset = EyeHeightMeters;
 
         if (origin.CameraFloorOffsetObject == null) return;
         var offset = origin.CameraFloorOffsetObject.transform;
         var local = offset.localPosition;
-        offset.localPosition = new Vector3(local.x, eyeHeightMeters, local.z);
+        offset.localPosition = new Vector3(local.x, EyeHeightMeters, local.z);
     }
 
     void LateUpdate() => ApplyCameraHeight();

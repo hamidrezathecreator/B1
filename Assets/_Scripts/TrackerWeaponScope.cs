@@ -35,6 +35,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     [Header("Screen")]
     [Tooltip("Material slot of the white screen on the weapon mesh (M_Glass).")]
     [Min(0)] [SerializeField] int screenMaterialIndex = 1;
+    [SerializeField] Material scopeScreenMaterial;
 
     [Header("Grab")]
     [SerializeField] bool grabbable = true;
@@ -110,6 +111,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     RenderTexture texture;
     MeshRenderer weaponRenderer;
     Renderer screenRenderer;
+    Material screenMaterial;
     XRGrabInteractable grab;
     Rigidbody body;
     Vector3 homePosition;
@@ -263,7 +265,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     {
         if (scopeCamera == null) return;
         var held = grab != null && grab.isSelected;
-        scopeCamera.enabled = keepScopeFeedLive || held || thermalEngaged;
+        scopeCamera.enabled = isActiveAndEnabled && (keepScopeFeedLive || held || thermalEngaged);
     }
 
     void RefreshScopeDisplays()
@@ -271,7 +273,7 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         if (texture == null) return;
         if (weaponRenderer != null) ApplyTrackerScreenTexture(weaponRenderer);
         if (screenRenderer == null) return;
-        var mat = screenRenderer.material;
+        var mat = screenRenderer.sharedMaterial;
         if (mat == null) return;
         if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", texture);
         mat.mainTexture = texture;
@@ -600,10 +602,17 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             var height = Mathf.Abs(Vector3.Dot(screen.size, Abs(up)));
             if (width > 1e-5f && height > 1e-5f) aspect = Mathf.Clamp(width / height, 0.25f, 4f);
         }
-        var rt = new RenderTexture(Mathf.RoundToInt(textureHeight * aspect), textureHeight, 24)
+        var rt = new RenderTexture(Mathf.RoundToInt(textureHeight * aspect), textureHeight, 24, RenderTextureFormat.ARGB32)
         {
             name = "Tracker Weapon Scope",
             antiAliasing = 1,
+            dimension = TextureDimension.Tex2D,
+            volumeDepth = 1,
+            vrUsage = VRTextureUsage.None,
+            useDynamicScale = false,
+            useMipMap = false,
+            filterMode = FilterMode.Bilinear,
+            wrapMode = TextureWrapMode.Clamp,
         };
         rt.Create();
         return rt;
@@ -613,16 +622,20 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     static void ConfigureScopeUrpCamera(UniversalAdditionalCameraData data, Camera cam)
     {
         if (cam == null) return;
+        cam.allowHDR = false;
+        cam.allowMSAA = false;
+        cam.allowDynamicResolution = false;
         if (data != null)
             data.allowXRRendering = false;
         else if (GraphicsSettings.currentRenderPipeline == null)
             cam.stereoTargetEye = StereoTargetEyeMask.None;
 
         if (data == null) return;
-        data.requiresColorOption = CameraOverrideOption.On;
+        data.renderType = CameraRenderType.Base;
+        data.requiresColorOption = CameraOverrideOption.Off;
         data.requiresDepthOption = CameraOverrideOption.On;
-        data.renderShadows = true;
-        data.renderPostProcessing = true;
+        data.renderShadows = false;
+        data.renderPostProcessing = false;
         data.antialiasing = AntialiasingMode.None;
         cam.forceIntoRenderTexture = true;
         cam.clearFlags = CameraClearFlags.Skybox;
@@ -633,15 +646,15 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     {
         if (texture == null || weaponRenderer == null || screenMaterialIndex >= weaponRenderer.sharedMaterials.Length)
             return;
-        var mats = weaponRenderer.materials;
-        var mat = mats[screenMaterialIndex];
+        var mats = weaponRenderer.sharedMaterials;
+        var mat = screenMaterial != null ? screenMaterial : mats[screenMaterialIndex];
         if (mat == null) return;
         if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", texture);
         if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", texture);
         mat.mainTexture = texture;
         if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
         mats[screenMaterialIndex] = mat;
-        weaponRenderer.materials = mats;
+        weaponRenderer.sharedMaterials = mats;
     }
 
     void CreateScreen(MeshRenderer weaponRenderer, Bounds screen, Vector3 normal, Vector3 up)
@@ -663,9 +676,13 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         quad.transform.localRotation = Quaternion.LookRotation(-normal, up);
         quad.transform.localScale = new Vector3(width * 0.96f, height * 0.96f, 1f);
 
-        var shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null) shader = Shader.Find("Unlit/Texture");
-        var material = new Material(shader) { name = "Scope Screen" };
+        if (scopeScreenMaterial == null)
+        {
+            Debug.LogError("TrackerWeaponScope: assign the scope screen material so its shader is included in VR builds.", this);
+            return;
+        }
+        var material = new Material(scopeScreenMaterial) { name = "Scope Screen" };
+        screenMaterial = material;
         if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", texture);
         material.mainTexture = texture;
         if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
@@ -695,6 +712,11 @@ public sealed class TrackerWeaponScope : MonoBehaviour
     void LateUpdate()
     {
         if (scopeCamera == null) return;
+        if (texture != null && (!texture.IsCreated() || scopeCamera.targetTexture != texture))
+        {
+            if (!texture.IsCreated()) texture.Create();
+            WakeScopeCamera();
+        }
         UpdateScopeCameraEnabled();
         var held = grab != null && grab.isSelected;
         UpdateThermalContextButton(held); // B/Y works without grab unless thermalContextButtonRequiresHeld
@@ -937,8 +959,9 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         {
             var impact = Instantiate(impactParticlePrefab, center, Quaternion.identity);
             impact.transform.localScale *= killExplosionScale;
+            impact.SetActive(true);
             foreach (var particles in impact.GetComponentsInChildren<ParticleSystem>(true))
-                particles.Play();
+                if (particles.gameObject.activeInHierarchy) particles.Play(false);
             Destroy(impact, Mathf.Max(1f, impactParticleLifetime));
         }
         else
@@ -947,7 +970,17 @@ public sealed class TrackerWeaponScope : MonoBehaviour
             LaunchSmoke.CreateFire(center, size * 0.35f, size * 0.9f, 2.5f);
         }
         if (missileImpactSound != null)
-            AudioSource.PlayClipAtPoint(missileImpactSound, center, missileImpactVolume);
+        {
+            var impactAudio = new GameObject("Drone Destruction Sound").AddComponent<AudioSource>();
+            impactAudio.transform.position = center;
+            impactAudio.playOnAwake = false;
+            impactAudio.clip = missileImpactSound;
+            impactAudio.volume = missileImpactVolume;
+            impactAudio.spatialBlend = 0f;
+            impactAudio.dopplerLevel = 0f;
+            impactAudio.Play();
+            Destroy(impactAudio.gameObject, missileImpactSound.length + 0.5f);
+        }
 
         FreezeAndHideTarget();
         targetDown = true;
@@ -1068,10 +1101,17 @@ public sealed class TrackerWeaponScope : MonoBehaviour
         ReleaseMissile();
         ResetCrosshairFeedback();
         missileAway = false;
+        if (scopeCamera != null) scopeCamera.enabled = false;
+    }
+
+    void OnEnable()
+    {
+        if (scopeReady) WakeScopeCamera();
     }
 
     void OnDestroy()
     {
+        if (screenMaterial != null) Destroy(screenMaterial);
         if (generatedBeep != null) Destroy(generatedBeep);
         if (texture == null) return;
         texture.Release();

@@ -14,6 +14,7 @@ public sealed class MissileLauncherButtons : MonoBehaviour
     public UnityEvent rotatePressed = new UnityEvent();
     public UnityEvent firePressed = new UnityEvent();
     public bool IsConfigured => rotateButton != null && fireButton != null && rotateButton != fireButton;
+    public bool HasEnabledButtons => rotateAllowed || fireAllowed;
     bool rotateAllowed;
     bool fireAllowed;
     bool rotateFingerInside;
@@ -98,22 +99,28 @@ public sealed class MissileLauncherButtons : MonoBehaviour
         firePressed.Invoke();
     }
 
-    public void EnableRotate()
-    {
-        DisableButtons();
-        if (!isActiveAndEnabled || rotateButton == null) return;
-        if (rotateButton is VRPressButton tutorialButton) tutorialButton.ResetButton();
-        rotateAllowed = true;
-        rotateButton.enabled = true;
-    }
+    public void EnableRotate() => EnableButtons(true, false);
 
-    public void EnableFire()
+    public void EnableFire() => EnableButtons(false, true);
+
+    public void EnableBoth() => EnableButtons(true, true);
+
+    void EnableButtons(bool allowRotate, bool allowFire)
     {
         DisableButtons();
-        if (!isActiveAndEnabled || fireButton == null) return;
-        if (fireButton is VRPressButton tutorialButton) tutorialButton.ResetButton();
-        fireAllowed = true;
-        fireButton.enabled = true;
+        if (!isActiveAndEnabled) return;
+        if (allowRotate && rotateButton != null)
+        {
+            if (rotateButton is VRPressButton rotatePressButton) rotatePressButton.ResetButton();
+            rotateAllowed = true;
+            rotateButton.enabled = true;
+        }
+        if (allowFire && fireButton != null)
+        {
+            if (fireButton is VRPressButton firePressButton) firePressButton.ResetButton();
+            fireAllowed = true;
+            fireButton.enabled = true;
+        }
     }
 
     public void DisableButtons()

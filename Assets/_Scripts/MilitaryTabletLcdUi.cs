@@ -43,6 +43,9 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
     [Tooltip("Ignore a second touch on the same option for this long, seconds.")]
     [SerializeField] float retouchDelay = 0.4f;
 
+    [Header("Individual toggle sounds (options 1, 2, 3)")]
+    [SerializeField] AudioSource[] optionSounds = new AudioSource[OptionCount];
+
     RawImage[] optionImages;
     Texture2D[] inactiveTextures;
     Texture2D[] activeTextures;
@@ -228,7 +231,7 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
         if (Time.unscaledTime - lastToggleTime[index] < retouchDelay) return;
 
         lastToggleTime[index] = Time.unscaledTime;
-        ButtonClickSound.Play();
+        PlayOptionSound(index);
         optionActive[index] = !optionActive[index];
         var tex = optionActive[index] ? activeTextures[index] : inactiveTextures[index];
         if (tex != null)
@@ -254,10 +257,18 @@ public sealed class MilitaryTabletLcdUi : MonoBehaviour
             if (tex != null) optionImages[index].texture = tex;
         }
 
+        PlayOptionSound(index);
         OptionToggled?.Invoke(index, check);
         OptionChanged?.Invoke(index, check);
         ChecklistChanged?.Invoke(AllOptionsChecked);
         ChecklistUpdated?.Invoke(AllOptionsChecked);
+    }
+
+    void PlayOptionSound(int index)
+    {
+        var sound = optionSounds != null && index < optionSounds.Length ? optionSounds[index] : null;
+        if (sound != null && sound.clip != null) sound.PlayOneShot(sound.clip);
+        else ButtonClickSound.Play();
     }
 
     /// <summary>Editor / state-machine tester: check all three tablet options.</summary>

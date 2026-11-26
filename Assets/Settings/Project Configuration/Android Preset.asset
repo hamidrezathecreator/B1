@@ -27,10 +27,11 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 8899001122334455666}
   - {fileID: 736111124930016001}
-  m_RendererFeatureMap: e6f5a4b3c2d1e0f901b3aa042b31370a
+  - {fileID: 87706299336002}
+  m_RendererFeatureMap: 72378c305f9a7f7b01b3aa042b31370a4205d1b6c44f0000
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 11400000, guid: 60e1133243b97e347b653163a8c01b64, type: 2}
-  postProcessData: {fileID: 0}
+  postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
   m_AssetVersion: 3
   m_PrepassLayerMask:
     serializedVersion: 2
@@ -56,7 +57,7 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 0
---- !u!114 &8899001122334455666
+--- !u!114 &87706299336002
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -65,10 +66,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c9e8f7a6b5d4c3e2f1a0b9c8d7e6f5a4, type: 3}
-  m_Name: LVL3 Tracker Scope Thermal
-  m_EditorClassIdentifier: 
+  m_Script: {fileID: 11500000, guid: e31aa045cd654343a150554e9225b4ea, type: 3}
+  m_Name: XR Lens Flares
+  m_EditorClassIdentifier:
   m_Active: 1
+  flareShader: {fileID: 4800000, guid: 1d7ce14747d749eeab0306019bbb4ce3, type: 3}
 --- !u!114 &736111124930016001
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -84,3 +86,16 @@ MonoBehaviour:
   m_Active: 1
   material: {fileID: 2100000, guid: f6375d9d694740746b2f0470e70ca57d, type: 2}
   settings: {fileID: 11400000, guid: bdbca389da69466db85edf21af67d3eb, type: 2}
+--- !u!114 &8899001122334455666
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9e8f7a6b5d4c3e2f1a0b9c8d7e6f5a4, type: 3}
+  m_Name: LVL3 Tracker Scope Thermal
+  m_EditorClassIdentifier:
+  m_Active: 1

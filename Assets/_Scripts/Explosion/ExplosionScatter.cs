@@ -107,6 +107,8 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     [Header("Pieces")]
     [SerializeField] Transform[] pieces = Array.Empty<Transform>();
+    [Tooltip("Objects to hide as soon as any scatter starts. Reset Explosion restores their previous active states.")]
+    [SerializeField] GameObject[] disableOnScatter = Array.Empty<GameObject>();
     [SerializeField] Transform launchPoint;
     [SerializeField] Transform groundPoint;
     [Tooltip("Pieces with these names (or under an object with these names) never move, even if listed above.")]
@@ -173,6 +175,7 @@ public sealed class ExplosionScatter : MonoBehaviour
 
     readonly List<Sequence> activeTweens = new List<Sequence>();
     readonly Dictionary<Transform, RestPose> restPoses = new Dictionary<Transform, RestPose>();
+    readonly Dictionary<GameObject, bool> disabledObjectStates = new Dictionary<GameObject, bool>();
     readonly Dictionary<Transform, FollowerStart[]> followerStartsByDriver = new Dictionary<Transform, FollowerStart[]>();
     readonly HashSet<Transform> groupedFollowers = new HashSet<Transform>();
 
@@ -369,6 +372,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         EnsureStartCached();
         if (!HasSetup()) return;
 
+        HideScatterObjects();
         partialExplosionStep = 4;
         nextPieceIndex = pieces.Length;
         ExplodeAllEligible();
@@ -380,6 +384,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         if (!HasSetup()) return;
         if (partialExplosionStep >= 4) return;
 
+        HideScatterObjects();
         partialExplosionStep = 4;
         while (nextPieceIndex < pieces.Length)
             ExplodeEntryAtIndex(nextPieceIndex++);
@@ -391,6 +396,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         if (!HasSetup()) return;
         if (partialExplosionStep >= 4) return;
 
+        HideScatterObjects();
         partialExplosionStep++;
         int endIndex = Mathf.CeilToInt(pieces.Length * (partialExplosionStep / 4f));
         while (nextPieceIndex < endIndex)
@@ -774,6 +780,24 @@ public sealed class ExplosionScatter : MonoBehaviour
         return false;
     }
 
+    public void StopAndDisablePieces()
+    {
+        StopActiveTweens();
+#if UNITY_EDITOR
+        if (!Application.isPlaying) EditorStopPreviewScatter(false);
+#endif
+        foreach (var piece in pieces)
+            if (piece != null) HideObject(piece.gameObject);
+        foreach (var group in mergeGroups)
+        {
+            if (group == null) continue;
+            if (group.driver != null) HideObject(group.driver.gameObject);
+            if (group.followers == null) continue;
+            foreach (var follower in group.followers)
+                if (follower != null) HideObject(follower.gameObject);
+        }
+    }
+
     [ContextMenu("Reset Explosion")]
     public void ResetExplosion()
     {
@@ -828,6 +852,7 @@ public sealed class ExplosionScatter : MonoBehaviour
         EnsureStartCached();
         RestoreStartState();
         RegisterEditorPreviewUndo();
+        HideScatterObjects();
 
         editorDriverAnims.Clear();
         var handled = new HashSet<Transform>();
@@ -1010,8 +1035,30 @@ public sealed class ExplosionScatter : MonoBehaviour
         }
     }
 
+    void HideScatterObjects()
+    {
+        foreach (var target in disableOnScatter)
+            HideObject(target);
+    }
+
+    void HideObject(GameObject target)
+    {
+        if (target == null) return;
+        if (!disabledObjectStates.ContainsKey(target))
+        {
+            disabledObjectStates.Add(target, target.activeSelf);
+#if UNITY_EDITOR
+            if (!Application.isPlaying) UnityEditor.Undo.RecordObject(target, "Hide On Scatter");
+#endif
+        }
+        target.SetActive(false);
+    }
+
     void RestoreStartState()
     {
+        foreach (var pair in disabledObjectStates)
+            if (pair.Key != null) pair.Key.SetActive(pair.Value);
+        disabledObjectStates.Clear();
         if (restPoses.Count == 0) return;
         foreach (var pair in restPoses)
         {

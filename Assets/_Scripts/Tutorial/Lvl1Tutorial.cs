@@ -17,7 +17,9 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [Header("Scene references")]
     [SerializeField] XROrigin origin;
     [SerializeField] Button startButton;
+    [SerializeField] HelicopterHover helicopterIntro;
     [SerializeField] Transform rightController;
+    [SerializeField] Transform leftController;
     [SerializeField] TMP_FontAsset font;
     [SerializeField] XRRayInteractor[] teleportRays = Array.Empty<XRRayInteractor>();
 
@@ -32,12 +34,12 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     [SerializeField] string grabMessage = "حالا برو جعبه رو بردار\nدستت رو ببر نزدیکش و دکمه کناری (گریپ) رو نگه دار";
     [SerializeField] string carryMessage = "به سمت میز داخل غرفه برو و جعبه رو قرار بده\nنزدیک جای زرد که شدی ولش کن";
     [SerializeField] string doneMessage = "آفرین!";
-    [Tooltip("A jump larger than this in one frame counts as a teleport.")]
+    [Tooltip("Walking this far from the starting position advances to the grab instruction.")]
     [SerializeField] float teleportJumpDistance = 0.4f;
 
     [Min(0f)] [SerializeField] float doneMessageSeconds = 3f;
 
-    enum Step { WaitingForStart, Teleport, Grab, Carry, Done }
+    enum Step { WaitingForStart, Transitioning, Move, Grab, Carry, Done }
     Step step;
     HandHintBanner banner;
     Vector3 lastOriginPosition;
@@ -49,6 +51,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     public event Action PlacementCompleted;
     public event Action Started;
+    public event Action StartRequested;
     public event Action CasePickedUp;
     public bool HasCompletedPlacement { get; private set; }
     public float CompletionMessageSeconds => doneMessageSeconds;
@@ -77,6 +80,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     void Awake()
     {
+        SetTeleport(false);
         if (placementZones == null) return;
         foreach (var zone in placementZones)
             if (zone != null) zone.enabled = false;
@@ -100,25 +104,53 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         startButton.onClick.AddListener(OnStartPressed);
         ready = true;
         yield return null;
-        PrepareTeleportFloor();
         XrBuildSceneLocomotion.EnableWalking(origin);
         SetTeleport(false);
-        ShowBanner(startMessage);
-        HighlightButton("Trigger");
+        if (step == Step.WaitingForStart)
+        {
+            ShowBanner(startMessage);
+            HighlightButton("Trigger");
+        }
     }
 
     void OnStartPressed()
     {
         if (!ready || step != Step.WaitingForStart) return;
-        Started?.Invoke();
-        BeginTeleportStep();
+        if (StartRequested == null && helicopterIntro != null && helicopterIntro.IsRiding)
+        {
+            Debug.LogError("Lvl1 Tutorial: assign this tutorial to the level state machine for the helicopter fade transition.", this);
+            return;
+        }
+        step = Step.Transitioning;
+        startButton.interactable = false;
+        HideBanner();
+        ClearButtonHighlight();
+        if (StartRequested != null) StartRequested.Invoke();
+        else CompleteStartTransition();
     }
 
-    void BeginTeleportStep()
+    public void CompleteStartTransition()
     {
-        step = Step.Teleport;
+        if (!ready || (step != Step.WaitingForStart && step != Step.Transitioning)) return;
+        startButton.interactable = false;
+        Started?.Invoke();
+        BeginMoveStep();
+    }
+
+    public void CancelStartTransition()
+    {
+        if (!ready || step != Step.Transitioning) return;
+        step = Step.WaitingForStart;
+        startButton.interactable = true;
+        ShowBanner(startMessage);
+        HighlightButton("Trigger");
+    }
+
+    void BeginMoveStep()
+    {
+        step = Step.Move;
         XrBuildSceneLocomotion.EnableWalking(origin);
-        SetTeleport(true);
+        SetTeleport(false);
         ShowBanner(teleportMessage);
         HighlightButton("ThumbStick");
         lastOriginPosition = origin.transform.position;
@@ -142,11 +174,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     void OnCaseGrabbed(SelectEnterEventArgs args)
     {
-        if (!ready || (step != Step.Teleport && step != Step.Grab && step != Step.Carry)) return;
+        if (!ready || (step != Step.Move && step != Step.Grab && step != Step.Carry)) return;
         if (args.interactorObject is XRSocketInteractor) return;
         var grabbed = args.interactableObject as XRGrabInteractable;
         if (grabbed == null || Array.IndexOf(pickupCases, grabbed) < 0 || MagnetDropZone.IsClaimed(grabbed)) return;
-        if (step == Step.Teleport) BeginGrabStep();
+        if (step == Step.Move) BeginGrabStep();
         carriedCase = grabbed;
         var firstTime = step != Step.Carry;
         step = Step.Carry;
@@ -225,13 +257,11 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     void Update()
     {
-        if (step != Step.Teleport || origin == null) return;
+        if (step != Step.Move || origin == null) return;
 
-        // Walking is off in this step, so a one-frame jump is the teleport.
         var position = origin.transform.position;
         var moved = position - lastOriginPosition;
         moved.y = 0f;
-        lastOriginPosition = position;
         if (moved.magnitude >= teleportJumpDistance)
             BeginGrabStep();
     }
@@ -240,9 +270,10 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     {
         HideBanner();
         if (origin.Camera == null) return;
-        if (rightController == null) return;
+        var controller = step == Step.Move ? leftController : rightController;
+        if (controller == null) return;
         banner = HandHintBanner.Create(origin.Camera, font, message);
-        banner.SetHand(rightController);
+        banner.SetHand(controller);
     }
 
     void HideBanner()
@@ -251,76 +282,12 @@ public sealed class Lvl1Tutorial : MonoBehaviour
         banner = null;
     }
 
-    void PrepareTeleportFloor()
-    {
-        var groundLayer = LayerMask.NameToLayer("Ground");
-        if (groundLayer < 0) groundLayer = 0;
-        LayerMask groundMask = 1 << groundLayer;
-
-        var floorY = origin.transform.position.y;
-        var center = origin.transform.position;
-        const float radius = 70f;
-        const float step = 1.5f;
-        var floors = new HashSet<Collider>();
-
-        for (var x = -radius; x <= radius; x += step)
-        for (var z = -radius; z <= radius; z += step)
-        {
-            var top = new Vector3(center.x + x, floorY + 4f, center.z + z);
-            var hits = Physics.RaycastAll(top, Vector3.down, 8f, ~0, QueryTriggerInteraction.Ignore);
-            Collider best = null;
-            // Tight enough that table tops (about 0.75 m up) are not taken as floor.
-            var bestGap = 0.4f;
-            foreach (var hit in hits)
-            {
-                if (hit.normal.y < 0.85f) continue;
-                var gap = Mathf.Abs(hit.point.y - floorY);
-                if (gap >= bestGap) continue;
-                var col = hit.collider;
-                if (col.GetComponentInParent<XROrigin>() != null) continue;
-                if (col.GetComponentInParent<XRGrabInteractable>() != null) continue;
-                if (col.attachedRigidbody != null && !col.attachedRigidbody.isKinematic) continue;
-                best = col;
-                bestGap = gap;
-            }
-            if (best != null) floors.Add(best);
-        }
-
-        foreach (var col in floors)
-        {
-            col.gameObject.layer = groundLayer;
-            if (col.GetComponentInParent<TeleportationArea>() != null) continue;
-            var area = col.gameObject.AddComponent<TeleportationArea>();
-            area.interactionLayers = -1;
-            // Imported meshes are often rotated, so their local up is not world up.
-            area.filterSelectionByHitNormal = false;
-        }
-
-        // Floor planes far below the bridge would drop the player off the deck.
-        foreach (var area in FindObjectsByType<TeleportationArea>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-        {
-            var col = area.GetComponent<Collider>();
-            if (col != null && col.bounds.max.y < floorY - 2f)
-                area.enabled = false;
-        }
-
-        foreach (var ray in teleportRays)
-        {
-            if (ray == null) continue;
-            ray.hitDetectionType = XRRayInteractor.HitDetectionType.Raycast;
-            ray.raycastMask = groundMask;
-            ray.interactionLayers = -1;
-            ray.raycastTriggerInteraction = QueryTriggerInteraction.Ignore;
-        }
-
-        Debug.Log("Lvl1Tutorial: " + floors.Count + " floor surface(s) made teleportable.", this);
-    }
-
     void HighlightButton(params string[] partNames)
     {
         ClearButtonHighlight();
-        if (rightController != null)
-            buttonHighlight = ControllerButtonHighlight.Create(rightController, partNames);
+        var controller = step == Step.Move ? leftController : rightController;
+        if (controller != null)
+            buttonHighlight = ControllerButtonHighlight.Create(controller, partNames);
     }
 
     void ClearButtonHighlight()
@@ -349,6 +316,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
 
     void SetTeleport(bool on)
     {
+        if (origin == null) return;
         foreach (var provider in origin.GetComponentsInChildren<TeleportationProvider>(true))
             provider.enabled = on;
         // The starter rig toggles the ray GameObjects itself, so switch the component.
@@ -383,7 +351,7 @@ public sealed class Lvl1Tutorial : MonoBehaviour
     {
         if (!Application.isPlaying || !ready) return;
         if (step == Step.WaitingForStart) OnStartPressed();
-        else if (step == Step.Teleport) BeginGrabStep();
+        else if (step == Step.Move) BeginGrabStep();
     }
 
     void OnDestroy()

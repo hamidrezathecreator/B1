@@ -117,7 +117,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             // Don't need to do anything if the total input is zero.
             // This is the same check as the base method.
             if (input == Vector2.zero)
-                return base.ComputeDesiredMove(input);
+                return ComputeMoveInReferenceFrame(input);
 
             // Initialize the Head Transform if necessary, getting the Camera from XR Origin
             if (m_HeadTransform == null)
@@ -184,7 +184,28 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
             var combinedRotation = Quaternion.Slerp(m_RightMovementPose.rotation, m_LeftMovementPose.rotation, leftHandBlend);
             m_CombinedTransform.SetPositionAndRotation(combinedPosition, combinedRotation);
 
-            return base.ComputeDesiredMove(input);
+            return ComputeMoveInReferenceFrame(input);
+        }
+
+        Vector3 ComputeMoveInReferenceFrame(Vector2 input)
+        {
+            var movement = base.ComputeDesiredMove(input);
+            if (enableFly || movement == Vector3.zero)
+                return movement;
+
+            var origin = mediator.xrOrigin;
+            var originTransform = origin.Origin.transform;
+            var source = forwardSource != null ? forwardSource : origin.Camera.transform;
+            var up = originTransform.up;
+            var forward = source.forward;
+            if (Mathf.Approximately(Mathf.Abs(Vector3.Dot(forward, up)), 1f))
+                forward = -source.up;
+
+            var planarForward = Vector3.ProjectOnPlane(forward, up).normalized;
+            var planarRight = Vector3.Cross(up, planarForward).normalized;
+            var sourceRotation = Quaternion.FromToRotation(originTransform.forward, planarForward);
+            var localMovement = Quaternion.Inverse(sourceRotation) * originTransform.InverseTransformDirection(movement);
+            return planarRight * localMovement.x + planarForward * localMovement.z;
         }
     }
 }

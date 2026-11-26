@@ -28,7 +28,7 @@ public sealed class ControllerHandsPresentation : MonoBehaviour
         if (scene.name != BuildLevelScenes.Lvl1 && scene.name != BuildLevelScenes.Lvl2 &&
             scene.name != BuildLevelScenes.Lvl3) return;
 
-        if (scene.name == BuildLevelScenes.Lvl1) handsUnlocked = false;
+        handsUnlocked = scene.name != BuildLevelScenes.Lvl1;
         foreach (var root in scene.GetRootGameObjects())
         {
             var sceneOrigin = root.GetComponentInChildren<XROrigin>();

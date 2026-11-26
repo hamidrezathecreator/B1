@@ -10,11 +10,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 1609935097699718166, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: m_LODs.Array.data[0].screenRelativeHeight
-      value: 0.025213154
+      value: 0.010150444
       objectReference: {fileID: 0}
     - target: {fileID: 1609935097699718166, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: m_LODs.Array.data[1].screenRelativeHeight
-      value: 0.006011058
+      value: 0.00023893814
       objectReference: {fileID: 0}
     - target: {fileID: 3022604272601171795, guid: f448189bcc1d27049980e35cbc841c67, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -112,7 +112,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -1.5500007
+      value: 76.329994
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 23a26f0eb621c814eb25c0ead7cd0ead, type: 3}
       propertyPath: m_LocalRotation.w

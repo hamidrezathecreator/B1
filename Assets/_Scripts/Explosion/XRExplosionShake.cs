@@ -54,12 +54,13 @@ public sealed class XRExplosionShake : MonoBehaviour
     private Tween impactPosition;
     private Tween impactRotation;
     private bool falling;
+    private bool landingImpact;
     private CentralScopeCamera scopeCamera;
 
     public void HeavyImpact(float value = 1f)
     {
         if (!shakeEnabled || !isActiveAndEnabled || !TryInitializeImpact()) return;
-        if (falling) return;
+        if (falling || landingImpact) return;
         StopImpactMotion();
         float amount = Mathf.Clamp01(value);
         GetCentralScope()?.PlayShake(0.65f, amount);
@@ -82,6 +83,20 @@ public sealed class XRExplosionShake : MonoBehaviour
             1f, 13f, enableFalloff: false, cycles: -1, useUnscaledTime: true);
     }
 
+    public void LandingImpact(Vector3 positionStrength, Vector3 rotationStrength, float seconds, float shakeFrequency)
+    {
+        if (!shakeEnabled || !isActiveAndEnabled || !TryInitializeImpact()) return;
+        StopImpactMotion();
+        landingImpact = true;
+        seconds = Mathf.Max(0.01f, seconds);
+        GetCentralScope()?.PlayShake(seconds);
+        impactRotation = Tween.ShakeLocalRotation(impactPivot, rotationStrength,
+            seconds, shakeFrequency, useUnscaledTime: true);
+        impactPosition = Tween.ShakeLocalPosition(impactPivot, positionStrength,
+            seconds, shakeFrequency, useUnscaledTime: true)
+            .OnComplete(this, target => target.StopImpactMotion());
+    }
+
     public void StopImpactMotion()
     {
         if (impactPosition.isAlive) impactPosition.Stop();
@@ -92,6 +107,7 @@ public sealed class XRExplosionShake : MonoBehaviour
             impactPivot.localRotation = Quaternion.identity;
         }
         falling = false;
+        landingImpact = false;
         if (scopeCamera != null) scopeCamera.StopEffect();
     }
 

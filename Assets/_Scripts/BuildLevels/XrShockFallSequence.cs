@@ -32,13 +32,19 @@ public sealed class XrShockFallSequence : MonoBehaviour
     [SerializeField] Color fogColor = Color.black;
 
     [Header("Shock rotation (degrees)")]
-    [SerializeField] Vector2 pitchRange = new Vector2(-25f, 25f);
+    [SerializeField] Vector2 pitchRange = new Vector2(60f, 85f);
     [SerializeField] Vector2 yawRange = new Vector2(-40f, 40f);
     [SerializeField] Vector2 rollRange = new Vector2(-35f, 35f);
     [Min(0.05f)] [SerializeField] float rotationBlendSeconds = 2.5f;
-    [SerializeField, Min(1f)] float rotationDegreesPerSecond = 32f;
+    [SerializeField, Min(1f)] float rotationDegreesPerSecond = 65f;
     [SerializeField, Min(0.1f)] float groundProbeDistance = 250f;
     [SerializeField] LayerMask groundLayers = ~0;
+
+    [Header("Ground impact")]
+    [SerializeField] Vector3 landingPositionShake = new Vector3(0.4f, 0.3f, 0.25f);
+    [SerializeField] Vector3 landingRotationShake = new Vector3(18f, 12f, 22f);
+    [SerializeField, Min(0.01f)] float landingShakeSeconds = 1.2f;
+    [SerializeField, Min(1f)] float landingShakeFrequency = 28f;
     XRExplosionShake fallShake;
     ControllerFallHaptics fallHaptics;
 
@@ -69,7 +75,7 @@ public sealed class XrShockFallSequence : MonoBehaviour
             foreach (var col in plane.GetComponentsInChildren<Collider>()) col.enabled = false;
         }
 
-        Quaternion startRot = origin != null ? origin.transform.rotation : Quaternion.identity;
+        Quaternion startRot = origin != null ? Quaternion.Euler(0f, origin.transform.eulerAngles.y, 0f) : Quaternion.identity;
         var shockRot = startRot * Quaternion.Euler(
             Random.Range(pitchRange.x, pitchRange.y),
             Random.Range(yawRange.x, yawRange.y),
@@ -100,6 +106,7 @@ public sealed class XrShockFallSequence : MonoBehaviour
         var speed = 0f;
         var elapsed = 0f;
         var nextRotationTime = rotationBlendSeconds;
+        bool landed = false;
         while ((moveOrigin && origin != null) || (movePlane && plane != null))
         {
             elapsed += Time.deltaTime;
@@ -127,6 +134,7 @@ public sealed class XrShockFallSequence : MonoBehaviour
                 var landingCorrection = Vector3.up * (groundHeight - origin.transform.position.y);
                 origin.transform.position += landingCorrection;
                 if (movePlane && plane != null) plane.position += landingCorrection;
+                landed = true;
                 break;
             }
 
@@ -144,6 +152,12 @@ public sealed class XrShockFallSequence : MonoBehaviour
         if (fallHaptics != null) fallHaptics.StopVibration();
         if (fallShake != null) fallShake.StopImpactMotion();
         PlayerImpactAudio.StopFall();
+        if (landed)
+        {
+            if (fallShake != null) fallShake.LandingImpact(landingPositionShake, landingRotationShake, landingShakeSeconds, landingShakeFrequency);
+            ControllerHaptics.Pulse(1f, landingShakeSeconds);
+            PlayerImpactAudio.PlayCloudHit(volume: 1f);
+        }
 
         if (driveFog)
         {

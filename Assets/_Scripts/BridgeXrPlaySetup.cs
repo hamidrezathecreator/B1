@@ -41,6 +41,8 @@ static class BridgeXrPlaySetup
     {
         if (origin == null)
             return;
+        if (HelicopterHover.IsPassenger(origin))
+            return;
 
         EnsureHeadsetCamera(origin);
         ApplyOriginPlaySettings(origin);
