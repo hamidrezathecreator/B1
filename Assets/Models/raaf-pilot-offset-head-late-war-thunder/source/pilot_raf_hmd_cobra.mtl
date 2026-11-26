@@ -1,0 +1,30 @@
+newmtl 2ddd624e-fc43-43c5-ad38-3adc7fc8e026
+Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
+Ns 30
+Ke 0.000 0.000 0.000
+map_Kd textures/raf_pilot_1990_green_body_c.jpg
+map_Ks textures/raf_pilot_1990_body_n_s.jpg
+map_normal textures/raf_pilot_1990_body_n_n.jpg
+map_ao textures/raf_pilot_1990_body_n_ao.jpg
+
+newmtl 54ff264d-d5cd-46e1-aa3a-caf90aa6c31d
+Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
+Ns 30
+Ke 0.000 0.000 0.000
+map_Kd textures/pilot_raf_head_d.jpg
+map_Ks textures/pilot_raf_head_n_s.jpg
+map_normal textures/pilot_raf_head_n_n.jpg
+map_ao textures/pilot_raf_head_n_ao.jpg
+
+newmtl 0bd4f5a5-b46d-4def-91fa-98429dba24e2
+Kd 1.000 1.000 1.000
+Ks 0.000 0.000 0.000
+Ns 30
+Ke 0.000 0.000 0.000
+map_Kd textures/hmd_cobra_helmet_c.jpg
+map_Ks textures/hmd_cobra_helmet_n_s.jpg
+map_normal textures/hmd_cobra_helmet_n_n.jpg
+map_ao textures/hmd_cobra_helmet_n_ao.jpg
+
